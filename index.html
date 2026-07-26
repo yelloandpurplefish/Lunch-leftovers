@@ -1,0 +1,353 @@
+<!DOCTYPE html>
+<html lang="zh-Hant">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>食安守護者 Food Guardian</title>
+
+    <link rel="stylesheet" href="style.css">
+    
+    <!-- Firebase SDK -->
+    <script src="https://www.gstatic.com/firebasejs/9.22.0/firebase-app-compat.js"></script>
+    <script src="https://www.gstatic.com/firebasejs/9.22.0/firebase-auth-compat.js"></script>
+</head>
+<body>
+
+<div id="app">
+
+    <header>
+        <h1>🌱 食安守護者</h1>
+        <p>珍惜食物｜守護地球</p>
+    </header>
+
+    <section class="video">
+
+        <h2>🎬 食安宣導影片</h2>
+
+        <div class="video-box">
+
+    <iframe width="100%" height="315" src="https://www.youtube.com/watch?v=IDVkzhq6cig" referrerpolicy="strict-origin-when-cross-origin" title="食安宣導影片" frameborder="0" allow="accelerometer; autoplay; clipboard-write; encrypted-media; gyroscope; picture-in-picture" allowfullscreen></iframe>
+
+</div>
+
+        <!-- 登入/註冊表單 -->
+        <div class="auth-container" id="authContainer">
+            <div class="auth-tabs">
+                <button class="auth-tab active" onclick="switchTab('login')">登入</button>
+                <button class="auth-tab" onclick="switchTab('register')">註冊</button>
+            </div>
+
+            <!-- 登入表單 -->
+            <div class="auth-form" id="loginForm">
+                <div class="form-group">
+                    <label>Email：</label>
+                    <input type="email" id="loginEmail" placeholder="請輸入 Email">
+                </div>
+                <div class="form-group">
+                    <label>密碼：</label>
+                    <input type="password" id="loginPassword" placeholder="請輸入密碼">
+                </div>
+                <button onclick="handleLogin()" class="auth-btn">登入</button>
+                <p id="loginError" class="error-message"></p>
+            </div>
+
+            <!-- 註冊表單 -->
+            <div class="auth-form hidden" id="registerForm">
+                <div class="form-group">
+                    <label>顯示名稱：</label>
+                    <input type="text" id="registerName" placeholder="例如：王小明">
+                </div>
+                <div class="form-group">
+                    <label>Email：</label>
+                    <input type="email" id="registerEmail" placeholder="請輸入 Email">
+                </div>
+                <div class="form-group">
+                    <label>密碼：</label>
+                    <input type="password" id="registerPassword" placeholder="至少 6 個字元">
+                </div>
+                <div class="form-group">
+                    <label>確認密碼：</label>
+                    <input type="password" id="registerConfirmPassword" placeholder="再次輸入密碼">
+                </div>
+                <button onclick="handleRegister()" class="auth-btn">註冊</button>
+                <p id="registerError" class="error-message"></p>
+            </div>
+        </div>
+
+        <!-- 已登入狀態顯示 -->
+        <div class="logged-in-container hidden" id="loggedInContainer">
+            <div class="user-info">
+                <h3>👤 歡迎回來，<span id="userDisplayName"></span>！</h3>
+                <div class="user-stats">
+                    <div class="stat-item">
+                        <span class="stat-label">E幣</span>
+                        <span class="stat-value" id="userECoin">0</span>
+                    </div>
+                    <div class="stat-item">
+                        <span class="stat-label">S幣</span>
+                        <span class="stat-value" id="userSCoin">0</span>
+                    </div>
+                    <div class="stat-item">
+                        <span class="stat-label">積分</span>
+                        <span class="stat-value" id="userScore">0</span>
+                    </div>
+                </div>
+            </div>
+            <button onclick="startApp()" class="start-btn">開始使用</button>
+            <button onclick="handleLogout()" class="logout-btn">登出</button>
+        </div>
+
+    </section>
+<nav class="bottom-nav">
+
+    <button onclick="scrollToSection('home')">🏠<br>首頁</button>
+
+    <button onclick="scrollToSection('ranking')">🏆<br>排行榜</button>
+
+    <button onclick="scrollToSection('shop')">🎁<br>兌換</button>
+
+    <button onclick="scrollToSection('leader')">👤<br>我的</button>
+
+</nav>
+
+    <section id="home" class="hidden">
+
+        <div class="coin">
+
+            <div class="card">
+                <h3>E幣</h3>
+                <span id="ecoin">0</span>
+            </div>
+
+            <div class="card">
+                <h3>S幣</h3>
+                <span id="scoin">0</span>
+            </div>
+
+            <div class="card">
+                <h3>積分</h3>
+                <span id="score">0</span>
+            </div>
+
+        </div>
+
+        <div class="menu">
+
+            <h2>🍱 今日菜單</h2>
+
+            <ul>
+
+                <li>🍗 香酥雞腿</li>
+
+                <li>🥬 高麗菜</li>
+
+                <li>🥚 蒸蛋</li>
+
+                <li>🍎 蘋果</li>
+
+                <li>🥣 玉米濃湯</li>
+
+            </ul>
+
+        </div>
+
+        <div class="task">
+
+            <h2>✅ 今日任務</h2>
+
+            <button onclick="finishTask()">
+
+                完成午餐光碟行動
+
+            </button>
+
+        </div>
+<div class="ranking" id="ranking">
+
+    <h2>🏆 全校排行榜</h2>
+
+    <table>
+
+        <tr>
+            <th>名次</th>
+            <th>姓名</th>
+            <th>積分</th>
+        </tr>
+
+        <tr>
+            <td>🥇</td>
+            <td>王小明</td>
+            <td>3500</td>
+        </tr>
+
+        <tr>
+            <td>🥈</td>
+            <td>陳小華</td>
+            <td>3300</td>
+        </tr>
+
+        <tr>
+            <td>🥉</td>
+            <td>林小美</td>
+            <td>3100</td>
+        </tr>
+
+        <tr style="background:#e8f5e9;">
+            <td>⭐</td>
+            <td>你</td>
+            <td id="myRankScore">0</td>
+        </tr>
+
+    </table>
+
+</div>
+<div class="shop" id="shop">
+
+    <div class="shop-header">
+        <h2>🎁 獎勵兌換商城</h2>
+        <button class="lottery-btn" onclick="openLottery()">🎰 幸運抽獎</button>
+    </div>
+
+    <div class="gift">
+        <h3>🥤 環保杯</h3>
+        <p>需要：50 E幣</p>
+        <button onclick="buyE(50,'環保杯')">兌換</button>
+    </div>
+
+    <div class="gift">
+        <h3>🍴 環保餐具</h3>
+        <p>需要：80 E幣</p>
+        <button onclick="buyE(80,'環保餐具')">兌換</button>
+    </div>
+
+    <div class="gift">
+        <h3>✏️ 文具禮包</h3>
+        <p>需要：30 S幣</p>
+        <button onclick="buyS(30,'文具禮包')">兌換</button>
+    </div>
+<div class="survey">
+<div class="leader" id="leader">
+
+    <h2>👨‍🍳 午餐長專區</h2>
+<div class="reward">
+
+    <h2>🌱 今日剩食獎勵</h2>
+
+    <p>請輸入今天你的剩食重量（克）</p>
+
+    <input type="number" id="leftover" placeholder="例如：20">
+
+    <br><br>
+
+    <button onclick="calculateReward()">
+        領取今日獎勵
+    </button>
+
+</div>
+
+    <table>
+
+        <tr>
+            <th>菜色</th>
+            <th>剩食(克)</th>
+        </tr>
+
+        <tr>
+            <td>🍗 香酥雞腿</td>
+            <td><input type="number" id="food1" value="0"></td>
+        </tr>
+
+        <tr>
+            <td>🥬 高麗菜</td>
+            <td><input type="number" id="food2" value="0"></td>
+        </tr>
+
+        <tr>
+            <td>🥚 蒸蛋</td>
+            <td><input type="number" id="food3" value="0"></td>
+        </tr>
+
+        <tr>
+            <td>🍎 蘋果</td>
+            <td><input type="number" id="food4" value="0"></td>
+        </tr>
+
+        <tr>
+            <td>🥣 玉米濃湯</td>
+            <td><input type="number" id="food5" value="0"></td>
+        </tr>
+
+    </table>
+
+    <br>
+
+    <button onclick="analyzeFood()">
+        📊 分析剩食
+    </button>
+
+    <h3 id="mostFood"></h3>
+
+    <h3 id="leastFood"></h3>
+
+</div>
+
+    <h2>📝 今日菜色問卷</h2>
+
+    <label>😊 今天最喜歡哪一道菜？</label>
+
+    <select id="favoriteFood">
+
+        <option>香酥雞腿</option>
+        <option>高麗菜</option>
+        <option>蒸蛋</option>
+        <option>蘋果</option>
+        <option>玉米濃湯</option>
+
+    </select>
+
+    <br><br>
+
+    <label>😖 今天最不喜歡哪一道菜？</label>
+
+    <select id="hateFood">
+
+        <option>香酥雞腿</option>
+        <option>高麗菜</option>
+        <option>蒸蛋</option>
+        <option>蘋果</option>
+        <option>玉米濃湯</option>
+
+    </select>
+
+    <br><br>
+
+    <button onclick="submitSurvey()">
+
+        送出問卷
+
+    </button>
+
+</div>
+
+</div>
+
+<!-- 抽獎彈窗 -->
+<div id="lotteryModal" class="lottery-modal">
+    <div class="lottery-content">
+        <span class="close-btn" onclick="closeLottery()">&times;</span>
+        <h2>🎰 幸運抽獎</h2>
+        <p>消耗 10 E幣進行抽獎</p>
+        <div id="lotteryResult" class="lottery-result"></div>
+        <button class="spin-btn" onclick="spinLottery()">開始抽獎</button>
+    </div>
+</div>
+
+    </section>
+
+</div>
+
+<script src="firebase-config.js"></script>
+<script src="app.js"></script>
+
+</body>
+</html>

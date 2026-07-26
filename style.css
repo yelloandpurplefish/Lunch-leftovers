@@ -1,0 +1,1073 @@
+/* ===== 基本設定 ===== */
+*{
+    margin:0;
+    padding:0;
+    box-sizing:border-box;
+    font-family:"Microsoft JhengHei",sans-serif;
+}
+
+body{
+    background:linear-gradient(#dff6df,#f5fff5);
+    min-height:100vh;
+}
+
+/* ===== 標題 ===== */
+header{
+    background:#2e7d32;
+    color:white;
+    text-align:center;
+    padding:20px;
+    box-shadow:0 3px 10px rgba(0,0,0,.2);
+}
+
+header h1{
+    font-size:32px;
+}
+
+header p{
+    margin-top:8px;
+}
+
+/* ===== 影片 ===== */
+
+.video{
+    width:90%;
+    max-width:900px;
+    margin:30px auto;
+    text-align:center;
+}
+
+.video-box{
+
+    height:250px;
+
+    background:#d6d6d6;
+
+    border-radius:20px;
+
+    display:flex;
+
+    align-items:center;
+
+    justify-content:center;
+
+    font-size:28px;
+
+    color:#555;
+
+    margin-bottom:20px;
+
+}
+
+.name-input{
+
+    text-align:center;
+
+    margin:20px 0;
+
+}
+
+.name-input label{
+
+    font-weight:bold;
+
+    color:#2e7d32;
+
+    margin-right:10px;
+
+}
+
+.name-input input{
+
+    padding:10px 15px;
+
+    border-radius:10px;
+
+    border:2px solid #4caf50;
+
+    font-size:16px;
+
+    width:200px;
+
+}
+
+/* ===== 登入/註冊相關 ===== */
+
+.auth-container{
+
+    background:white;
+
+    border-radius:20px;
+
+    padding:30px;
+
+    margin:30px auto;
+
+    max-width:400px;
+
+    box-shadow:0 5px 15px rgba(0,0,0,0.15);
+
+}
+
+.auth-tabs{
+
+    display:flex;
+
+    margin-bottom:20px;
+
+    border-bottom:2px solid #ddd;
+
+}
+
+.auth-tab{
+
+    flex:1;
+
+    padding:10px;
+
+    background:none;
+
+    border:none;
+
+    font-size:16px;
+
+    cursor:pointer;
+
+    color:#666;
+
+    transition:.3s;
+
+}
+
+.auth-tab.active{
+
+    color:#2e7d32;
+
+    border-bottom:2px solid #2e7d32;
+
+    font-weight:bold;
+
+}
+
+.auth-tab:hover{
+
+    color:#2e7d32;
+
+}
+
+.auth-form{
+
+    text-align:left;
+
+}
+
+.form-group{
+
+    margin-bottom:15px;
+
+}
+
+.form-group label{
+
+    display:block;
+
+    font-weight:bold;
+
+    color:#2e7d32;
+
+    margin-bottom:5px;
+
+}
+
+.form-group input{
+
+    width:100%;
+
+    padding:10px;
+
+    border:2px solid #ddd;
+
+    border-radius:10px;
+
+    font-size:16px;
+
+    transition:.3s;
+
+}
+
+.form-group input:focus{
+
+    outline:none;
+
+    border-color:#4caf50;
+
+}
+
+.auth-btn{
+
+    width:100%;
+
+    background:#43a047;
+
+    color:white;
+
+    border:none;
+
+    border-radius:12px;
+
+    padding:12px;
+
+    font-size:16px;
+
+    cursor:pointer;
+
+    transition:.3s;
+
+    margin-top:10px;
+
+}
+
+.auth-btn:hover{
+
+    background:#2e7d32;
+
+    transform:scale(1.02);
+
+}
+
+.error-message{
+
+    color:#f44336;
+
+    font-size:14px;
+
+    margin-top:10px;
+
+    text-align:center;
+
+}
+
+.logged-in-container{
+
+    background:white;
+
+    border-radius:20px;
+
+    padding:30px;
+
+    margin:30px auto;
+
+    max-width:400px;
+
+    box-shadow:0 5px 15px rgba(0,0,0,0.15);
+
+    text-align:center;
+
+}
+
+.user-info h3{
+
+    color:#2e7d32;
+
+    margin-bottom:20px;
+
+}
+
+.user-stats{
+
+    display:flex;
+
+    justify-content:space-around;
+
+    margin:20px 0;
+
+}
+
+.stat-item{
+
+    text-align:center;
+
+}
+
+.stat-label{
+
+    display:block;
+
+    font-size:14px;
+
+    color:#666;
+
+    margin-bottom:5px;
+
+}
+
+.stat-value{
+
+    display:block;
+
+    font-size:24px;
+
+    font-weight:bold;
+
+    color:#ff9800;
+
+}
+
+.start-btn{
+
+    background:#43a047;
+
+    color:white;
+
+    border:none;
+
+    border-radius:12px;
+
+    padding:12px 30px;
+
+    font-size:16px;
+
+    cursor:pointer;
+
+    transition:.3s;
+
+    margin-right:10px;
+
+}
+
+.start-btn:hover{
+
+    background:#2e7d32;
+
+    transform:scale(1.05);
+
+}
+
+.logout-btn{
+
+    background:#f44336;
+
+    color:white;
+
+    border:none;
+
+    border-radius:12px;
+
+    padding:12px 30px;
+
+    font-size:16px;
+
+    cursor:pointer;
+
+    transition:.3s;
+
+}
+
+.logout-btn:hover{
+
+    background:#d32f2f;
+
+    transform:scale(1.05);
+
+}
+
+/* ===== 按鈕 ===== */
+
+button{
+
+    background:#43a047;
+
+    color:white;
+
+    border:none;
+
+    border-radius:12px;
+
+    padding:15px 30px;
+
+    font-size:18px;
+
+    cursor:pointer;
+
+    transition:.3s;
+
+}
+
+button:hover{
+
+    background:#2e7d32;
+
+    transform:scale(1.05);
+
+}
+
+/* ===== 首頁 ===== */
+
+.hidden{
+
+    display:none;
+
+}
+
+.coin{
+
+    display:flex;
+
+    justify-content:center;
+
+    gap:20px;
+
+    margin:30px;
+
+    flex-wrap:wrap;
+
+}
+
+.card{
+
+    background:white;
+
+    width:180px;
+
+    border-radius:20px;
+
+    text-align:center;
+
+    padding:20px;
+
+    box-shadow:0 5px 15px rgba(0,0,0,.15);
+
+}
+
+.card h3{
+
+    color:#2e7d32;
+
+}
+
+.card span{
+
+    display:block;
+
+    margin-top:10px;
+
+    font-size:36px;
+
+    color:#ff9800;
+
+    font-weight:bold;
+
+}
+
+.menu{
+
+    background:white;
+
+    width:90%;
+
+    max-width:900px;
+
+    margin:20px auto;
+
+    padding:20px;
+
+    border-radius:20px;
+
+}
+
+.menu h2{
+
+    color:#2e7d32;
+
+    margin-bottom:15px;
+
+}
+
+.menu li{
+
+    list-style:none;
+
+    padding:10px;
+
+    border-bottom:1px solid #ddd;
+
+}
+
+/* ===== 任務 ===== */
+
+.task{
+
+    width:90%;
+
+    max-width:900px;
+
+    margin:30px auto;
+
+    background:white;
+
+    padding:20px;
+
+    border-radius:20px;
+
+    text-align:center;
+
+}
+
+.task h2{
+
+    color:#2e7d32;
+
+    margin-bottom:20px;
+
+}
+/* ===== 排行榜 ===== */
+
+.ranking{
+
+    width:90%;
+
+    max-width:900px;
+
+    margin:30px auto;
+
+    background:white;
+
+    border-radius:20px;
+
+    padding:20px;
+
+    box-shadow:0 5px 15px rgba(0,0,0,.15);
+
+}
+
+.ranking h2{
+
+    color:#2e7d32;
+
+    margin-bottom:15px;
+
+}
+
+table{
+
+    width:100%;
+
+    border-collapse:collapse;
+
+}
+
+th{
+
+    background:#4caf50;
+
+    color:white;
+
+    padding:12px;
+
+}
+
+td{
+
+    text-align:center;
+
+    padding:12px;
+
+    border-bottom:1px solid #ddd;
+
+}
+/* ===== 底部導覽列 ===== */
+
+.bottom-nav{
+
+    width:100%;
+
+    background:white;
+
+    display:flex;
+
+    justify-content:space-around;
+
+    box-shadow:0 -3px 10px rgba(0,0,0,.15);
+
+    padding:10px 0;
+
+    position:fixed;
+
+    bottom:0;
+
+    transform:translateY(100%);
+
+    transition:transform 0.3s ease;
+
+}
+
+.bottom-nav button{
+
+    background:none;
+
+    color:#2e7d32;
+
+    border:none;
+
+    font-size:16px;
+
+    cursor:pointer;
+
+}
+
+.bottom-nav button:hover{
+
+    color:#1b5e20;
+
+}
+/* ===== 獎勵商城 ===== */
+
+.shop{
+
+    width:90%;
+    max-width:900px;
+    margin:30px auto;
+    background:white;
+    border-radius:20px;
+    padding:20px;
+    box-shadow:0 5px 15px rgba(0,0,0,.15);
+
+}
+
+.shop h2{
+
+    color:#2e7d32;
+    margin-bottom:20px;
+
+}
+
+.gift{
+
+    border:1px solid #ddd;
+    border-radius:15px;
+    padding:15px;
+    margin-bottom:15px;
+
+}
+
+.gift h3{
+
+    color:#2e7d32;
+
+}
+
+.gift p{
+
+    margin:10px 0;
+
+}
+/* ===== 問卷 ===== */
+
+.survey{
+
+    width:90%;
+    max-width:900px;
+
+    margin:30px auto;
+
+    background:white;
+
+    padding:20px;
+
+    border-radius:20px;
+
+    box-shadow:0 5px 15px rgba(0,0,0,.15);
+
+}
+
+.survey h2{
+
+    color:#2e7d32;
+
+    margin-bottom:20px;
+
+}
+
+.survey label{
+
+    font-weight:bold;
+
+}
+
+.survey select{
+
+    width:100%;
+
+    padding:10px;
+
+    border-radius:10px;
+
+    margin-top:8px;
+
+}
+/* ===== 午餐長 ===== */
+
+.leader{
+
+    width:90%;
+    max-width:900px;
+
+    margin:30px auto;
+
+    background:white;
+
+    padding:20px;
+
+    border-radius:20px;
+
+    box-shadow:0 5px 15px rgba(0,0,0,.15);
+
+}
+
+.leader h2{
+
+    color:#2e7d32;
+
+    margin-bottom:20px;
+
+}
+
+.leader input{
+
+    width:80px;
+
+    padding:8px;
+
+    text-align:center;
+
+}
+/* ===== 剩食獎勵 ===== */
+
+.reward{
+
+    width:90%;
+    max-width:900px;
+
+    margin:30px auto;
+
+    background:white;
+
+    padding:20px;
+
+    border-radius:20px;
+
+    text-align:center;
+
+    box-shadow:0 5px 15px rgba(0,0,0,.15);
+
+}
+
+.reward input{
+
+    width:150px;
+
+    padding:10px;
+
+    text-align:center;
+
+    border-radius:10px;
+
+}
+
+/* ===== 抽獎相關 ===== */
+
+.shop-header{
+
+    display:flex;
+
+    justify-content:space-between;
+
+    align-items:center;
+
+    margin-bottom:20px;
+
+}
+
+.lottery-btn{
+
+    background:#ff9800;
+
+    color:white;
+
+    border:none;
+
+    border-radius:10px;
+
+    padding:10px 20px;
+
+    font-size:16px;
+
+    cursor:pointer;
+
+    transition:.3s;
+
+}
+
+.lottery-btn:hover{
+
+    background:#f57c00;
+
+    transform:scale(1.05);
+
+}
+
+.lottery-modal{
+
+    display:none;
+
+    position:fixed;
+
+    z-index:1000;
+
+    left:0;
+
+    top:0;
+
+    width:100%;
+
+    height:100%;
+
+    background-color:rgba(0,0,0,0.5);
+
+}
+
+.lottery-content{
+
+    background-color:white;
+
+    margin:10% auto;
+
+    padding:30px;
+
+    border-radius:20px;
+
+    width:90%;
+
+    max-width:500px;
+
+    position:relative;
+
+    text-align:center;
+
+    box-shadow:0 10px 30px rgba(0,0,0,0.3);
+
+}
+
+.close-btn{
+
+    position:absolute;
+
+    right:20px;
+
+    top:15px;
+
+    font-size:30px;
+
+    cursor:pointer;
+
+    color:#666;
+
+    transition:.3s;
+
+}
+
+.close-btn:hover{
+
+    color:#ff0000;
+
+}
+
+.lottery-content h2{
+
+    color:#2e7d32;
+
+    margin-bottom:10px;
+
+}
+
+.lottery-content p{
+
+    color:#666;
+
+    margin-bottom:20px;
+
+}
+
+.spin-btn{
+
+    background:#ff9800;
+
+    color:white;
+
+    border:none;
+
+    border-radius:12px;
+
+    padding:15px 40px;
+
+    font-size:18px;
+
+    cursor:pointer;
+
+    transition:.3s;
+
+    margin-top:20px;
+
+}
+
+.spin-btn:hover{
+
+    background:#f57c00;
+
+    transform:scale(1.05);
+
+}
+
+.lottery-result{
+
+    min-height:150px;
+
+    display:flex;
+
+    align-items:center;
+
+    justify-content:center;
+
+    margin:20px 0;
+
+}
+
+.spinning{
+
+    font-size:24px;
+
+    animation:spin 1s linear infinite;
+
+}
+
+@keyframes spin{
+
+    0%{transform:rotate(0deg);}
+
+    100%{transform:rotate(360deg);}
+
+}
+
+.prize-result{
+
+    text-align:center;
+
+    animation:popIn 0.5s ease-out;
+
+}
+
+@keyframes popIn{
+
+    0%{transform:scale(0); opacity:0;}
+
+    100%{transform:scale(1); opacity:1;}
+
+}
+
+.prize-icon{
+
+    font-size:60px;
+
+    margin-bottom:10px;
+
+}
+
+.prize-name{
+
+    font-size:24px;
+
+    font-weight:bold;
+
+    color:#2e7d32;
+
+    margin-bottom:5px;
+
+}
+
+.prize-type{
+
+    font-size:20px;
+
+    margin-bottom:5px;
+
+}
+
+.prize-value{
+
+    font-size:16px;
+
+    color:#666;
+
+}
+
+.grand-prize .prize-name{
+
+    color:#ff9800;
+
+    font-size:28px;
+
+}
+
+.grand-prize .prize-type{
+
+    color:#ff9800;
+
+    font-weight:bold;
+
+    font-size:22px;
+
+}
+
+.normal-prize .prize-name{
+
+    color:#4caf50;
+
+}
+
+.small-prize .prize-name{
+
+    color:#757575;
+
+}
+
+.confetti{
+
+    position:absolute;
+
+    width:10px;
+
+    height:10px;
+
+    animation:confettiFall linear forwards;
+
+}
+
+@keyframes confettiFall{
+
+    0%{
+
+        transform:translateY(0) rotate(0deg);
+
+        opacity:1;
+
+    }
+
+    100%{
+
+        transform:translateY(400px) rotate(720deg);
+
+        opacity:0;
+
+    }
+
+}
