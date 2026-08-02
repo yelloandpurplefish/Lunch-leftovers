@@ -1,218 +1,201 @@
-# 食安守護者後端 API
+# 食安守護者 Food Guardian
 
 ## 📋 專案概述
 
-食安守護者的後端 API，使用 Node.js + Express + Firebase Firestore 建構。
+食安守護者 - 校園食安教育遊戲化應用，使用 HTML5 + JavaScript + Firebase Firestore + Firebase Authentication 建構。
 
 ## 🚀 快速開始
 
-### 1. 安裝依賴
+### 1. Firebase 設定
 
-```bash
-cd backend
-npm install
-```
+請參考 [FIREBASE_SETUP.md](FIREBASE_SETUP.md) 詳細設定步驟：
 
-### 2. Firebase 設定
+1. 前往 [Firebase Console](https://console.firebase.google.com/) 建立專案
+2. 啟用 Authentication (Email/Password)
+3. 建立 Firestore 資料庫
+4. 獲取 Firebase 配置並更新 `firebase-config.js`
+5. 設置 Firestore 安全規則
 
-1. 前往 [Firebase Console](https://console.firebase.google.com/)
-2. 建立新專案或選擇現有專案
-3. 啟用 Firestore Database
-4. 啟用 Authentication
-5. 下載 Service Account Key：
-   - 點擊專案設定 → 服務帳戶
-   - 點擊「產生新的私密金鑰」
-   - 下載 JSON 檔案並重新命名為 `service-account-key.json`
-   - 將檔案放在 `backend/` 目錄下
-6. **重要：** 不要將 `service-account-key.json` 提交到 Git
+### 2. 本地運行
 
-### 3. 環境變數設定
+直接在瀏覽器中打開 `index.html` 即可開始使用。
 
-複製 `.env.example` 為 `.env`：
+### 3. 部署
 
-```bash
-cp .env.example .env
-```
+請參考 [DEPLOYMENT.md](DEPLOYMENT.md) 了解不同的部署方式：
 
-編輯 `.env` 檔案，填入你的 Firebase 設定：
-
-```env
-FIREBASE_PROJECT_ID=your-project-id
-FIREBASE_CLIENT_EMAIL=your-client-email
-FIREBASE_PRIVATE_KEY=your-private-key
-FIREBASE_DATABASE_URL=https://your-project-id.firebaseio.com
-
-JWT_SECRET=your-jwt-secret-key-here
-
-PORT=3000
-NODE_ENV=development
-```
-
-### 4. 啟動伺服器
-
-開發模式（自動重啟）：
-```bash
-npm run dev
-```
-
-生產模式：
-```bash
-npm start
-```
-
-伺服器將在 `http://localhost:3000` 啟動
+- **推薦：** Firebase Hosting
+- **其他選擇：** GitHub Pages, Vercel, Netlify, Render
 
 ## 📁 專案結構
 
 ```
-backend/
-├── config/
-│   └── firebase.js          # Firebase 設定
-├── controllers/
-│   ├── authController.js    # 認證控制器
-│   ├── userController.js    # 使用者控制器
-│   ├── taskController.js    # 任務控制器
-│   ├── lotteryController.js # 抽獎控制器
-│   ├── exchangeController.js # 兌換控制器
-│   ├── leaderboardController.js # 排行榜控制器
-│   └── analysisController.js # 分析控制器
-├── middleware/
-│   └── auth.js              # 認證中介軟體
-├── routes/
-│   ├── auth.js              # 認證路由
-│   ├── user.js              # 使用者路由
-│   ├── task.js              # 任務路由
-│   ├── lottery.js           # 抽獎路由
-│   ├── exchange.js          # 兌換路由
-│   ├── leaderboard.js       # 排行榜路由
-│   └── analysis.js          # 分析路由
-├── .env                     # 環境變數（不提交到 Git）
-├── .env.example             # 環境變數範本
-├── package.json             # 專案依賴
-├── server.js                # 主伺服器檔案
-└── service-account-key.json # Firebase Service Key（不提交到 Git）
+food-guardian/
+├── index.html              # 主頁面
+├── style.css               # 樣式表
+├── app.js                  # 主要 JavaScript 邏輯
+├── firebase-config.js      # Firebase 配置
+├── FIREBASE_SETUP.md       # Firebase 設置指南
+├── DEPLOYMENT.md           # 部署指南
+├── .gitignore              # Git 忽略文件
+├── package.json            # 專案配置
+├── render.yaml             # Render 部署配置
+├── backend/                # 可選的後端服務
+│   ├── config/
+│   │   └── firebase.js     # Firebase Admin SDK 配置
+│   ├── controllers/        # 控制器
+│   ├── middleware/         # 中介軟體
+│   ├── routes/            # API 路由
+│   ├── server.js          # 主伺服器
+│   ├── package.json       # 後端依賴
+│   └── .env.example       # 環境變數範本
+└── 專案架構書.md           # 原始架構文檔
 ```
 
-## 🔌 API 端點
+## ✨ 主要功能
 
-### 認證相關
+### 🔐 使用者認證
+- Email/密碼註冊和登入
+- Firebase Authentication
+- Firestore 存儲使用者資料
 
-- `POST /api/auth/register` - 註冊新使用者
-- `POST /api/auth/login` - 使用者登入
-- `POST /api/auth/logout` - 使用者登出
+### 💰 虛擬貨幣系統
+- **E幣：** 主要貨幣，用於兌換和抽獎
+- **S幣：** 次要貨幣，用於特定兌換
+- **積分：** 排行榜依據
 
-### 使用者相關
+### 📋 任務系統
+- **光盤行動：** 完成午餐光盤獲得獎勵
+- **剩食獎勵：** 根據剩食重量計算獎勵
+- **問卷系統：** 每日菜色喜好調查
+- **24小時冷卻機制**
 
-- `GET /api/user/profile` - 獲取使用者資料
-- `PUT /api/user/profile` - 更新使用者資料
-- `PUT /api/user/last-login` - 更新最後登入時間
+### 🎁 兌換商城
+- 環保杯 (50 E幣)
+- 環保餐具 (80 E幣)
+- 文具禮包 (30 S幣)
 
-### 任務相關
+### 🎰 抽獎系統
+- 消耗 10 E幣進行抽獎
+- 大獎(5%)、普通(30%)、小獎(65%)
 
-- `POST /api/task/complete-light-disc` - 完成光盤行動
-- `POST /api/task/claim-leftover-reward` - 領取剩食獎勵
-- `POST /api/task/submit-survey` - 提交問卷
+### 📊 剩食分析
+- 分析各項菜色剩食量
+- 找出最多/最少剩食
+- 提供改進建議
 
-### 抽獎相關
+## 🔧 技術棧
 
-- `POST /api/lottery/spin` - 進行抽獎
-- `GET /api/lottery/history` - 獲取抽獎歷史
+### 前端
+- **HTML5** - 結構
+- **CSS3** - 樣式
+- **JavaScript (ES6+)** - 邏輯
+- **Firebase SDK v12.17.0** - Firebase 服務
 
-### 兌換相關
+### 後端（可選）
+- **Node.js + Express** - API 服務器
+- **Firebase Admin SDK** - 管理功能
+- **Firestore** - 資料庫
 
-- `POST /api/exchange/redeem` - 兌換物品
-- `GET /api/exchange/items` - 獲取可兌換物品列表
-- `GET /api/exchange/history` - 獲取兌換歷史
-
-### 排行榜相關
-
-- `GET /api/leaderboard` - 獲取排行榜
-
-### 分析相關
-
-- `POST /api/analysis/submit` - 提交剩食分析
-- `GET /api/analysis/stats` - 獲取剩食統計（管理員）
-
-## 🔐 認證方式
-
-所有需要認證的 API 都需要在請求標頭中包含 Firebase ID Token：
-
-```
-Authorization: Bearer <firebase-id-token>
-```
-
-## 🛡️ 安全性
-
-- 使用 Firebase Authentication 進行使用者認證
-- Helmet 中介軟體保護 HTTP 標頭
-- 速率限制防止濫用
-- CORS 設定限制跨來源請求
-- 所有關鍵邏輯在後端執行
+### 資料庫
+- **Firebase Firestore** - 雲端資料庫
+- **Firebase Authentication** - 使用者認證
 
 ## 📊 Firestore 資料表
 
-後端會使用以下 Firestore 集合：
+應用程式使用以下 Firestore 集合：
 
-- `users` - 使用者資料
-- `task_records` - 任務記錄
-- `lottery_records` - 抽獎記錄
+- `users` - 使用者資料 (userId, email, displayName, eCoin, sCoin, score, etc.)
+- `task_records` - 任務記錄 (光盤行動、剩食獎勵、問卷)
 - `exchange_records` - 兌換記錄
-- `leftover_analysis` - 剩食分析
-- `reward_items` - 獎勵物品
 
-## 🧪 測試 API
+## 🛡️ 安全性
 
-使用 curl 或 Postman 測試 API：
+- Firebase Authentication 使用者認證
+- Firestore 安全規則保護資料
+- 客戶端直接訪問 Firebase（無需後端）
+- API Key 限制設置
 
-```bash
-# 健康檢查
-curl http://localhost:3000/health
+## 🧪 測試
 
-# 註冊使用者
-curl -X POST http://localhost:3000/api/auth/register \
-  -H "Content-Type: application/json" \
-  -d '{"email":"test@example.com","password":"password123","displayName":"測試使用者"}'
-```
+### 本地測試
+1. 完成 Firebase 設置
+2. 打開 `index.html`
+3. 測試註冊、登入、任務完成等功能
 
-## 📝 注意事項
+### 功能測試清單
+- [ ] 註冊新使用者
+- [ ] 使用者登入/登出
+- [ ] 完成光盤行動任務
+- [ ] 領取剩食獎勵
+- [ ] 提交問卷
+- [ ] 兌換物品
+- [ ] 進行抽獎
+- [ ] 查看剩食分析
 
-1. **Service Account Key 安全：** 絕對不要將 `service-account-key.json` 提交到版本控制系統
-2. **環境變數：** 生產環境應使用安全的環境變數管理方式
-3. **CORS 設定：** 部署時需要更新 CORS 來源為實際的前端網域
-4. **速率限制：** 根據實際需求調整速率限制參數
+## 📝 後端服務（可選）
 
-## 🚀 部署
-
-### 使用 PM2 部署
-
-```bash
-npm install -g pm2
-pm2 start server.js --name food-guardian-api
-pm2 save
-pm2 startup
-```
-
-### 使用 Docker 部署（可選）
-
-建立 `Dockerfile`：
-
-```dockerfile
-FROM node:18-alpine
-WORKDIR /app
-COPY package*.json ./
-RUN npm install --production
-COPY . .
-EXPOSE 3000
-CMD ["npm", "start"]
-```
-
-建構和執行：
+如果您需要管理功能或額外的 API 端點，可以啟用後端服務：
 
 ```bash
-docker build -t food-guardian-api .
-docker run -p 3000:3000 food-guardian-api
+cd backend
+npm install
+cp .env.example .env
+# 編輯 .env 填入環境變數
+npm start
 ```
+
+後端提供：
+- 管理員功能
+- 數據統計和分析
+- 高級 API 端點
+
+## 🚀 部署指南
+
+詳細部署步驟請參考 [DEPLOYMENT.md](DEPLOYMENT.md)：
+
+### 推薦方式：Firebase Hosting
+```bash
+npm install -g firebase-tools
+firebase login
+firebase init hosting
+firebase deploy
+```
+
+### 其他方式
+- GitHub Pages
+- Vercel
+- Netlify
+- Render (已配置 render.yaml)
+
+## 🐛 故障排除
+
+### Firebase 連接問題
+- 檢查 `firebase-config.js` 配置是否正確
+- 確認 Firebase Console 中已啟用相應服務
+- 檢查網絡連接
+
+### 權限錯誤
+- 檢查 Firestore 安全規則
+- 確認使用者已登入
+- 檢查 API Key 限制
+
+### 部署問題
+- 參考 [DEPLOYMENT.md](DEPLOYMENT.md) 故障排除部分
+- 檢查部署平台日志
 
 ## 📞 支援
 
-如有問題，請聯繫開發團隊。
+如有問題，請：
+1. 查看 [FIREBASE_SETUP.md](FIREBASE_SETUP.md)
+2. 查看 [DEPLOYMENT.md](DEPLOYMENT.md)
+3. 檢查瀏覽器控制台錯誤信息
+4. 聯繫開發團隊
+
+## 📄 授權
+
+此專案為教育用途。
+
+## 🙏 致謝
+
+感謝所有為此專案貢獻的人。

@@ -1,0 +1,14 @@
+services:
+  # 靜態網站服務 - 直接使用 Render Static Sites
+  - type: web
+    name: food-guardian-frontend
+    env: static
+    buildCommand: echo "No build command needed for static site"
+    staticPublishPath: .
+    routes:
+      - type: rewrite
+        source: /*
+        destination: /index.html
+    envVars:
+      - key: NODE_VERSION
+        value: 18

@@ -1,0 +1,15 @@
+{
+  "name": "food-guardian",
+  "version": "1.0.0",
+  "description": "食安守護者 - 校園食安教育遊戲化應用",
+  "main": "index.html",
+  "scripts": {
+    "start": "echo '靜態前端應用，請使用靜態網站託管服務部署'",
+    "deploy:render": "echo '請參考 DEPLOYMENT.md 了解部署方式'"
+  },
+  "keywords": ["food", "safety", "education", "firebase", "frontend"],
+  "author": "",
+  "license": "ISC",
+  "devDependencies": {},
+  "dependencies": {}
+}
