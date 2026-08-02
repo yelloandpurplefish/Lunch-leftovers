@@ -1,5 +1,14 @@
 const admin = require('firebase-admin');
-const serviceAccount = require('../service-account-key.json');
+
+// 檢查是否有 service account key
+let serviceAccount;
+try {
+  serviceAccount = require('../service-account-key.json');
+} catch (error) {
+  console.warn('service-account-key.json not found, Firebase Admin SDK will not be initialized');
+  module.exports = { admin: null, db: null, auth: null };
+  return;
+}
 
 admin.initializeApp({
   credential: admin.credential.cert(serviceAccount),

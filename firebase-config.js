@@ -10,7 +10,9 @@ const firebaseConfig = {
 };
 
 // Initialize Firebase
-firebase.initializeApp(firebaseConfig);
+const app = window.firebaseApp.initializeApp(firebaseConfig);
+const auth = window.firebaseApp.getAuth(app);
+const db = window.firebaseApp.getFirestore(app);
 
 // Backend API URL - 請根據實際部署修改
 const API_BASE_URL = 'http://localhost:3000/api';

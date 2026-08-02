@@ -2,13 +2,19 @@
 // 食安守護者 Demo
 // ======================
 
-// 檢查 Firebase 是否已初始化
-if (typeof firebase === 'undefined') {
+// 等待 Firebase 配置載入完成
+if (typeof auth === 'undefined') {
   console.error('Firebase 未正確載入，請檢查 firebase-config.js');
+  // 延遲初始化，等待 firebase-config.js 執行
+  setTimeout(() => {
+    if (typeof auth === 'undefined') {
+      console.error('Firebase 仍未載入，請檢查 Firebase SDK 配置');
+    }
+  }, 1000);
 }
 
 // 初始化時檢查登入狀態
-firebase.auth().onAuthStateChanged(async (user) => {
+auth.onAuthStateChanged(async (user) => {
   if (user) {
     currentUser = user;
     idToken = await user.getIdToken();
@@ -52,7 +58,7 @@ async function handleLogin() {
   }
 
   try {
-    const userCredential = await firebase.auth().signInWithEmailAndPassword(email, password);
+    const userCredential = await auth.signInWithEmailAndPassword(email, password);
     idToken = await userCredential.user.getIdToken();
     errorElement.textContent = '';
   } catch (error) {
@@ -84,32 +90,38 @@ async function handleRegister() {
   }
 
   try {
-    // 呼叫後端註冊 API
-    const response = await fetch(`${API_BASE_URL}/auth/register`, {
-      method: 'POST',
-      headers: { 'Content-Type': 'application/json' },
-      body: JSON.stringify({ email, password, displayName: name })
+    // 使用 Firebase Auth 註冊
+    const userCredential = await auth.createUserWithEmailAndPassword(email, password);
+    
+    // 更新使用者顯示名稱
+    await userCredential.user.updateProfile({ displayName: name });
+    
+    // 在 Firestore 建立使用者文件
+    const userRef = doc(db, 'users', userCredential.user.uid);
+    await setDoc(userRef, {
+      userId: userCredential.user.uid,
+      email: email,
+      displayName: name,
+      eCoin: 0,
+      sCoin: 0,
+      score: 0,
+      createdAt: serverTimestamp(),
+      lastLoginAt: serverTimestamp(),
+      isActive: true
     });
-
-    const data = await response.json();
-
-    if (data.success) {
-      // 自動登入
-      await firebase.auth().signInWithEmailAndPassword(email, password);
-      idToken = await firebase.auth().currentUser.getIdToken();
-      errorElement.textContent = '';
-    } else {
-      errorElement.textContent = data.message || '註冊失敗';
-    }
+    
+    // 自動登入
+    idToken = await userCredential.user.getIdToken();
+    errorElement.textContent = '';
   } catch (error) {
-    errorElement.textContent = '註冊失敗，請稍後再試';
+    errorElement.textContent = getErrorMessage(error.code);
   }
 }
 
 // 處理登出
 async function handleLogout() {
   try {
-    await firebase.auth().signOut();
+    await auth.signOut();
     currentUser = null;
     idToken = null;
     eCoin = 0;
@@ -124,16 +136,30 @@ async function handleLogout() {
 // 載入使用者資料
 async function loadUserData() {
   try {
-    const response = await fetch(`${API_BASE_URL}/user/profile`, {
-      headers: { 'Authorization': `Bearer ${idToken}` }
-    });
-
-    const data = await response.json();
-
-    if (data.success) {
-      eCoin = data.userData.eCoin;
-      sCoin = data.userData.sCoin;
-      score = data.userData.score;
+    if (!currentUser) return;
+    
+    const userRef = doc(db, 'users', currentUser.uid);
+    const userDoc = await getDoc(userRef);
+    
+    if (userDoc.exists()) {
+      const userData = userDoc.data();
+      eCoin = userData.eCoin || 0;
+      sCoin = userData.sCoin || 0;
+      score = userData.score || 0;
+      updateUI();
+    } else {
+      // 如果文件不存在，建立預設資料
+      await setDoc(userRef, {
+        userId: currentUser.uid,
+        email: currentUser.email,
+        displayName: currentUser.displayName,
+        eCoin: 0,
+        sCoin: 0,
+        score: 0,
+        createdAt: serverTimestamp(),
+        lastLoginAt: serverTimestamp(),
+        isActive: true
+      });
       updateUI();
     }
   } catch (error) {
@@ -185,7 +211,7 @@ function getErrorMessage(errorCode) {
   return errorMessages[errorCode] || '發生錯誤，請稍後再試';
 }
 
-// API 請求輔助函數
+// API 請求輔助函數 (保留用於可能的後端 API)
 async function apiRequest(endpoint, method = 'GET', body = null) {
   const headers = {
     'Authorization': `Bearer ${idToken}`,
@@ -203,6 +229,23 @@ async function apiRequest(endpoint, method = 'GET', body = null) {
 
   const response = await fetch(`${API_BASE_URL}${endpoint}`, options);
   return await response.json();
+}
+
+// 更新使用者資料到 Firestore
+async function updateUserData() {
+  try {
+    if (!currentUser) return;
+    
+    const userRef = doc(db, 'users', currentUser.uid);
+    await updateDoc(userRef, {
+      eCoin: eCoin,
+      sCoin: sCoin,
+      score: score,
+      lastLoginAt: serverTimestamp()
+    });
+  } catch (error) {
+    console.error('更新使用者資料失敗:', error);
+  }
 }
 
 // 底部導覽列顯示/隱藏
@@ -250,31 +293,64 @@ async function startApp(){
 // 完成任務
 async function finishTask(){
     try {
-        const data = await apiRequest('/task/complete-light-disc', 'POST');
+        if (!currentUser) {
+            alert('請先登入');
+            return;
+        }
 
-        if (data.success) {
-            eCoin += data.rewards.eCoin;
-            sCoin += data.rewards.sCoin;
-            score += data.rewards.score;
-            updateUI();
-
-            alert(
-                "🎉 任務完成！\n\n" +
-                "E幣 +" + data.rewards.eCoin + "\n" +
-                "S幣 +" + data.rewards.sCoin + "\n" +
-                "積分 +" + data.rewards.score + "\n\n" +
-                "⏰ 24小時後可再次領取"
-            );
-        } else {
-            if (data.hoursRemaining) {
+        // 檢查是否已經在24小時內完成過任務
+        const taskRecordsRef = collection(db, 'task_records');
+        const q = query(
+            taskRecordsRef,
+            where('userId', '==', currentUser.uid),
+            where('taskType', '==', 'light_disc'),
+            orderBy('completedAt', 'desc'),
+            limit(1)
+        );
+        const querySnapshot = await getDocs(q);
+        
+        const now = new Date();
+        const cooldownTime = 24 * 60 * 60 * 1000; // 24小時
+        
+        if (!querySnapshot.empty) {
+            const lastTask = querySnapshot.docs[0].data();
+            const lastCompletedAt = lastTask.completedAt.toDate();
+            const timeSinceLastTask = now - lastCompletedAt;
+            
+            if (timeSinceLastTask < cooldownTime) {
+                const hoursRemaining = Math.ceil((cooldownTime - timeSinceLastTask) / (60 * 60 * 1000));
                 alert(
                     "⏰ 尚未達到領取時間！\n\n" +
-                    "距離下次領取還需 " + data.hoursRemaining + " 小時"
+                    "距離下次領取還需 " + hoursRemaining + " 小時"
                 );
-            } else {
-                alert(data.message || '任務完成失敗');
+                return;
             }
         }
+
+        // 記錄任務完成
+        const rewards = { eCoin: 10, sCoin: 5, score: 30 };
+        await addDoc(collection(db, 'task_records'), {
+            userId: currentUser.uid,
+            taskType: 'light_disc',
+            completedAt: serverTimestamp(),
+            rewards: rewards,
+            metadata: {}
+        });
+
+        // 更新使用者資料
+        eCoin += rewards.eCoin;
+        sCoin += rewards.sCoin;
+        score += rewards.score;
+        await updateUserData();
+        updateUI();
+
+        alert(
+            "🎉 任務完成！\n\n" +
+            "E幣 +" + rewards.eCoin + "\n" +
+            "S幣 +" + rewards.sCoin + "\n" +
+            "積分 +" + rewards.score + "\n\n" +
+            "⏰ 24小時後可再次領取"
+        );
     } catch (error) {
         console.error('完成任務失敗:', error);
         alert('任務完成失敗，請稍後再試');
@@ -282,18 +358,32 @@ async function finishTask(){
 }
 async function buyE(price, name){
     try {
-        // 先獲取物品ID（這裡簡化處理，實際應該從物品列表獲取）
-        const itemId = name === '環保杯' ? 'eco_cup' : name === '環保餐具' ? 'eco_utensils' : 'unknown';
-        
-        const data = await apiRequest('/exchange/redeem', 'POST', { itemId });
-
-        if (data.success) {
-            eCoin = data.remainingCoin;
-            updateUI();
-            alert("🎉 成功兌換：" + name);
-        } else {
-            alert(data.message || '兌換失敗');
+        if (!currentUser) {
+            alert('請先登入');
+            return;
         }
+
+        if (eCoin < price) {
+            alert('E幣不足');
+            return;
+        }
+
+        // 扣除 E幣
+        eCoin -= price;
+        await updateUserData();
+        updateUI();
+
+        // 記錄兌換
+        await addDoc(collection(db, 'exchange_records'), {
+            userId: currentUser.uid,
+            itemName: name,
+            itemType: 'E',
+            cost: price,
+            exchangedAt: serverTimestamp(),
+            status: 'completed'
+        });
+
+        alert("🎉 成功兌換：" + name);
     } catch (error) {
         console.error('兌換失敗:', error);
         alert('兌換失敗，請稍後再試');
@@ -302,17 +392,32 @@ async function buyE(price, name){
 
 async function buyS(price, name){
     try {
-        const itemId = 'stationery_set'; // 簡化處理
-        
-        const data = await apiRequest('/exchange/redeem', 'POST', { itemId });
-
-        if (data.success) {
-            sCoin = data.remainingCoin;
-            updateUI();
-            alert("🎉 成功兌換：" + name);
-        } else {
-            alert(data.message || '兌換失敗');
+        if (!currentUser) {
+            alert('請先登入');
+            return;
         }
+
+        if (sCoin < price) {
+            alert('S幣不足');
+            return;
+        }
+
+        // 扣除 S幣
+        sCoin -= price;
+        await updateUserData();
+        updateUI();
+
+        // 記錄兌換
+        await addDoc(collection(db, 'exchange_records'), {
+            userId: currentUser.uid,
+            itemName: name,
+            itemType: 'S',
+            cost: price,
+            exchangedAt: serverTimestamp(),
+            status: 'completed'
+        });
+
+        alert("🎉 成功兌換：" + name);
     } catch (error) {
         console.error('兌換失敗:', error);
         alert('兌換失敗，請稍後再試');
@@ -320,28 +425,61 @@ async function buyS(price, name){
 }
 async function submitSurvey(){
     try {
+        if (!currentUser) {
+            alert('請先登入');
+            return;
+        }
+
         let favorite = document.getElementById("favoriteFood").value;
         let hate = document.getElementById("hateFood").value;
 
-        const data = await apiRequest('/task/submit-survey', 'POST', { favoriteFood: favorite, hateFood: hate });
-
-        if (data.success) {
-            alert(
-                "✅ 問卷已送出！\n\n" +
-                "最喜歡：" + favorite + "\n" +
-                "最不喜歡：" + hate + "\n\n" +
-                "⏰ 24小時後可再次送出"
-            );
-        } else {
-            if (data.hoursRemaining) {
+        // 檢查是否已經在24小時內提交過問卷
+        const taskRecordsRef = collection(db, 'task_records');
+        const q = query(
+            taskRecordsRef,
+            where('userId', '==', currentUser.uid),
+            where('taskType', '==', 'survey'),
+            orderBy('completedAt', 'desc'),
+            limit(1)
+        );
+        const querySnapshot = await getDocs(q);
+        
+        const now = new Date();
+        const cooldownTime = 24 * 60 * 60 * 1000; // 24小時
+        
+        if (!querySnapshot.empty) {
+            const lastSurvey = querySnapshot.docs[0].data();
+            const lastCompletedAt = lastSurvey.completedAt.toDate();
+            const timeSinceLastSurvey = now - lastCompletedAt;
+            
+            if (timeSinceLastSurvey < cooldownTime) {
+                const hoursRemaining = Math.ceil((cooldownTime - timeSinceLastSurvey) / (60 * 60 * 1000));
                 alert(
                     "⏰ 尚未達到送出時間！\n\n" +
-                    "距離下次送出還需 " + data.hoursRemaining + " 小時"
+                    "距離下次送出還需 " + hoursRemaining + " 小時"
                 );
-            } else {
-                alert(data.message || '問卷送出失敗');
+                return;
             }
         }
+
+        // 記錄問卷提交
+        await addDoc(collection(db, 'task_records'), {
+            userId: currentUser.uid,
+            taskType: 'survey',
+            completedAt: serverTimestamp(),
+            rewards: { eCoin: 0, sCoin: 0, score: 0 },
+            metadata: {
+                favoriteFood: favorite,
+                hateFood: hate
+            }
+        });
+
+        alert(
+            "✅ 問卷已送出！\n\n" +
+            "最喜歡：" + favorite + "\n" +
+            "最不喜歡：" + hate + "\n\n" +
+            "⏰ 24小時後可再次送出"
+        );
     } catch (error) {
         console.error('提交問卷失敗:', error);
         alert('問卷送出失敗，請稍後再試');
@@ -400,85 +538,106 @@ function analyzeFood(){
         "🥗 剩最少：" + least.name + "（" + least.value + " 克）";
 
 }
-function calculateReward(){
+async function calculateReward(){
+    try {
+        if (!currentUser) {
+            alert('請先登入');
+            return;
+        }
 
-    // 檢查是否已填寫分析剩食資料
-    const food1 = Number(document.getElementById("food1").value);
-    const food2 = Number(document.getElementById("food2").value);
-    const food3 = Number(document.getElementById("food3").value);
-    const food4 = Number(document.getElementById("food4").value);
-    const food5 = Number(document.getElementById("food5").value);
+        // 檢查是否已填寫分析剩食資料
+        const food1 = Number(document.getElementById("food1").value);
+        const food2 = Number(document.getElementById("food2").value);
+        const food3 = Number(document.getElementById("food3").value);
+        const food4 = Number(document.getElementById("food4").value);
+        const food5 = Number(document.getElementById("food5").value);
 
-    if (food1 === 0 && food2 === 0 && food3 === 0 && food4 === 0 && food5 === 0) {
-        alert(
-            "❌ 請先填寫分析剩食資料！\n\n" +
-            "需要在午餐長專區填寫各項菜色的剩食克數"
-        );
-        return;
-    }
-
-    // 檢查上次領取時間
-    const lastClaimTime = localStorage.getItem('lastLeftoverRewardClaim');
-    const now = Date.now();
-    const cooldownTime = 24 * 60 * 60 * 1000; // 24小時（毫秒）
-
-    if (lastClaimTime) {
-        const timeSinceLastClaim = now - parseInt(lastClaimTime);
-        const hoursRemaining = Math.ceil((cooldownTime - timeSinceLastClaim) / (60 * 60 * 1000));
-
-        if (timeSinceLastClaim < cooldownTime) {
+        if (food1 === 0 && food2 === 0 && food3 === 0 && food4 === 0 && food5 === 0) {
             alert(
-                "⏰ 尚未達到領取時間！\n\n" +
-                "距離下次領取還需 " + hoursRemaining + " 小時"
+                "❌ 請先填寫分析剩食資料！\n\n" +
+                "需要在午餐長專區填寫各項菜色的剩食克數"
             );
             return;
         }
+
+        // 檢查上次領取時間
+        const taskRecordsRef = collection(db, 'task_records');
+        const q = query(
+            taskRecordsRef,
+            where('userId', '==', currentUser.uid),
+            where('taskType', '==', 'leftover_reward'),
+            orderBy('completedAt', 'desc'),
+            limit(1)
+        );
+        const querySnapshot = await getDocs(q);
+        
+        const now = new Date();
+        const cooldownTime = 24 * 60 * 60 * 1000; // 24小時
+        
+        if (!querySnapshot.empty) {
+            const lastReward = querySnapshot.docs[0].data();
+            const lastCompletedAt = lastReward.completedAt.toDate();
+            const timeSinceLastReward = now - lastCompletedAt;
+            
+            if (timeSinceLastReward < cooldownTime) {
+                const hoursRemaining = Math.ceil((cooldownTime - timeSinceLastReward) / (60 * 60 * 1000));
+                alert(
+                    "⏰ 尚未達到領取時間！\n\n" +
+                    "距離下次領取還需 " + hoursRemaining + " 小時"
+                );
+                return;
+            }
+        }
+
+        let leftover = Number(document.getElementById("leftover").value);
+
+        let addE = 0;
+        let addS = 0;
+
+        if(leftover <= 10){
+            addE = 20;
+            addS = 10;
+        }else if(leftover <= 30){
+            addE = 15;
+            addS = 8;
+        }else if(leftover <= 50){
+            addE = 10;
+            addS = 5;
+        }else{
+            addE = 5;
+            addS = 2;
+        }
+
+        eCoin += addE;
+        sCoin += addS;
+        
+        await updateUserData();
+        updateUI();
+
+        // 記錄剩食獎勵
+        await addDoc(collection(db, 'task_records'), {
+            userId: currentUser.uid,
+            taskType: 'leftover_reward',
+            completedAt: serverTimestamp(),
+            rewards: { eCoin: addE, sCoin: addS, score: 0 },
+            metadata: {
+                leftoverWeight: leftover,
+                foodAnalysis: {
+                    food1, food2, food3, food4, food5
+                }
+            }
+        });
+
+        alert(
+            "🎉 今日獎勵已發放！\n\n" +
+            "E幣 +" + addE + "\n" +
+            "S幣 +" + addS + "\n\n" +
+            "⏰ 24小時後可再次領取"
+        );
+    } catch (error) {
+        console.error('計算獎勵失敗:', error);
+        alert('計算獎勵失敗，請稍後再試');
     }
-
-    let leftover =
-        Number(document.getElementById("leftover").value);
-
-    let addE = 0;
-    let addS = 0;
-
-    if(leftover <= 10){
-
-        addE = 20;
-        addS = 10;
-
-    }else if(leftover <= 30){
-
-        addE = 15;
-        addS = 8;
-
-    }else if(leftover <= 50){
-
-        addE = 10;
-        addS = 5;
-
-    }else{
-
-        addE = 5;
-        addS = 2;
-
-    }
-
-    eCoin += addE;
-    sCoin += addS;
-
-    document.getElementById("ecoin").innerHTML = eCoin;
-    document.getElementById("scoin").innerHTML = sCoin;
-
-    // 記錄本次領取時間
-    localStorage.setItem('lastLeftoverRewardClaim', now.toString());
-
-    alert(
-        "🎉 今日獎勵已發放！\n\n" +
-        "E幣 +" + addE + "\n" +
-        "S幣 +" + addS + "\n\n" +
-        "⏰ 24小時後可再次領取"
-    );
-
 }
 
 // 抽獎相關功能

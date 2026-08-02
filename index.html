@@ -8,8 +8,14 @@
     <link rel="stylesheet" href="style.css">
     
     <!-- Firebase SDK -->
-    <script src="https://www.gstatic.com/firebasejs/9.22.0/firebase-app-compat.js"></script>
-    <script src="https://www.gstatic.com/firebasejs/9.22.0/firebase-auth-compat.js"></script>
+    <script type="module">
+        import { initializeApp } from 'https://www.gstatic.com/firebasejs/12.17.0/firebase-app.js';
+        import { getAuth } from 'https://www.gstatic.com/firebasejs/12.17.0/firebase-auth.js';
+        import { getFirestore, doc, getDoc, setDoc, updateDoc, collection, query, where, orderBy, limit, getDocs, addDoc, serverTimestamp } from 'https://www.gstatic.com/firebasejs/12.17.0/firebase-firestore.js';
+        
+        // 將 Firebase 函數暴露到全局作用域
+        window.firebaseApp = { initializeApp, getAuth, getFirestore, doc, getDoc, setDoc, updateDoc, collection, query, where, orderBy, limit, getDocs, addDoc, serverTimestamp };
+    </script>
 </head>
 <body>
 
@@ -347,7 +353,7 @@
 </div>
 
 <script src="firebase-config.js"></script>
-<script src="app.js"></script>
+<script type="module" src="app.js"></script>
 
 </body>
 </html>
