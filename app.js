@@ -103,26 +103,38 @@ async function handleRegister() {
 
   try {
     // 呼叫後端註冊 API
+    console.log('開始註冊，API:', `${API_BASE_URL}/auth/register`);
     const response = await fetch(`${API_BASE_URL}/auth/register`, {
       method: 'POST',
       headers: { 'Content-Type': 'application/json' },
       body: JSON.stringify({ email, password, displayName: name })
     });
 
-    const data = await response.json();
+    let data;
+    const responseText = await response.text();
+    try {
+      data = JSON.parse(responseText);
+    } catch (e) {
+      console.error('伺服器回應不是 JSON:', responseText);
+      throw new Error(`伺服器回應錯誤：${response.status} ${response.statusText}`);
+    }
+
+    console.log('註冊 API 回應:', data);
 
     if (data.success) {
       // 自動登入
+      console.log('後端註冊成功，開始 Firebase 登入');
       await firebase.auth().setPersistence(firebase.auth.Auth.Persistence.LOCAL)
         .then(() => firebase.auth().signInWithEmailAndPassword(email, password));
       idToken = await firebase.auth().currentUser.getIdToken();
       errorElement.textContent = '';
+      console.log('Firebase 登入成功');
     } else {
       errorElement.textContent = data.message || '註冊失敗';
     }
   } catch (error) {
     console.error('註冊失敗:', error);
-    errorElement.textContent = '註冊失敗，請稍後再試';
+    errorElement.textContent = '註冊失敗：' + (error.message || '請稍後再試');
   } finally {
     registerBtn.disabled = false;
     registerBtn.textContent = '註冊';

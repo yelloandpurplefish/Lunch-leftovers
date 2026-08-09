@@ -13,6 +13,7 @@ const lotteryRoutes = require('./routes/lottery');
 const exchangeRoutes = require('./routes/exchange');
 const leaderboardRoutes = require('./routes/leaderboard');
 const analysisRoutes = require('./routes/analysis');
+const debugRoutes = require('./routes/debug');
 
 const app = express();
 const PORT = process.env.PORT || 3000;
@@ -79,6 +80,12 @@ app.use('/api/lottery', lotteryRoutes);
 app.use('/api/exchange', exchangeRoutes);
 app.use('/api/leaderboard', leaderboardRoutes);
 app.use('/api/analysis', analysisRoutes);
+
+// 開發/測試端點（僅在非生產環境啟用）
+if (process.env.NODE_ENV !== 'production') {
+  app.use('/api/debug', debugRoutes);
+  console.log('🔧 開發/測試端點已啟用: /api/debug');
+}
 
 // 健康檢查
 app.get('/health', (req, res) => {

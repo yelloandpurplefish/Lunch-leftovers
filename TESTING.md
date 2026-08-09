@@ -5,12 +5,8 @@
 ### 1. 安裝依賴
 
 ```bash
-# 安裝後端依賴
-cd backend
+# 安裝所有依賴（包含後端）
 npm install
-
-# 或使用根目錄腳本
-npm run install-backend
 ```
 
 ### 2. 設置環境變數
@@ -29,7 +25,12 @@ NODE_ENV=development
 
 # Firebase Admin SDK 配置
 FIREBASE_DATABASE_URL=https://your-project-id.firebaseio.com
+
+# 或者使用環境變數
+# FIREBASE_SERVICE_ACCOUNT_KEY={"type":"service_account",...}
 ```
+
+將 Firebase Service Account Key JSON 文件放在 `backend/service-account-key.json`。
 
 ### 3. 設置 Firebase 配置
 
@@ -51,18 +52,101 @@ const firebaseConfig = {
 ### 開發模式（自動重啟）
 
 ```bash
-cd backend
 npm run dev
 ```
 
 ### 生產模式
 
 ```bash
-cd backend
 npm start
 ```
 
 服務器將在 `http://localhost:3000` 啟動
+
+## 🔥 測試 Firebase 串接
+
+### 方法 1：使用後端測試端點
+
+啟動服務器後，訪問：
+
+```bash
+curl http://localhost:3000/api/debug/firebase
+```
+
+預期回應：
+```json
+{
+  "success": true,
+  "message": "Firebase 連接測試完成",
+  "auth": { "success": true, "message": "Auth 連接正常" },
+  "firestore": { "success": true, "message": "Firestore 連接正常", "userCount": 0 },
+  "projectId": "your-project-id"
+}
+```
+
+### 方法 2：使用命令列腳本
+
+```bash
+npm run test:firebase
+```
+
+如果 Firestore 連接成功，會顯示 `Firestore OK`。
+
+### 常見問題
+
+**Firebase 未初始化**
+- 確認 `backend/.env` 或環境變數設置正確
+- 確認 `backend/service-account-key.json` 存在且有效
+- 確認 `FIREBASE_DATABASE_URL` 正確
+
+## 👥 建立測試帳號
+
+### 方法 1：使用種子腳本（推薦）
+
+```bash
+# 使用預設密碼
+npm run seed
+
+# 或使用自訂密碼
+$env:TEST_USER_PASSWORD="YourPassword123"  # Windows PowerShell
+# 或
+set TEST_USER_PASSWORD=YourPassword123       # Windows CMD
+# 或
+export TEST_USER_PASSWORD=YourPassword123    # Linux/Mac
+
+npm run seed
+```
+
+預設會建立以下帳號：
+
+| Email | 角色 | 初始 E幣 | 初始 S幣 | 初始積分 |
+|-------|------|---------|---------|---------|
+| dev@example.com | admin | 1000 | 500 | 10000 |
+| teacher@example.com | teacher | 500 | 300 | 5000 |
+| student1@example.com | student | 100 | 50 | 1000 |
+| student2@example.com | student | 100 | 50 | 1000 |
+
+密碼預設為 `Test@123456`（可透過 `TEST_USER_PASSWORD` 環境變數修改）。
+
+### 方法 2：使用後端 API
+
+```bash
+curl -X POST http://localhost:3000/api/debug/create-test-user \
+  -H "Content-Type: application/json" \
+  -d '{
+    "email": "test@example.com",
+    "password": "Test@123456",
+    "displayName": "測試使用者",
+    "role": "student"
+  }'
+```
+
+### ⚠️ 安全提醒
+
+- 測試帳號僅供開發使用
+- 生產環境中 `/api/debug` 端點會自動禁用
+- 請勿將測試帳號密碼提交到 Git
+- 部署前請刪除測試帳號
 
 ## 🧪 功能測試
 
