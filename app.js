@@ -256,14 +256,16 @@ async function apiRequest(endpoint, method = 'GET', body = null) {
 // 底部導覽列顯示/隱藏
 window.addEventListener('scroll', function() {
     const bottomNav = document.querySelector('.bottom-nav');
-    const scrollPosition = window.innerHeight + window.scrollY;
-    const pageHeight = document.body.offsetHeight;
+    if (!bottomNav) return;
     
-    // 當滾動到距離底部 100px 以內時顯示
-    if (pageHeight - scrollPosition < 100) {
-        bottomNav.style.transform = 'translateY(0)';
+    const scrollPosition = window.innerHeight + window.scrollY;
+    const pageHeight = document.documentElement.scrollHeight;
+    
+    // 當滾動到距離底部 150px 以內時顯示，避免遮擋內容
+    if (pageHeight - scrollPosition < 150) {
+        bottomNav.classList.add('visible');
     } else {
-        bottomNav.style.transform = 'translateY(100%)';
+        bottomNav.classList.remove('visible');
     }
 });
 

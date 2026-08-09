@@ -9,6 +9,7 @@
 body{
     background:linear-gradient(#dff6df,#f5fff5);
     min-height:100vh;
+    padding-bottom:80px;
 }
 
 /* ===== 標題 ===== */
@@ -595,9 +596,19 @@ td{
 
     bottom:0;
 
+    left:0;
+
+    z-index:1000;
+
     transform:translateY(100%);
 
     transition:transform 0.3s ease;
+
+}
+
+.bottom-nav.visible{
+
+    transform:translateY(0);
 
 }
 
@@ -613,11 +624,19 @@ td{
 
     cursor:pointer;
 
+    padding:8px 16px;
+
+    border-radius:8px;
+
+    transition:background .2s;
+
 }
 
 .bottom-nav button:hover{
 
     color:#1b5e20;
+
+    background:rgba(76,175,80,.1);
 
 }
 /* ===== 獎勵商城 ===== */
