@@ -31,19 +31,24 @@
 
 3. **設置環境變數**
    - `FIREBASE_DATABASE_URL`: 您的 Firebase 資料庫 URL
+   - `FIREBASE_SERVICE_ACCOUNT_KEY`: 您的 Firebase 服務帳戶金鑰（JSON 單行字符串）
    - `NODE_ENV`: production
    - `PORT`: 3000
 
 4. **部署**
    - 點擊 Deploy
-   - Render 會自動構建和啟動
+   - Render 會執行 `npm install` 並啟動 `node backend/server.js`
 
 #### 關於 Firebase Service Account Key：
 
 在 Render 環境變數中添加：
-- 下載 Firebase Service Account Key JSON
+- 前往 Firebase Console > 專案設定 > 服務帳戶
+- 點擊「產生新的私密金鑰」
+- 下載 JSON 檔案
 - 將 JSON 內容轉換為單行字符串
-- 設置環境變數 `FIREBASE_SERVICE_ACCOUNT_KEY`
+- 在 Render 設置環境變數 `FIREBASE_SERVICE_ACCOUNT_KEY`
+
+**重要：** 不要將 Service Account Key JSON 提交到 Git
 
 ### 2. 手動部署
 

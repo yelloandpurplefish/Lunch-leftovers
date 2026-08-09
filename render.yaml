@@ -3,7 +3,7 @@ services:
   - type: web
     name: food-guardian-backend
     env: node
-    buildCommand: cd backend && npm install
+    buildCommand: npm install
     startCommand: node backend/server.js
     envVars:
       - key: NODE_VERSION
@@ -13,4 +13,6 @@ services:
       - key: NODE_ENV
         value: production
       - key: FIREBASE_DATABASE_URL
+        sync: false
+      - key: FIREBASE_SERVICE_ACCOUNT_KEY
         sync: false
