@@ -13,29 +13,18 @@ const redeemItem = async (req, res) => {
       });
     }
 
-    // 獲取物品資訊
-    const itemDoc = await db.collection('reward_items').doc(itemId).get();
-    if (!itemDoc.exists) {
+    // 定義物品配置（暫時硬編碼，後續可從資料庫讀取）
+    const itemConfig = {
+      'eco_cup': { name: '環保杯', cost: 50, costType: 'E' },
+      'eco_utensils': { name: '環保餐具', cost: 80, costType: 'E' },
+      'stationery_set': { name: '文具禮包', cost: 30, costType: 'S' }
+    };
+
+    const item = itemConfig[itemId];
+    if (!item) {
       return res.status(404).json({
         success: false,
         message: '物品不存在'
-      });
-    }
-
-    const itemData = itemDoc.data();
-
-    if (!itemData.isActive) {
-      return res.status(400).json({
-        success: false,
-        message: '物品已下架'
-      });
-    }
-
-    // 檢查庫存
-    if (itemData.stock !== null && itemData.stock <= 0) {
-      return res.status(400).json({
-        success: false,
-        message: '物品庫存不足'
       });
     }
 
@@ -44,34 +33,27 @@ const redeemItem = async (req, res) => {
     const userData = userDoc.data();
 
     // 檢查貨幣是否足夠
-    const coinField = itemData.costType === 'E' ? 'eCoin' : 'sCoin';
-    if (userData[coinField] < itemData.cost) {
+    const coinField = item.costType === 'E' ? 'eCoin' : 'sCoin';
+    if (userData[coinField] < item.cost) {
       return res.status(400).json({
         success: false,
-        message: `${itemData.costType}幣不足`,
-        required: itemData.cost,
+        message: `${item.costType}幣不足`,
+        required: item.cost,
         current: userData[coinField]
       });
     }
 
     // 扣除貨幣
     await db.collection('users').doc(userId).update({
-      [coinField]: admin.firestore.FieldValue.increment(-itemData.cost)
+      [coinField]: admin.firestore.FieldValue.increment(-item.cost)
     });
-
-    // 更新庫存
-    if (itemData.stock !== null) {
-      await db.collection('reward_items').doc(itemId).update({
-        stock: admin.firestore.FieldValue.increment(-1)
-      });
-    }
 
     // 記錄兌換
     const exchangeRecord = await db.collection('exchange_records').add({
       userId,
-      itemName: itemData.name,
-      itemType: itemData.costType,
-      cost: itemData.cost,
+      itemName: item.name,
+      itemType: item.costType,
+      cost: item.cost,
       exchangedAt: admin.firestore.FieldValue.serverTimestamp(),
       status: 'completed'
     });
@@ -86,8 +68,8 @@ const redeemItem = async (req, res) => {
       remainingCoin: updatedUserData[coinField],
       exchangeRecord: {
         recordId: exchangeRecord.id,
-        itemName: itemData.name,
-        cost: itemData.cost
+        itemName: item.name,
+        cost: item.cost
       }
     });
   } catch (error) {

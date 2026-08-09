@@ -1,5 +1,4 @@
-const jwt = require('jsonwebtoken');
-const { auth } = require('../config/firebase');
+const { auth, db } = require('../config/firebase');
 
 // 驗證 Firebase Token 的中介軟體
 const verifyFirebaseToken = async (req, res, next) => {

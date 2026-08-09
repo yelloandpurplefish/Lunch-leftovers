@@ -9,13 +9,13 @@ const firebaseConfig = {
   appId: "YOUR_APP_ID"
 };
 
-// Initialize Firebase
-const app = window.firebaseApp.initializeApp(firebaseConfig);
-const auth = window.firebaseApp.getAuth(app);
-const db = window.firebaseApp.getFirestore(app);
+// Initialize Firebase - 僅用於身份驗證
+firebase.initializeApp(firebaseConfig);
 
-// Backend API URL - 請根據實際部署修改
-const API_BASE_URL = 'http://localhost:3000/api';
+// Backend API URL - 自動檢測環境
+const API_BASE_URL = window.location.hostname === 'localhost' || window.location.hostname === '127.0.0.1'
+  ? 'http://localhost:3000/api'
+  : `${window.location.origin}/api`;
 
 // 全局變數
 let currentUser = null;

@@ -2,12 +2,13 @@
   "name": "food-guardian",
   "version": "1.0.0",
   "description": "食安守護者 - 校園食安教育遊戲化應用",
-  "main": "index.html",
+  "main": "backend/server.js",
   "scripts": {
-    "start": "echo '靜態前端應用，請使用靜態網站託管服務部署'",
-    "deploy:render": "echo '請參考 DEPLOYMENT.md 了解部署方式'"
+    "start": "node backend/server.js",
+    "dev": "cd backend && npm run dev",
+    "install-backend": "cd backend && npm install"
   },
-  "keywords": ["food", "safety", "education", "firebase", "frontend"],
+  "keywords": ["food", "safety", "education", "firebase", "dynamic-web"],
   "author": "",
   "license": "ISC",
   "devDependencies": {},

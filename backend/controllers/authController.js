@@ -1,5 +1,4 @@
-const { auth, db } = require('../config/firebase');
-const { verifyFirebaseToken } = require('../middleware/auth');
+const { admin, auth, db } = require('../config/firebase');
 
 // 註冊新使用者
 const register = async (req, res) => {
@@ -62,29 +61,46 @@ const register = async (req, res) => {
   }
 };
 
-// 登入
+// 驗證登入 Token 並回傳使用者資料
 const login = async (req, res) => {
   try {
-    const { email, password } = req.body;
+    const { uid, email } = req.user;
 
-    if (!email || !password) {
-      return res.status(400).json({
+    // 獲取使用者資料
+    const userDoc = await db.collection('users').doc(uid).get();
+
+    if (!userDoc.exists) {
+      return res.status(404).json({
         success: false,
-        message: '請提供 Email 和密碼'
+        message: '使用者不存在'
       });
     }
 
-    // Firebase Auth 登入由前端處理，後端只驗證 Token
-    // 這裡提供一個簡化的登入介面，實際應該由前端使用 Firebase SDK 登入後獲取 Token
+    // 更新最後登入時間
+    await db.collection('users').doc(uid).update({
+      lastLoginAt: admin.firestore.FieldValue.serverTimestamp()
+    });
+
+    const userData = userDoc.data();
+
     res.status(200).json({
       success: true,
-      message: '請使用 Firebase SDK 進行登入，然後使用 ID Token 呼叫 API'
+      message: '登入驗證成功',
+      user: {
+        uid,
+        email,
+        displayName: userData.displayName,
+        eCoin: userData.eCoin,
+        sCoin: userData.sCoin,
+        score: userData.score,
+        role: userData.role
+      }
     });
   } catch (error) {
-    console.error('登入失敗:', error);
+    console.error('登入驗證失敗:', error);
     res.status(500).json({
       success: false,
-      message: error.message || '登入失敗'
+      message: error.message || '登入驗證失敗'
     });
   }
 };

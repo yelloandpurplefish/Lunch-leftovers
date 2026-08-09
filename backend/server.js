@@ -3,6 +3,7 @@ const express = require('express');
 const cors = require('cors');
 const helmet = require('helmet');
 const rateLimit = require('express-rate-limit');
+const path = require('path');
 
 // 路由
 const authRoutes = require('./routes/auth');
@@ -17,30 +18,58 @@ const app = express();
 const PORT = process.env.PORT || 3000;
 
 // 安全中介軟體
-app.use(helmet());
+app.use(helmet({
+  contentSecurityPolicy: {
+    directives: {
+      defaultSrc: ["'self'"],
+      scriptSrc: ["'self'", "https://www.gstatic.com", "'unsafe-inline'"],
+      styleSrc: ["'self'", "'unsafe-inline'"],
+      imgSrc: ["'self'", "data:", "https:"],
+      connectSrc: ["'self'", "https://*.googleapis.com", "https://*.google-analytics.com"],
+      fontSrc: ["'self'"],
+      objectSrc: ["'none'"],
+      upgradeInsecureRequests: []
+    }
+  },
+  crossOriginEmbedderPolicy: false // 允許嵌入 YouTube 影片
+}));
 
 // CORS 設定
-app.use(cors({
-  origin: process.env.NODE_ENV === 'production' 
+const allowedOrigins = process.env.CORS_ORIGINS
+  ? process.env.CORS_ORIGINS.split(',')
+  : (process.env.NODE_ENV === 'production' 
     ? ['https://your-domain.com'] 
-    : ['http://localhost:3000', 'http://127.0.0.1:5500'],
+    : ['http://localhost:3000', 'http://127.0.0.1:5500', 'http://localhost:5500']);
+
+app.use(cors({
+  origin: allowedOrigins,
   credentials: true
 }));
+
+// 請求日志（僅開發環境）
+if (process.env.NODE_ENV !== 'production') {
+  app.use((req, res, next) => {
+    console.log(`${new Date().toISOString()} ${req.method} ${req.path}`);
+    next();
+  });
+}
 
 // 解析 JSON
 app.use(express.json());
 
-// 速率限制
-const limiter = rateLimit({
+// API 速率限制
+const apiLimiter = rateLimit({
   windowMs: 15 * 60 * 1000, // 15 分鐘
-  max: 100, // 限制每個 IP 100 次請求
+  max: process.env.NODE_ENV === 'production' ? 100 : 1000, // 生產環境 100，開發 1000
   message: {
     success: false,
     message: '請求過於頻繁，請稍後再試'
-  }
+  },
+  standardHeaders: true,
+  legacyHeaders: false
 });
 
-app.use('/api/', limiter);
+app.use('/api/', apiLimiter);
 
 // API 路由
 app.use('/api/auth', authRoutes);
@@ -58,6 +87,17 @@ app.get('/health', (req, res) => {
     message: '伺服器運行正常',
     timestamp: new Date().toISOString()
   });
+});
+
+// 提供靜態文件
+app.use(express.static(path.join(__dirname, '..')));
+
+// 處理 SPA 路由 - 所有 GET 非 API 請求都返回 index.html
+app.get('*', (req, res, next) => {
+  if (req.path.startsWith('/api')) {
+    return next();
+  }
+  res.sendFile(path.join(__dirname, '..', 'index.html'));
 });
 
 // 404 處理
@@ -81,6 +121,7 @@ app.use((err, req, res, next) => {
 app.listen(PORT, () => {
   console.log(`🚀 伺服器運行在 http://localhost:${PORT}`);
   console.log(`📊 健康檢查: http://localhost:${PORT}/health`);
+  console.log(`🌐 前端頁面: http://localhost:${PORT}`);
 });
 
 module.exports = app;

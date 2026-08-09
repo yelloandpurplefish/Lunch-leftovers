@@ -1,8 +1,13 @@
-const { db } = require('../config/firebase');
+const { db, admin } = require('../config/firebase');
 
 // 獲取使用者資料
 const getProfile = async (req, res) => {
   try {
+    // 更新最後登入時間
+    await db.collection('users').doc(req.user.uid).update({
+      lastLoginAt: admin.firestore.FieldValue.serverTimestamp()
+    });
+
     const userDoc = await db.collection('users').doc(req.user.uid).get();
 
     if (!userDoc.exists) {
