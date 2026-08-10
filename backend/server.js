@@ -19,14 +19,25 @@ const app = express();
 const PORT = process.env.PORT || 3000;
 
 // 安全中介軟體
+// 註：前端不使用任何內聯 script/onclick，因此無需 'unsafe-inline'
 app.use(helmet({
   contentSecurityPolicy: {
     directives: {
       defaultSrc: ["'self'"],
-      scriptSrc: ["'self'", "https://www.gstatic.com", "'unsafe-inline'"],
-      styleSrc: ["'self'", "'unsafe-inline'"],
+      // Firebase SDK 由 gstatic CDN 載入
+      scriptSrc: ["'self'", "https://www.gstatic.com"],
+      styleSrc: ["'self'"],
       imgSrc: ["'self'", "data:", "https:"],
-      connectSrc: ["'self'", "https://*.googleapis.com", "https://*.google-analytics.com"],
+      // Firebase Auth 需連線 identitytoolkit / securetoken，source map 需 gstatic
+      connectSrc: [
+        "'self'",
+        "https://*.googleapis.com",
+        "https://identitytoolkit.googleapis.com",
+        "https://securetoken.googleapis.com",
+        "https://www.gstatic.com"
+      ],
+      // 允許嵌入 YouTube 影片
+      frameSrc: ["https://www.youtube.com", "https://www.youtube-nocookie.com"],
       fontSrc: ["'self'"],
       objectSrc: ["'none'"],
       upgradeInsecureRequests: []
@@ -38,8 +49,8 @@ app.use(helmet({
 // CORS 設定
 const allowedOrigins = process.env.CORS_ORIGINS
   ? process.env.CORS_ORIGINS.split(',')
-  : (process.env.NODE_ENV === 'production' 
-    ? ['https://your-domain.com'] 
+  : (process.env.NODE_ENV === 'production'
+    ? ['https://lunch-leftovers.onrender.com']
     : ['http://localhost:3000', 'http://127.0.0.1:5500', 'http://localhost:5500']);
 
 app.use(cors({

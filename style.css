@@ -1,3 +1,16 @@
+/* ===== 錯誤橫幅 ===== */
+.error-banner{
+    background:#f44336;
+    color:white;
+    padding:15px;
+    text-align:center;
+    position:fixed;
+    top:0;
+    left:0;
+    width:100%;
+    z-index:9999;
+}
+
 /* ===== 基本設定 ===== */
 *{
     margin:0;
@@ -574,6 +587,12 @@ td{
     padding:12px;
 
     border-bottom:1px solid #ddd;
+
+}
+
+.my-rank-row{
+
+    background:#e8f5e9;
 
 }
 /* ===== 底部導覽列 ===== */

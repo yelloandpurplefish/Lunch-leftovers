@@ -11,14 +11,8 @@
     <link rel="stylesheet" href="style.css">
     
     <!-- Firebase SDK (compat version) - 僅用於身份驗證 -->
-    <script src="https://www.gstatic.com/firebasejs/9.22.0/firebase-app-compat.js" onerror="handleScriptError('Firebase App SDK')" onload="console.log('Firebase App SDK 載入成功')"></script>
-    <script src="https://www.gstatic.com/firebasejs/9.22.0/firebase-auth-compat.js" onerror="handleScriptError('Firebase Auth SDK')" onload="console.log('Firebase Auth SDK 載入成功')"></script>
-    <script>
-      function handleScriptError(scriptName) {
-        console.error(scriptName + ' 載入失敗');
-        document.body.insertAdjacentHTML('afterbegin', '<div style="background:#f44336;color:white;padding:15px;text-align:center;position:fixed;top:0;left:0;width:100%;z-index:9999;">' + scriptName + ' 載入失敗，請檢查網路連接並重新整理頁面</div>');
-      }
-    </script>
+    <script src="https://www.gstatic.com/firebasejs/9.22.0/firebase-app-compat.js"></script>
+    <script src="https://www.gstatic.com/firebasejs/9.22.0/firebase-auth-compat.js"></script>
 </head>
 <body>
 
@@ -35,15 +29,15 @@
 
         <div class="video-box">
 
-    <iframe width="100%" height="315" src="https://www.youtube.com/watch?v=IDVkzhq6cig" referrerpolicy="strict-origin-when-cross-origin" title="食安宣導影片" frameborder="0" allow="accelerometer; autoplay; clipboard-write; encrypted-media; gyroscope; picture-in-picture" allowfullscreen></iframe>
+    <iframe width="100%" height="315" src="https://www.youtube.com/embed/IDVkzhq6cig" referrerpolicy="strict-origin-when-cross-origin" title="食安宣導影片" frameborder="0" allow="accelerometer; autoplay; clipboard-write; encrypted-media; gyroscope; picture-in-picture" allowfullscreen></iframe>
 
 </div>
 
         <!-- 登入/註冊表單 -->
         <div class="auth-container" id="authContainer">
             <div class="auth-tabs">
-                <button class="auth-tab active" onclick="switchTab('login')">登入</button>
-                <button class="auth-tab" onclick="switchTab('register')">註冊</button>
+                <button class="auth-tab active" data-action="switchTab" data-arg="login">登入</button>
+                <button class="auth-tab" data-action="switchTab" data-arg="register">註冊</button>
             </div>
 
             <!-- 登入表單 -->
@@ -56,7 +50,7 @@
                     <label>密碼：</label>
                     <input type="password" id="loginPassword" placeholder="請輸入密碼">
                 </div>
-                <button onclick="handleLogin()" class="auth-btn">登入</button>
+                <button data-action="handleLogin" class="auth-btn">登入</button>
                 <p id="loginError" class="error-message"></p>
             </div>
 
@@ -78,7 +72,7 @@
                     <label>確認密碼：</label>
                     <input type="password" id="registerConfirmPassword" placeholder="再次輸入密碼">
                 </div>
-                <button onclick="handleRegister()" class="auth-btn">註冊</button>
+                <button data-action="handleRegister" class="auth-btn">註冊</button>
                 <p id="registerError" class="error-message"></p>
             </div>
         </div>
@@ -102,20 +96,20 @@
                     </div>
                 </div>
             </div>
-            <button onclick="startApp()" class="start-btn">開始使用</button>
-            <button onclick="handleLogout()" class="logout-btn">登出</button>
+            <button data-action="startApp" class="start-btn">開始使用</button>
+            <button data-action="handleLogout" class="logout-btn">登出</button>
         </div>
 
     </section>
 <nav class="bottom-nav">
 
-    <button onclick="scrollToSection('home')">🏠<br>首頁</button>
+    <button data-action="scrollToSection" data-arg="home">🏠<br>首頁</button>
 
-    <button onclick="scrollToSection('ranking')">🏆<br>排行榜</button>
+    <button data-action="scrollToSection" data-arg="ranking">🏆<br>排行榜</button>
 
-    <button onclick="scrollToSection('shop')">🎁<br>兌換</button>
+    <button data-action="scrollToSection" data-arg="shop">🎁<br>兌換</button>
 
-    <button onclick="scrollToSection('leader')">👤<br>我的</button>
+    <button data-action="scrollToSection" data-arg="leader">👤<br>我的</button>
 
 </nav>
 
@@ -164,7 +158,7 @@
 
             <h2>✅ 今日任務</h2>
 
-            <button onclick="finishTask()">
+            <button data-action="finishTask">
 
                 完成午餐光碟行動
 
@@ -201,7 +195,7 @@
             <td>3100</td>
         </tr>
 
-        <tr style="background:#e8f5e9;">
+        <tr class="my-rank-row">
             <td>⭐</td>
             <td>你</td>
             <td id="myRankScore">0</td>
@@ -214,25 +208,25 @@
 
     <div class="shop-header">
         <h2>🎁 獎勵兌換商城</h2>
-        <button class="lottery-btn" onclick="openLottery()">🎰 幸運抽獎</button>
+        <button class="lottery-btn" data-action="openLottery">🎰 幸運抽獎</button>
     </div>
 
     <div class="gift">
         <h3>🥤 環保杯</h3>
         <p>需要：50 E幣</p>
-        <button onclick="buyE(50,'環保杯')">兌換</button>
+        <button data-action="buyE" data-price="50" data-item="環保杯">兌換</button>
     </div>
 
     <div class="gift">
         <h3>🍴 環保餐具</h3>
         <p>需要：80 E幣</p>
-        <button onclick="buyE(80,'環保餐具')">兌換</button>
+        <button data-action="buyE" data-price="80" data-item="環保餐具">兌換</button>
     </div>
 
     <div class="gift">
         <h3>✏️ 文具禮包</h3>
         <p>需要：30 S幣</p>
-        <button onclick="buyS(30,'文具禮包')">兌換</button>
+        <button data-action="buyS" data-price="30" data-item="文具禮包">兌換</button>
     </div>
 <div class="survey">
 <div class="leader" id="leader">
@@ -248,7 +242,7 @@
 
     <br><br>
 
-    <button onclick="calculateReward()">
+    <button data-action="calculateReward">
         領取今日獎勵
     </button>
 
@@ -290,7 +284,7 @@
 
     <br>
 
-    <button onclick="analyzeFood()">
+    <button data-action="analyzeFood">
         📊 分析剩食
     </button>
 
@@ -330,7 +324,7 @@
 
     <br><br>
 
-    <button onclick="submitSurvey()">
+    <button data-action="submitSurvey">
 
         送出問卷
 
@@ -343,11 +337,11 @@
 <!-- 抽獎彈窗 -->
 <div id="lotteryModal" class="lottery-modal">
     <div class="lottery-content">
-        <span class="close-btn" onclick="closeLottery()">&times;</span>
+        <span class="close-btn" data-action="closeLottery">&times;</span>
         <h2>🎰 幸運抽獎</h2>
         <p>消耗 10 E幣進行抽獎</p>
         <div id="lotteryResult" class="lottery-result"></div>
-        <button class="spin-btn" onclick="spinLottery()">開始抽獎</button>
+        <button class="spin-btn" data-action="spinLottery">開始抽獎</button>
     </div>
 </div>
 
@@ -357,21 +351,6 @@
 
 <script src="firebase-config.js"></script>
 <script src="app.js"></script>
-<script>
-    // 頁面載入後的簡易診斷
-    window.addEventListener('load', function() {
-        console.log('=== 食安守護者診斷 ===');
-        console.log('Firebase 定義:', typeof firebase !== 'undefined');
-        console.log('switchTab 定義:', typeof switchTab !== 'undefined');
-        console.log('handleLogin 定義:', typeof handleLogin !== 'undefined');
-        console.log('handleRegister 定義:', typeof handleRegister !== 'undefined');
-        console.log('API_BASE_URL:', typeof API_BASE_URL !== 'undefined' ? API_BASE_URL : '未定義');
-        
-        if (typeof switchTab === 'undefined') {
-            document.body.insertAdjacentHTML('afterbegin', '<div style="background:#f44336;color:white;padding:15px;text-align:center;position:fixed;top:0;left:0;width:100%;z-index:9999;">應用程式載入失敗，請打開瀏覽器控制台（F12）查看錯誤</div>');
-        }
-    });
-</script>
 
 </body>
 </html>

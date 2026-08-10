@@ -10,14 +10,22 @@ const configAvailable = typeof currentUser !== 'undefined' &&
                        typeof idToken !== 'undefined' &&
                        typeof API_BASE_URL !== 'undefined';
 
+// 顯示頂部錯誤橫幅
+function showErrorBanner(message) {
+  const banner = document.createElement('div');
+  banner.className = 'error-banner';
+  banner.textContent = message;
+  document.body.prepend(banner);
+}
+
 if (!firebaseAvailable) {
-  console.error('Firebase 未正確載入，請檢查 firebase-config.js 和網路連接');
-  // 不要 throw，讓其他 UI 函數仍然可以定義
+  console.error('Firebase SDK 未載入，請檢查網路連接');
+  showErrorBanner('Firebase SDK 載入失敗，請檢查網路連接並重新整理頁面');
 }
 
 if (!configAvailable) {
   console.error('firebase-config.js 未正確載入');
-  // 不要 throw，讓其他 UI 函數仍然可以定義
+  showErrorBanner('設定檔載入失敗，請重新整理頁面');
 }
 
 // 初始化時檢查登入狀態
@@ -39,8 +47,6 @@ if (firebaseAvailable) {
       showAuthForm();
     }
   });
-} else {
-  console.warn('Firebase 不可用，登入/註冊功能將無法使用');
 }
 
 // 切換登入/註冊標籤
@@ -666,21 +672,41 @@ function createConfetti(){
     }
 }
 
-// 將關鍵函數暴露到全域作用域，確保 HTML 的 onclick 可以呼叫
-if (typeof window !== 'undefined') {
-    window.switchTab = switchTab;
-    window.handleLogin = handleLogin;
-    window.handleRegister = handleRegister;
-    window.handleLogout = handleLogout;
-    window.startApp = startApp;
-    window.finishTask = finishTask;
-    window.buyE = buyE;
-    window.buyS = buyS;
-    window.submitSurvey = submitSurvey;
-    window.calculateReward = calculateReward;
-    window.scrollToSection = scrollToSection;
-    window.openLottery = openLottery;
-    window.closeLottery = closeLottery;
-    window.spinLottery = spinLottery;
-    console.log('所有按鈕事件函數已註冊到 window 物件');
-}
+// ======================
+// 事件綁定（取代 HTML 內聯 onclick，符合嚴格 CSP）
+// ======================
+
+// data-action 對應的處理函數
+const ACTION_HANDLERS = {
+    switchTab: (el) => switchTab(el.dataset.arg),
+    handleLogin,
+    handleRegister,
+    handleLogout,
+    startApp,
+    finishTask,
+    buyE: (el) => buyE(Number(el.dataset.price), el.dataset.item),
+    buyS: (el) => buyS(Number(el.dataset.price), el.dataset.item),
+    submitSurvey,
+    analyzeFood,
+    calculateReward,
+    scrollToSection: (el) => scrollToSection(el.dataset.arg),
+    openLottery,
+    closeLottery,
+    spinLottery
+};
+
+// 使用事件委派，一次綁定處理所有 data-action 元素
+document.addEventListener('click', (event) => {
+    const target = event.target.closest('[data-action]');
+    if (!target) return;
+
+    const handler = ACTION_HANDLERS[target.dataset.action];
+    if (!handler) {
+        console.warn('未知的 data-action:', target.dataset.action);
+        return;
+    }
+
+    Promise.resolve(handler(target)).catch((error) => {
+        console.error(`執行 ${target.dataset.action} 失敗:`, error);
+    });
+});
