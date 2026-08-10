@@ -3,13 +3,22 @@
 <head>
     <meta charset="UTF-8">
     <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <meta http-equiv="Cache-Control" content="no-cache, no-store, must-revalidate">
+    <meta http-equiv="Pragma" content="no-cache">
+    <meta http-equiv="Expires" content="0">
     <title>食安守護者 Food Guardian</title>
 
     <link rel="stylesheet" href="style.css">
     
     <!-- Firebase SDK (compat version) - 僅用於身份驗證 -->
-    <script src="https://www.gstatic.com/firebasejs/9.22.0/firebase-app-compat.js"></script>
-    <script src="https://www.gstatic.com/firebasejs/9.22.0/firebase-auth-compat.js"></script>
+    <script src="https://www.gstatic.com/firebasejs/9.22.0/firebase-app-compat.js" onerror="handleScriptError('Firebase App SDK')" onload="console.log('Firebase App SDK 載入成功')"></script>
+    <script src="https://www.gstatic.com/firebasejs/9.22.0/firebase-auth-compat.js" onerror="handleScriptError('Firebase Auth SDK')" onload="console.log('Firebase Auth SDK 載入成功')"></script>
+    <script>
+      function handleScriptError(scriptName) {
+        console.error(scriptName + ' 載入失敗');
+        document.body.insertAdjacentHTML('afterbegin', '<div style="background:#f44336;color:white;padding:15px;text-align:center;position:fixed;top:0;left:0;width:100%;z-index:9999;">' + scriptName + ' 載入失敗，請檢查網路連接並重新整理頁面</div>');
+      }
+    </script>
 </head>
 <body>
 
@@ -348,6 +357,21 @@
 
 <script src="firebase-config.js"></script>
 <script src="app.js"></script>
+<script>
+    // 頁面載入後的簡易診斷
+    window.addEventListener('load', function() {
+        console.log('=== 食安守護者診斷 ===');
+        console.log('Firebase 定義:', typeof firebase !== 'undefined');
+        console.log('switchTab 定義:', typeof switchTab !== 'undefined');
+        console.log('handleLogin 定義:', typeof handleLogin !== 'undefined');
+        console.log('handleRegister 定義:', typeof handleRegister !== 'undefined');
+        console.log('API_BASE_URL:', typeof API_BASE_URL !== 'undefined' ? API_BASE_URL : '未定義');
+        
+        if (typeof switchTab === 'undefined') {
+            document.body.insertAdjacentHTML('afterbegin', '<div style="background:#f44336;color:white;padding:15px;text-align:center;position:fixed;top:0;left:0;width:100%;z-index:9999;">應用程式載入失敗，請打開瀏覽器控制台（F12）查看錯誤</div>');
+        }
+    });
+</script>
 
 </body>
 </html>

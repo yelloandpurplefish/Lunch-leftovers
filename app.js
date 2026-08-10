@@ -3,23 +3,45 @@
 // ======================
 
 // 檢查 Firebase 是否已初始化
-if (typeof firebase === 'undefined') {
-  console.error('Firebase 未正確載入，請檢查 firebase-config.js');
+const firebaseAvailable = typeof firebase !== 'undefined' &&
+                          typeof firebase.auth === 'function';
+
+const configAvailable = typeof currentUser !== 'undefined' &&
+                       typeof idToken !== 'undefined' &&
+                       typeof API_BASE_URL !== 'undefined';
+
+if (!firebaseAvailable) {
+  console.error('Firebase 未正確載入，請檢查 firebase-config.js 和網路連接');
+  // 不要 throw，讓其他 UI 函數仍然可以定義
+}
+
+if (!configAvailable) {
+  console.error('firebase-config.js 未正確載入');
+  // 不要 throw，讓其他 UI 函數仍然可以定義
 }
 
 // 初始化時檢查登入狀態
-firebase.auth().onAuthStateChanged(async (user) => {
-  if (user) {
-    currentUser = user;
-    idToken = await user.getIdToken();
-    await loadUserData();
-    showLoggedInState();
-  } else {
-    currentUser = null;
-    idToken = null;
-    showAuthForm();
-  }
-});
+if (firebaseAvailable) {
+  firebase.auth().onAuthStateChanged(async (user) => {
+    if (user) {
+      currentUser = user;
+      idToken = await user.getIdToken();
+      try {
+        await loadUserData();
+        showLoggedInState();
+      } catch (error) {
+        console.error('載入使用者資料失敗:', error);
+        showAuthForm();
+      }
+    } else {
+      currentUser = null;
+      idToken = null;
+      showAuthForm();
+    }
+  });
+} else {
+  console.warn('Firebase 不可用，登入/註冊功能將無法使用');
+}
 
 // 切換登入/註冊標籤
 function switchTab(tab) {
@@ -46,6 +68,12 @@ async function handleLogin() {
   const password = document.getElementById('loginPassword').value;
   const errorElement = document.getElementById('loginError');
   const loginBtn = document.querySelector('#loginForm .auth-btn');
+
+  if (!firebaseAvailable) {
+    errorElement.textContent = 'Firebase 未載入，無法登入';
+    console.error('Firebase 未載入');
+    return;
+  }
 
   if (!email || !password) {
     errorElement.textContent = '請填寫所有欄位';
@@ -80,6 +108,12 @@ async function handleRegister() {
   const confirmPassword = document.getElementById('registerConfirmPassword').value;
   const errorElement = document.getElementById('registerError');
   const registerBtn = document.querySelector('#registerForm .auth-btn');
+
+  if (!firebaseAvailable) {
+    errorElement.textContent = 'Firebase 未載入，無法註冊';
+    console.error('Firebase 未載入');
+    return;
+  }
 
   if (!name || !email || !password || !confirmPassword) {
     errorElement.textContent = '請填寫所有欄位';
@@ -630,4 +664,23 @@ function createConfetti(){
             confetti.remove();
         }, 4000);
     }
+}
+
+// 將關鍵函數暴露到全域作用域，確保 HTML 的 onclick 可以呼叫
+if (typeof window !== 'undefined') {
+    window.switchTab = switchTab;
+    window.handleLogin = handleLogin;
+    window.handleRegister = handleRegister;
+    window.handleLogout = handleLogout;
+    window.startApp = startApp;
+    window.finishTask = finishTask;
+    window.buyE = buyE;
+    window.buyS = buyS;
+    window.submitSurvey = submitSurvey;
+    window.calculateReward = calculateReward;
+    window.scrollToSection = scrollToSection;
+    window.openLottery = openLottery;
+    window.closeLottery = closeLottery;
+    window.spinLottery = spinLottery;
+    console.log('所有按鈕事件函數已註冊到 window 物件');
 }
