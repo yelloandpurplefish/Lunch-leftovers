@@ -20,12 +20,16 @@ try {
   return;
 }
 
+// 註：本專案使用 Firestore，不需要 databaseURL
+// （databaseURL 僅 Realtime Database 需要）
 admin.initializeApp({
   credential: admin.credential.cert(serviceAccount),
-  databaseURL: process.env.FIREBASE_DATABASE_URL
+  projectId: serviceAccount.project_id
 });
 
 const db = admin.firestore();
 const auth = admin.auth();
+
+console.log(`Firebase Admin SDK 初始化成功，專案：${serviceAccount.project_id}`);
 
 module.exports = { admin, db, auth };

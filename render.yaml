@@ -12,7 +12,6 @@ services:
         value: 3000
       - key: NODE_ENV
         value: production
-      - key: FIREBASE_DATABASE_URL
-        sync: false
+      # 在 Render Dashboard 手動填入 Service Account Key JSON（單行）
       - key: FIREBASE_SERVICE_ACCOUNT_KEY
         sync: false

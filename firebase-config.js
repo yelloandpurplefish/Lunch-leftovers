@@ -1,15 +1,17 @@
 // Firebase Configuration
-// 請在 Firebase Console 建立專案後，將設定複製到這裡
+// 注意：本專案使用 compat 版 SDK（由 index.html 的 CDN script 載入），
+// 因此不使用 Firebase Console 提供的 modular import 語法。
 const firebaseConfig = {
-  apiKey: "YOUR_API_KEY",
-  authDomain: "YOUR_PROJECT_ID.firebaseapp.com",
-  projectId: "YOUR_PROJECT_ID",
-  storageBucket: "YOUR_PROJECT_ID.appspot.com",
-  messagingSenderId: "YOUR_MESSAGING_SENDER_ID",
-  appId: "YOUR_APP_ID"
+  apiKey: "AIzaSyBjAAwTLolkSzozh2oaIWIR2oIgbFrTb2E",
+  authDomain: "lunch-leftovers.firebaseapp.com",
+  projectId: "lunch-leftovers",
+  storageBucket: "lunch-leftovers.firebasestorage.app",
+  messagingSenderId: "1040305573203",
+  appId: "1:1040305573203:web:9426d79fbafceb3519a5a6",
+  measurementId: "G-RPB0N5STC6"
 };
 
-// Initialize Firebase - 僅用於身份驗證
+// Initialize Firebase - 僅用於身份驗證，資料操作一律透過後端 API
 firebase.initializeApp(firebaseConfig);
 
 // Backend API URL - 自動檢測環境
