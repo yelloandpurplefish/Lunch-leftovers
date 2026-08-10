@@ -15,6 +15,9 @@ const leaderboardRoutes = require('./routes/leaderboard');
 const analysisRoutes = require('./routes/analysis');
 const debugRoutes = require('./routes/debug');
 
+// 資料庫初始化
+const { initializeDatabase } = require('./config/seed');
+
 const app = express();
 const PORT = process.env.PORT || 3000;
 
@@ -136,10 +139,16 @@ app.use((err, req, res, next) => {
 });
 
 // 啟動伺服器
-app.listen(PORT, () => {
+app.listen(PORT, async () => {
   console.log(`🚀 伺服器運行在 http://localhost:${PORT}`);
   console.log(`📊 健康檢查: http://localhost:${PORT}/health`);
   console.log(`🌐 前端頁面: http://localhost:${PORT}`);
+
+  // 初始化資料庫（基礎資料 + 選用的測試帳號）
+  // 失敗不影響伺服器運行，僅記錄錯誤
+  await initializeDatabase().catch((error) => {
+    console.error('❌ 資料庫初始化發生未預期錯誤:', error);
+  });
 });
 
 module.exports = app;

@@ -15,3 +15,9 @@ services:
       # 在 Render Dashboard 手動填入 Service Account Key JSON（單行）
       - key: FIREBASE_SERVICE_ACCOUNT_KEY
         sync: false
+      # 生產環境預設不建立測試帳號。
+      # 若需臨時驗證，於 Dashboard 設定
+      #   SEED_TEST_ACCOUNTS=true
+      #   TEST_USER_PASSWORD=<至少 12 字元>
+      #   ALLOW_PRODUCTION_TEST_ACCOUNTS=true
+      # 驗證完成後請移除並刪除帳號

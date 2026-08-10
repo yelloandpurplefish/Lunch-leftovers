@@ -99,54 +99,82 @@ npm run test:firebase
 - 確認 `backend/service-account-key.json` 存在且有效
 - 確認 `FIREBASE_DATABASE_URL` 正確
 
+## �️ 資料庫自動初始化
+
+伺服器每次啟動都會自動寫入基礎資料，無需任何設定：
+
+| 集合 | 內容 | 行為 |
+|------|------|------|
+| `reward_items` | 環保杯、環保餐具、文具禮包 | `merge` 寫入，不覆寫管理員手動調整 |
+| `system_config` | 抽獎成本、冷卻時間、獎勵級距 | `merge` 寫入 |
+| `daily_menu` | 當日菜單（以日期為文件 ID） | 已存在則跳過 |
+
+> Firestore 是 schemaless 的，集合在首次寫入時自動建立，因此「建立資料表」實際上就是寫入初始資料。
+> `task_records`、`exchange_records`、`lottery_records` 等交易紀錄不需預先建立，會在使用者操作時產生。
+
+啟動時會看到：
+
+```
+🌱 開始初始化資料庫...
+  ✓ reward_items：3 筆
+  ✓ system_config：4 筆
+  ✓ daily_menu：已建立 2026-08-10
+  ⏭️  測試帳號未啟用（設定 SEED_TEST_ACCOUNTS=true 以建立）
+✅ 資料庫初始化完成
+```
+
 ## 👥 建立測試帳號
 
-### 方法 1：使用種子腳本（推薦）
+測試帳號**預設關閉**，需明確開啟。密碼一律由環境變數提供，程式中不含任何預設密碼。
+
+### 設定
+
+在 `backend/.env` 加入：
+
+```env
+SEED_TEST_ACCOUNTS=true
+TEST_USER_PASSWORD=你的密碼至少12字元
+```
+
+### 方法 1：隨伺服器啟動自動建立
 
 ```bash
-# 使用預設密碼
-npm run seed
+npm start
+```
 
-# 或使用自訂密碼
-$env:TEST_USER_PASSWORD="YourPassword123"  # Windows PowerShell
-# 或
-set TEST_USER_PASSWORD=YourPassword123       # Windows CMD
-# 或
-export TEST_USER_PASSWORD=YourPassword123    # Linux/Mac
+### 方法 2：手動執行（不啟動伺服器）
 
+```bash
 npm run seed
 ```
 
-預設會建立以下帳號：
+### 建立的帳號
 
-| Email | 角色 | 初始 E幣 | 初始 S幣 | 初始積分 |
-|-------|------|---------|---------|---------|
-| dev@example.com | admin | 1000 | 500 | 10000 |
-| teacher@example.com | teacher | 500 | 300 | 5000 |
-| student1@example.com | student | 100 | 50 | 1000 |
-| student2@example.com | student | 100 | 50 | 1000 |
+| Email | 角色 | E幣 | S幣 | 積分 |
+|-------|------|-----|-----|------|
+| dev@lunch-leftovers.local | admin | 1000 | 500 | 10000 |
+| qa@lunch-leftovers.local | admin | 1000 | 500 | 10000 |
+| teacher@lunch-leftovers.local | teacher | 500 | 300 | 5000 |
+| student@lunch-leftovers.local | student | 100 | 50 | 1000 |
 
-密碼預設為 `Test@123456`（可透過 `TEST_USER_PASSWORD` 環境變數修改）。
+所有帳號共用 `TEST_USER_PASSWORD` 的密碼，並標記 `isTestAccount: true` 方便日後批次清理。
 
-### 方法 2：使用後端 API
+### 安全防護機制
 
-```bash
-curl -X POST http://localhost:3000/api/debug/create-test-user \
-  -H "Content-Type: application/json" \
-  -d '{
-    "email": "test@example.com",
-    "password": "Test@123456",
-    "displayName": "測試使用者",
-    "role": "student"
-  }'
-```
+| 條件 | 結果 |
+|------|------|
+| 未設定 `SEED_TEST_ACCOUNTS=true` | 跳過建立 |
+| 未設定 `TEST_USER_PASSWORD` | 拒絕建立並警告 |
+| 密碼少於 12 字元 | 拒絕建立 |
+| `NODE_ENV=production` | 阻擋，除非另設 `ALLOW_PRODUCTION_TEST_ACCOUNTS=true` |
+| 帳號已存在 | 跳過建立，但補齊 Firestore 資料 |
 
 ### ⚠️ 安全提醒
 
-- 測試帳號僅供開發使用
-- 生產環境中 `/api/debug` 端點會自動禁用
-- 請勿將測試帳號密碼提交到 Git
-- 部署前請刪除測試帳號
+- 測試帳號為共用憑證，僅供開發環境
+- 正式上線前請在 Firebase Console 刪除所有 `isTestAccount: true` 的帳號
+- 請勿將 `backend/.env` 提交到 Git（已在 `.gitignore` 中）
+- `/api/debug` 端點在 `NODE_ENV=production` 時自動禁用
 
 ## 🧪 功能測試
 

@@ -1,6 +1,8 @@
 const { db, admin } = require('../config/firebase');
 
 // 兌換物品
+// 使用 Firestore transaction 確保「檢查餘額 → 扣款 → 扣庫存」為原子操作，
+// 避免併發請求造成餘額或庫存變成負數
 const redeemItem = async (req, res) => {
   try {
     const userId = req.user.uid;
@@ -13,63 +15,87 @@ const redeemItem = async (req, res) => {
       });
     }
 
-    // 定義物品配置（暫時硬編碼，後續可從資料庫讀取）
-    const itemConfig = {
-      'eco_cup': { name: '環保杯', cost: 50, costType: 'E' },
-      'eco_utensils': { name: '環保餐具', cost: 80, costType: 'E' },
-      'stationery_set': { name: '文具禮包', cost: 30, costType: 'S' }
-    };
+    const itemRef = db.collection('reward_items').doc(itemId);
+    const userRef = db.collection('users').doc(userId);
+    const recordRef = db.collection('exchange_records').doc();
 
-    const item = itemConfig[itemId];
-    if (!item) {
-      return res.status(404).json({
-        success: false,
-        message: '物品不存在'
+    const result = await db.runTransaction(async (transaction) => {
+      const [itemDoc, userDoc] = await Promise.all([
+        transaction.get(itemRef),
+        transaction.get(userRef)
+      ]);
+
+      if (!itemDoc.exists) {
+        return { error: { status: 404, message: '物品不存在' } };
+      }
+      if (!userDoc.exists) {
+        return { error: { status: 404, message: '使用者不存在' } };
+      }
+
+      const item = itemDoc.data();
+      const userData = userDoc.data();
+
+      if (!item.isActive) {
+        return { error: { status: 400, message: '物品已下架' } };
+      }
+      if (item.stock !== null && item.stock !== undefined && item.stock <= 0) {
+        return { error: { status: 400, message: '物品庫存不足' } };
+      }
+
+      const coinField = item.costType === 'E' ? 'eCoin' : 'sCoin';
+      const balance = userData[coinField] || 0;
+
+      if (balance < item.cost) {
+        return {
+          error: {
+            status: 400,
+            message: `${item.costType}幣不足`,
+            required: item.cost,
+            current: balance
+          }
+        };
+      }
+
+      transaction.update(userRef, {
+        [coinField]: admin.firestore.FieldValue.increment(-item.cost)
       });
-    }
 
-    // 獲取使用者資料
-    const userDoc = await db.collection('users').doc(userId).get();
-    const userData = userDoc.data();
+      if (item.stock !== null && item.stock !== undefined) {
+        transaction.update(itemRef, {
+          stock: admin.firestore.FieldValue.increment(-1)
+        });
+      }
 
-    // 檢查貨幣是否足夠
-    const coinField = item.costType === 'E' ? 'eCoin' : 'sCoin';
-    if (userData[coinField] < item.cost) {
-      return res.status(400).json({
-        success: false,
-        message: `${item.costType}幣不足`,
-        required: item.cost,
-        current: userData[coinField]
+      transaction.set(recordRef, {
+        userId,
+        itemId,
+        itemName: item.name,
+        itemType: item.costType,
+        cost: item.cost,
+        exchangedAt: admin.firestore.FieldValue.serverTimestamp(),
+        status: 'completed'
       });
-    }
 
-    // 扣除貨幣
-    await db.collection('users').doc(userId).update({
-      [coinField]: admin.firestore.FieldValue.increment(-item.cost)
+      return {
+        itemName: item.name,
+        cost: item.cost,
+        remainingCoin: balance - item.cost
+      };
     });
 
-    // 記錄兌換
-    const exchangeRecord = await db.collection('exchange_records').add({
-      userId,
-      itemName: item.name,
-      itemType: item.costType,
-      cost: item.cost,
-      exchangedAt: admin.firestore.FieldValue.serverTimestamp(),
-      status: 'completed'
-    });
-
-    // 獲取更新後的餘額
-    const updatedUserDoc = await db.collection('users').doc(userId).get();
-    const updatedUserData = updatedUserDoc.data();
+    if (result.error) {
+      const { status, message, ...extra } = result.error;
+      return res.status(status).json({ success: false, message, ...extra });
+    }
 
     res.status(200).json({
       success: true,
       message: '兌換成功！',
-      remainingCoin: updatedUserData[coinField],
+      remainingCoin: result.remainingCoin,
       exchangeRecord: {
-        recordId: exchangeRecord.id,
-        itemName: item.name,
-        cost: item.cost
+        recordId: recordRef.id,
+        itemName: result.itemName,
+        cost: result.cost
       }
     });
   } catch (error) {
