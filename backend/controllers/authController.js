@@ -1,11 +1,27 @@
-const { admin, auth, db } = require('../config/firebase');
+const bcrypt = require('bcryptjs');
+const jwt = require('jsonwebtoken');
+const { db, admin } = require('../config/firebase');
+
+const JWT_SECRET = process.env.JWT_SECRET || 'lunch-leftovers-default-secret-please-change';
+
+if (!process.env.JWT_SECRET) {
+  console.warn('⚠️  JWT_SECRET 未設定，使用預設值。請在 .env 或 Render 環境變數中設置 JWT_SECRET。');
+}
+
+// 產生 JWT
+function signToken(user) {
+  return jwt.sign(
+    { uid: user.userId, email: user.email, displayName: user.displayName, role: user.role },
+    JWT_SECRET,
+    { expiresIn: '7d' }
+  );
+}
 
 // 註冊新使用者
 const register = async (req, res) => {
   try {
     const { email, password, displayName, schoolId, classId } = req.body;
 
-    // 驗證輸入
     if (!email || !password || !displayName) {
       return res.status(400).json({
         success: false,
@@ -13,43 +29,59 @@ const register = async (req, res) => {
       });
     }
 
-    // 創建 Firebase 使用者
-    const userRecord = await auth.createUser({
-      email,
-      password,
-      displayName
-    });
+    if (password.length < 6) {
+      return res.status(400).json({
+        success: false,
+        message: '密碼至少需要 6 個字元'
+      });
+    }
 
-    // 建立使用者文件
+    // 檢查 Email 是否已註冊
+    const existing = await db.collection('users').where('email', '==', email).limit(1).get();
+    if (!existing.empty) {
+      return res.status(400).json({
+        success: false,
+        message: '此 Email 已被註冊'
+      });
+    }
+
+    // 建立使用者
+    const userId = db.collection('users').doc().id;
+    const passwordHash = await bcrypt.hash(password, 10);
+    const now = admin.firestore.FieldValue.serverTimestamp();
+
     const userData = {
-      userId: userRecord.uid,
+      userId,
       email,
       displayName,
+      passwordHash,
       eCoin: 0,
       sCoin: 0,
       score: 0,
-      createdAt: admin.firestore.FieldValue.serverTimestamp(),
-      lastLoginAt: admin.firestore.FieldValue.serverTimestamp(),
+      role: 'student',
+      isActive: true,
       schoolId: schoolId || null,
       classId: classId || null,
-      role: 'student',
-      isActive: true
+      createdAt: now,
+      lastLoginAt: now
     };
 
-    await db.collection('users').doc(userRecord.uid).set(userData);
+    await db.collection('users').doc(userId).set(userData);
 
-    // 產生自定義 Token
-    const customToken = await auth.createCustomToken(userRecord.uid);
+    const token = signToken(userData);
 
     res.status(201).json({
       success: true,
-      userId: userRecord.uid,
-      token: customToken,
+      userId,
+      token,
       userData: {
-        displayName: userData.displayName,
-        eCoin: userData.eCoin,
-        sCoin: userData.sCoin,
-        score: userData.score
+        userId,
+        displayName,
+        email,
+        eCoin: 0,
+        sCoin: 0,
+        score: 0,
+        role: 'student'
       }
     });
   } catch (error) {
@@ -61,65 +93,82 @@ const register = async (req, res) => {
   }
 };
 
-// 驗證登入 Token 並回傳使用者資料
+// 登入
 const login = async (req, res) => {
   try {
-    const { uid, email } = req.user;
+    const { email, password } = req.body;
 
-    // 獲取使用者資料
-    const userDoc = await db.collection('users').doc(uid).get();
-
-    if (!userDoc.exists) {
-      return res.status(404).json({
+    if (!email || !password) {
+      return res.status(400).json({
         success: false,
-        message: '使用者不存在'
+        message: '請填寫所有欄位'
+      });
+    }
+
+    const userSnapshot = await db.collection('users').where('email', '==', email).limit(1).get();
+
+    if (userSnapshot.empty) {
+      return res.status(401).json({
+        success: false,
+        message: '找不到此帳號'
+      });
+    }
+
+    const userDoc = userSnapshot.docs[0];
+    const userData = userDoc.data();
+
+    if (!userData.isActive) {
+      return res.status(403).json({
+        success: false,
+        message: '此帳號已被停用'
+      });
+    }
+
+    const isMatch = await bcrypt.compare(password, userData.passwordHash);
+
+    if (!isMatch) {
+      return res.status(401).json({
+        success: false,
+        message: '密碼錯誤'
       });
     }
 
     // 更新最後登入時間
-    await db.collection('users').doc(uid).update({
+    await userDoc.ref.update({
       lastLoginAt: admin.firestore.FieldValue.serverTimestamp()
     });
 
-    const userData = userDoc.data();
+    const token = signToken(userData);
 
     res.status(200).json({
       success: true,
-      message: '登入驗證成功',
-      user: {
-        uid,
-        email,
+      message: '登入成功',
+      token,
+      userData: {
+        userId: userData.userId,
         displayName: userData.displayName,
-        eCoin: userData.eCoin,
-        sCoin: userData.sCoin,
-        score: userData.score,
+        email: userData.email,
+        eCoin: userData.eCoin || 0,
+        sCoin: userData.sCoin || 0,
+        score: userData.score || 0,
         role: userData.role
       }
     });
   } catch (error) {
-    console.error('登入驗證失敗:', error);
+    console.error('登入失敗:', error);
     res.status(500).json({
       success: false,
-      message: error.message || '登入驗證失敗'
+      message: error.message || '登入失敗'
     });
   }
 };
 
 // 登出
 const logout = async (req, res) => {
-  try {
-    // Firebase Auth 登出由前端處理
-    res.status(200).json({
-      success: true,
-      message: '登出成功'
-    });
-  } catch (error) {
-    console.error('登出失敗:', error);
-    res.status(500).json({
-      success: false,
-      message: error.message || '登出失敗'
-    });
-  }
+  res.status(200).json({
+    success: true,
+    message: '登出成功'
+  });
 };
 
 module.exports = { register, login, logout };

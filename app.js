@@ -2,13 +2,7 @@
 // 食安守護者 Demo
 // ======================
 
-// 檢查 Firebase 是否已初始化
-const firebaseAvailable = typeof firebase !== 'undefined' &&
-                          typeof firebase.auth === 'function';
-
-const configAvailable = typeof currentUser !== 'undefined' &&
-                       typeof idToken !== 'undefined' &&
-                       typeof API_BASE_URL !== 'undefined';
+// 全域變數與 API_BASE_URL 由 firebase-config.js 定義
 
 // 顯示頂部錯誤橫幅
 function showErrorBanner(message) {
@@ -18,35 +12,26 @@ function showErrorBanner(message) {
   document.body.prepend(banner);
 }
 
-if (!firebaseAvailable) {
-  console.error('Firebase SDK 未載入，請檢查網路連接');
-  showErrorBanner('Firebase SDK 載入失敗，請檢查網路連接並重新整理頁面');
-}
+// 從 localStorage 還原登入狀態
+async function restoreSession() {
+  const token = localStorage.getItem('token');
+  if (!token) {
+    showAuthForm();
+    return;
+  }
 
-if (!configAvailable) {
-  console.error('firebase-config.js 未正確載入');
-  showErrorBanner('設定檔載入失敗，請重新整理頁面');
-}
-
-// 初始化時檢查登入狀態
-if (firebaseAvailable) {
-  firebase.auth().onAuthStateChanged(async (user) => {
-    if (user) {
-      currentUser = user;
-      idToken = await user.getIdToken();
-      try {
-        await loadUserData();
-        showLoggedInState();
-      } catch (error) {
-        console.error('載入使用者資料失敗:', error);
-        showAuthForm();
-      }
-    } else {
-      currentUser = null;
-      idToken = null;
-      showAuthForm();
-    }
-  });
+  idToken = token;
+  try {
+    await loadUserData();
+    showLoggedInState();
+  } catch (error) {
+    console.error('載入使用者資料失敗:', error);
+    localStorage.removeItem('token');
+    localStorage.removeItem('user');
+    idToken = null;
+    currentUser = null;
+    showAuthForm();
+  }
 }
 
 // 切換登入/註冊標籤
@@ -75,12 +60,6 @@ async function handleLogin() {
   const errorElement = document.getElementById('loginError');
   const loginBtn = document.querySelector('#loginForm .auth-btn');
 
-  if (!firebaseAvailable) {
-    errorElement.textContent = 'Firebase 未載入，無法登入';
-    console.error('Firebase 未載入');
-    return;
-  }
-
   if (!email || !password) {
     errorElement.textContent = '請填寫所有欄位';
     return;
@@ -92,14 +71,28 @@ async function handleLogin() {
   errorElement.textContent = '';
 
   try {
-    const userCredential = await firebase.auth().setPersistence(firebase.auth.Auth.Persistence.LOCAL)
-      .then(() => firebase.auth().signInWithEmailAndPassword(email, password));
-    
-    idToken = await userCredential.user.getIdToken();
-    errorElement.textContent = '';
+    const response = await fetch(`${API_BASE_URL}/auth/login`, {
+      method: 'POST',
+      headers: { 'Content-Type': 'application/json' },
+      body: JSON.stringify({ email, password })
+    });
+
+    const data = await response.json().catch(() => ({ success: false, message: '伺服器回應錯誤' }));
+
+    if (data.success) {
+      idToken = data.token;
+      currentUser = data.userData;
+      localStorage.setItem('token', idToken);
+      localStorage.setItem('user', JSON.stringify(currentUser));
+      errorElement.textContent = '';
+      await loadUserData();
+      showLoggedInState();
+    } else {
+      errorElement.textContent = data.message || '登入失敗';
+    }
   } catch (error) {
     console.error('登入失敗:', error);
-    errorElement.textContent = getErrorMessage(error.code);
+    errorElement.textContent = '登入失敗，請稍後再試';
   } finally {
     loginBtn.disabled = false;
     loginBtn.textContent = '登入';
@@ -114,12 +107,6 @@ async function handleRegister() {
   const confirmPassword = document.getElementById('registerConfirmPassword').value;
   const errorElement = document.getElementById('registerError');
   const registerBtn = document.querySelector('#registerForm .auth-btn');
-
-  if (!firebaseAvailable) {
-    errorElement.textContent = 'Firebase 未載入，無法註冊';
-    console.error('Firebase 未載入');
-    return;
-  }
 
   if (!name || !email || !password || !confirmPassword) {
     errorElement.textContent = '請填寫所有欄位';
@@ -150,25 +137,18 @@ async function handleRegister() {
       body: JSON.stringify({ email, password, displayName: name })
     });
 
-    let data;
-    const responseText = await response.text();
-    try {
-      data = JSON.parse(responseText);
-    } catch (e) {
-      console.error('伺服器回應不是 JSON:', responseText);
-      throw new Error(`伺服器回應錯誤：${response.status} ${response.statusText}`);
-    }
+    const data = await response.json().catch(() => ({ success: false, message: '伺服器回應錯誤' }));
 
     console.log('註冊 API 回應:', data);
 
     if (data.success) {
-      // 自動登入
-      console.log('後端註冊成功，開始 Firebase 登入');
-      await firebase.auth().setPersistence(firebase.auth.Auth.Persistence.LOCAL)
-        .then(() => firebase.auth().signInWithEmailAndPassword(email, password));
-      idToken = await firebase.auth().currentUser.getIdToken();
+      idToken = data.token;
+      currentUser = data.userData;
+      localStorage.setItem('token', idToken);
+      localStorage.setItem('user', JSON.stringify(currentUser));
       errorElement.textContent = '';
-      console.log('Firebase 登入成功');
+      await loadUserData();
+      showLoggedInState();
     } else {
       errorElement.textContent = data.message || '註冊失敗';
     }
@@ -184,12 +164,13 @@ async function handleRegister() {
 // 處理登出
 async function handleLogout() {
   try {
-    await firebase.auth().signOut();
     currentUser = null;
     idToken = null;
     eCoin = 0;
     sCoin = 0;
     score = 0;
+    localStorage.removeItem('token');
+    localStorage.removeItem('user');
     showAuthForm();
   } catch (error) {
     console.error('登出失敗:', error);
@@ -205,18 +186,23 @@ async function loadUserData() {
       eCoin = data.userData.eCoin || 0;
       sCoin = data.userData.sCoin || 0;
       score = data.userData.score || 0;
-      
-      // 如果後端有 displayName 且前端沒有，更新前端顯示名稱
-      if (data.userData.displayName && currentUser && !currentUser.displayName) {
-        currentUser.displayName = data.userData.displayName;
-      }
-      
+
+      // 同步前端 currentUser
+      currentUser = {
+        uid: data.userData.userId,
+        email: data.userData.email,
+        displayName: data.userData.displayName,
+        role: data.userData.role
+      };
+      localStorage.setItem('user', JSON.stringify(currentUser));
+
       updateUI();
     } else {
       console.error('載入使用者資料失敗:', data.message);
     }
   } catch (error) {
     console.error('載入使用者資料失敗:', error);
+    throw error;
   }
 }
 
@@ -266,19 +252,17 @@ function getErrorMessage(errorCode) {
   return errorMessages[errorCode] || '發生錯誤，請稍後再試';
 }
 
-// 獲取有效的 Firebase ID Token
-async function getValidIdToken() {
-  if (!currentUser) {
+// 獲取有效的 JWT Token
+function getValidIdToken() {
+  if (!idToken) {
     throw new Error('使用者尚未登入');
   }
-  
-  // 強制重新整理 ID Token，確保沒有過期
-  return await currentUser.getIdToken(true);
+  return idToken;
 }
 
 // API 請求輔助函數
 async function apiRequest(endpoint, method = 'GET', body = null) {
-  const token = await getValidIdToken();
+  const token = getValidIdToken();
   
   const headers = {
     'Authorization': `Bearer ${token}`,
@@ -710,3 +694,6 @@ document.addEventListener('click', (event) => {
         console.error(`執行 ${target.dataset.action} 失敗:`, error);
     });
 });
+
+// 頁面載入時嘗試恢復登入狀態
+restoreSession();

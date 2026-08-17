@@ -1,4 +1,5 @@
-const { admin, auth, db } = require('./firebase');
+const bcrypt = require('bcryptjs');
+const { admin, db } = require('./firebase');
 
 // ============================================================
 // 基礎資料（master data）
@@ -139,40 +140,35 @@ async function seedTodayMenu() {
 
 async function seedTestAccounts(password) {
   const results = { created: [], existing: [], failed: [] };
+  const passwordHash = await bcrypt.hash(password, 10);
+  const now = admin.firestore.FieldValue.serverTimestamp();
 
   for (const account of TEST_ACCOUNTS) {
     try {
-      let userRecord;
+      const snapshot = await db.collection('users').where('email', '==', account.email).limit(1).get();
 
-      try {
-        userRecord = await auth.getUserByEmail(account.email);
+      if (!snapshot.empty) {
         results.existing.push(account.email);
-      } catch (error) {
-        if (error.code !== 'auth/user-not-found') throw error;
+      } else {
+        const userId = db.collection('users').doc().id;
 
-        userRecord = await auth.createUser({
+        await db.collection('users').doc(userId).set({
+          userId,
           email: account.email,
-          password,
           displayName: account.displayName,
-          emailVerified: true
+          passwordHash,
+          eCoin: account.eCoin,
+          sCoin: account.sCoin,
+          score: account.score,
+          role: account.role,
+          isActive: true,
+          isTestAccount: true,
+          createdAt: now,
+          lastLoginAt: now
         });
+
         results.created.push(account.email);
       }
-
-      // 確保 Firestore 有對應資料（merge 避免覆寫既有進度）
-      await db.collection('users').doc(userRecord.uid).set({
-        userId: userRecord.uid,
-        email: account.email,
-        displayName: account.displayName,
-        eCoin: account.eCoin,
-        sCoin: account.sCoin,
-        score: account.score,
-        role: account.role,
-        isActive: true,
-        isTestAccount: true,
-        createdAt: admin.firestore.FieldValue.serverTimestamp(),
-        lastLoginAt: admin.firestore.FieldValue.serverTimestamp()
-      }, { merge: true });
     } catch (error) {
       console.error(`  ✗ ${account.email}：${error.message}`);
       results.failed.push({ email: account.email, error: error.message });
@@ -190,7 +186,7 @@ async function seedTestAccounts(password) {
 // ============================================================
 
 async function initializeDatabase() {
-  if (!db || !auth) {
+  if (!db) {
     console.warn('⚠️  Firebase Admin SDK 未初始化，跳過資料初始化');
     return;
   }
