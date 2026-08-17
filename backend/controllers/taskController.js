@@ -1,5 +1,29 @@
 const { db, admin } = require('../config/firebase');
 
+// 取得使用者某類任務的最新記錄
+// 只以 userId 查詢，避免 Firestore 要求複合索引
+async function getLastTaskRecord(userId, taskType) {
+  const snapshot = await db.collection('task_records')
+    .where('userId', '==', userId)
+    .get();
+
+  if (snapshot.empty) return null;
+
+  const records = snapshot.docs
+    .map(doc => doc.data())
+    .filter(record => record.taskType === taskType && record.completedAt)
+    .sort((a, b) => b.completedAt.toDate().getTime() - a.completedAt.toDate().getTime());
+
+  return records[0] || null;
+}
+
+// 計算剩餘冷卻時間（小時）
+function getHoursRemaining(cooldownMs, lastCompletedAt) {
+  const timeSinceLast = Date.now() - lastCompletedAt.toDate().getTime();
+  if (timeSinceLast >= cooldownMs) return 0;
+  return Math.ceil((cooldownMs - timeSinceLast) / (60 * 60 * 1000));
+}
+
 // 完成光盤行動任務
 const completeLightDisc = async (req, res) => {
   try {
@@ -9,20 +33,11 @@ const completeLightDisc = async (req, res) => {
     const cooldownMs = cooldownHours * 60 * 60 * 1000;
 
     // 檢查上次完成時間
-    const taskQuery = await db.collection('task_records')
-      .where('userId', '==', userId)
-      .where('taskType', '==', 'light_disc')
-      .orderBy('completedAt', 'desc')
-      .limit(1)
-      .get();
+    const lastRecord = await getLastTaskRecord(userId, 'light_disc');
 
-    if (!taskQuery.empty) {
-      const lastRecord = taskQuery.docs[0].data();
-      const lastCompletedAt = lastRecord.completedAt.toDate();
-      const timeSinceLast = Date.now() - lastCompletedAt.getTime();
-
-      if (timeSinceLast < cooldownMs) {
-        const hoursRemaining = Math.ceil((cooldownMs - timeSinceLast) / (60 * 60 * 1000));
+    if (lastRecord) {
+      const hoursRemaining = getHoursRemaining(cooldownMs, lastRecord.completedAt);
+      if (hoursRemaining > 0) {
         return res.status(400).json({
           success: false,
           message: '尚未達到領取時間',
@@ -30,10 +45,6 @@ const completeLightDisc = async (req, res) => {
         });
       }
     }
-
-    // 獲取使用者資料
-    const userDoc = await db.collection('users').doc(userId).get();
-    const userData = userDoc.data();
 
     // 計算獎勵
     const rewards = {
@@ -110,20 +121,11 @@ const claimLeftoverReward = async (req, res) => {
     }
 
     // 檢查上次領取時間
-    const taskQuery = await db.collection('task_records')
-      .where('userId', '==', userId)
-      .where('taskType', '==', 'leftover_reward')
-      .orderBy('completedAt', 'desc')
-      .limit(1)
-      .get();
+    const lastRecord = await getLastTaskRecord(userId, 'leftover_reward');
 
-    if (!taskQuery.empty) {
-      const lastRecord = taskQuery.docs[0].data();
-      const lastCompletedAt = lastRecord.completedAt.toDate();
-      const timeSinceLast = Date.now() - lastCompletedAt.getTime();
-
-      if (timeSinceLast < cooldownMs) {
-        const hoursRemaining = Math.ceil((cooldownMs - timeSinceLast) / (60 * 60 * 1000));
+    if (lastRecord) {
+      const hoursRemaining = getHoursRemaining(cooldownMs, lastRecord.completedAt);
+      if (hoursRemaining > 0) {
         return res.status(400).json({
           success: false,
           message: '尚未達到領取時間',
@@ -204,20 +206,11 @@ const submitSurvey = async (req, res) => {
     }
 
     // 檢查上次提交時間
-    const taskQuery = await db.collection('task_records')
-      .where('userId', '==', userId)
-      .where('taskType', '==', 'survey')
-      .orderBy('completedAt', 'desc')
-      .limit(1)
-      .get();
+    const lastRecord = await getLastTaskRecord(userId, 'survey');
 
-    if (!taskQuery.empty) {
-      const lastRecord = taskQuery.docs[0].data();
-      const lastCompletedAt = lastRecord.completedAt.toDate();
-      const timeSinceLast = Date.now() - lastCompletedAt.getTime();
-
-      if (timeSinceLast < cooldownMs) {
-        const hoursRemaining = Math.ceil((cooldownMs - timeSinceLast) / (60 * 60 * 1000));
+    if (lastRecord) {
+      const hoursRemaining = getHoursRemaining(cooldownMs, lastRecord.completedAt);
+      if (hoursRemaining > 0) {
         return res.status(400).json({
           success: false,
           message: '尚未達到送出時間',
