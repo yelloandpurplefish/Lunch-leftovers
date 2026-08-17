@@ -69,6 +69,52 @@ const updateProfile = async (req, res) => {
   }
 };
 
+// 家長簽到
+const parentSignIn = async (req, res) => {
+  try {
+    const { parentName } = req.body;
+
+    if (!parentName || parentName.trim().length === 0) {
+      return res.status(400).json({
+        success: false,
+        message: '請填寫家長姓名'
+      });
+    }
+
+    const studentId = req.user.uid;
+    const userDoc = await db.collection('users').doc(studentId).get();
+
+    if (!userDoc.exists) {
+      return res.status(404).json({
+        success: false,
+        message: '學生資料不存在'
+      });
+    }
+
+    const userData = userDoc.data();
+
+    await db.collection('parent_sign_ins').add({
+      studentId,
+      studentName: userData.displayName,
+      studentEmail: userData.email,
+      parentName: parentName.trim(),
+      signedInAt: admin.firestore.FieldValue.serverTimestamp()
+    });
+
+    res.status(201).json({
+      success: true,
+      message: '家長簽到成功',
+      parentName: parentName.trim()
+    });
+  } catch (error) {
+    console.error('家長簽到失敗:', error);
+    res.status(500).json({
+      success: false,
+      message: error.message || '家長簽到失敗'
+    });
+  }
+};
+
 // 更新最後登入時間
 const updateLastLogin = async (req, res) => {
   try {
@@ -88,4 +134,4 @@ const updateLastLogin = async (req, res) => {
   }
 };
 
-module.exports = { getProfile, updateProfile, updateLastLogin };
+module.exports = { getProfile, updateProfile, updateLastLogin, parentSignIn };

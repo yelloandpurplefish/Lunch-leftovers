@@ -544,6 +544,31 @@ async function calculateReward(){
     }
 }
 
+// 家長簽到
+async function parentSignIn() {
+    const parentNameInput = document.getElementById('parentName');
+    const parentName = parentNameInput ? parentNameInput.value.trim() : '';
+
+    if (!parentName) {
+        alert('請填寫家長姓名');
+        return;
+    }
+
+    try {
+        const data = await apiRequest('/user/parent-sign-in', 'POST', { parentName });
+
+        if (data.success) {
+            alert(`✅ 家長「${data.parentName}」簽到成功`);
+            parentNameInput.value = '';
+        } else {
+            alert(data.message || '簽到失敗');
+        }
+    } catch (error) {
+        console.error('家長簽到失敗:', error);
+        alert('簽到失敗，請稍後再試');
+    }
+}
+
 // 抽獎相關功能
 function openLottery(){
     document.getElementById("lotteryModal").style.display = "block";
@@ -575,7 +600,10 @@ function spinLottery(){
         const grandPrizes = [
             {name: "🎁 豪華文具組", value: 60},
             {name: "🌟 特別獎勵包", value: 55},
-            {name: "💎 稀有空氣清新劑", value: 50}
+            {name: "💎 稀有空氣清新劑", value: 50},
+            {name: "🎧 無線藍牙耳機", value: 70},
+            {name: "🎮 掌上遊戲機", value: 65},
+            {name: "🎒 限量後背包", value: 58}
         ];
         const selected = grandPrizes[Math.floor(Math.random() * grandPrizes.length)];
         prize = selected.name;
@@ -587,7 +615,11 @@ function spinLottery(){
             {name: "📝 筆記本", value: 30},
             {name: "✏️ 鉛筆組", value: 25},
             {name: "📏 尺", value: 20},
-            {name: "🔖 書籤", value: 15}
+            {name: "🔖 書籤", value: 15},
+            {name: "🖊️ 原子筆", value: 18},
+            {name: "🗂️ 資料夾", value: 22},
+            {name: "🧃 果汁", value: 12},
+            {name: "🍪 餅乾", value: 14}
         ];
         const selected = normalPrizes[Math.floor(Math.random() * normalPrizes.length)];
         prize = selected.name;
@@ -598,7 +630,12 @@ function spinLottery(){
         const smallPrizes = [
             {name: "🍬 糖果", value: 5},
             {name: "🧻 紙巾", value: 3},
-            {name: "💧 飲用水", value: 2}
+            {name: "💧 飲用水", value: 2},
+            {name: "🍭 棒棒糖", value: 4},
+            {name: "🍫 巧克力", value: 6},
+            {name: "🥠 幸運餅乾", value: 3},
+            {name: "🧼 小肥皂", value: 2},
+            {name: "🎈 氣球", value: 2}
         ];
         const selected = smallPrizes[Math.floor(Math.random() * smallPrizes.length)];
         prize = selected.name;
@@ -668,6 +705,7 @@ const ACTION_HANDLERS = {
     handleLogout,
     startApp,
     finishTask,
+    parentSignIn,
     buyE: (el) => buyE(Number(el.dataset.price), el.dataset.item),
     buyS: (el) => buyS(Number(el.dataset.price), el.dataset.item),
     submitSurvey,
