@@ -194,6 +194,66 @@ async function seedTestAccounts(password) {
 }
 
 // ============================================================
+// 額外測試帳號（可批量產生）
+// ============================================================
+
+async function seedExtraTestAccounts(count, password) {
+  const results = { created: 0, existing: 0, failed: [] };
+  const passwordHash = await bcrypt.hash(password, 10);
+  const now = admin.firestore.FieldValue.serverTimestamp();
+
+  for (let i = 1; i <= count; i++) {
+    const email = `test-student-${String(i).padStart(3, '0')}@lunch-leftovers.local`;
+    const displayName = `測試學生${i}`;
+
+    try {
+      const snapshot = await db.collection('users').where('email', '==', email).limit(1).get();
+
+      if (!snapshot.empty) {
+        results.existing++;
+      } else {
+        const userId = db.collection('users').doc().id;
+
+        await db.collection('users').doc(userId).set({
+          userId,
+          email,
+          displayName,
+          passwordHash,
+          eCoin: 50,
+          sCoin: 20,
+          score: 100,
+          role: 'student',
+          isActive: true,
+          isTestAccount: true,
+          createdAt: now,
+          lastLoginAt: now
+        });
+
+        results.created++;
+      }
+    } catch (error) {
+      console.error(`  ✗ ${email}：${error.message}`);
+      results.failed.push({ email, error: error.message });
+    }
+  }
+
+  if (results.created) console.log(`  ✓ 額外測試學生帳號已建立：${results.created} 筆`);
+  if (results.existing) console.log(`  ✓ 額外測試學生帳號已存在：${results.existing} 筆`);
+
+  if (results.created > 0 || results.existing > 0) {
+    console.log('  📋 額外測試學生帳號登入資訊：');
+    console.log('  ' + '='.repeat(40));
+    console.log(`  帳號範例：test-student-001@lunch-leftovers.local`);
+    console.log(`  數量：${count} 個`);
+    console.log(`  共用密碼：${password}`);
+    console.log('  ⚠️  這些帳號僅供開發測試，正式上線前請刪除');
+    console.log('  ' + '='.repeat(40));
+  }
+
+  return results;
+}
+
+// ============================================================
 // 主流程
 // ============================================================
 
@@ -251,6 +311,17 @@ async function initializeDatabase() {
     await seedTestAccounts(password);
   } catch (error) {
     console.error('❌ 測試帳號建立失敗:', error.message);
+  }
+
+  // 額外批次建立測試帳號
+  const extraCount = parseInt(process.env.EXTRA_TEST_ACCOUNTS, 10);
+  if (extraCount > 0) {
+    try {
+      console.log(`\n🌱 開始建立 ${extraCount} 個額外測試學生帳號...`);
+      await seedExtraTestAccounts(extraCount, password);
+    } catch (error) {
+      console.error('❌ 額外測試帳號建立失敗:', error.message);
+    }
   }
 
   console.log('✅ 資料庫初始化完成\n');
