@@ -335,9 +335,6 @@ async function startApp(){
 
     // 載入最新資料
     await loadUserData();
-
-    // 載入可支援班級
-    await loadSupportClasses();
 }
 
 // 完成任務
@@ -616,30 +613,27 @@ function renderSupportClasses(containerId, data) {
     container.innerHTML = rows;
 }
 
-async function loadSupportClasses() {
-    try {
-        const data = await apiRequest('/task/support/list', 'GET');
-        renderSupportClasses('supportClassesList', data);
-    } catch (error) {
-        console.error('載入可支援班級失敗:', error);
-    }
-}
+async function openSupportTask() {
+    const intro = document.getElementById('supportIntro');
+    const listView = document.getElementById('supportClassListView');
 
-async function openSupport() {
-    const modal = document.getElementById('supportModal');
-    if (modal) modal.style.display = 'block';
+    if (intro) intro.classList.add('hidden');
+    if (listView) listView.classList.remove('hidden');
 
     try {
         const data = await apiRequest('/task/support/list', 'GET');
-        renderSupportClasses('supportModalList', data);
+        renderSupportClasses('supportClassListContainer', data);
     } catch (error) {
         console.error('開啟支援任務失敗:', error);
     }
 }
 
-function closeSupport() {
-    const modal = document.getElementById('supportModal');
-    if (modal) modal.style.display = 'none';
+function backSupportTask() {
+    const intro = document.getElementById('supportIntro');
+    const listView = document.getElementById('supportClassListView');
+
+    if (intro) intro.classList.remove('hidden');
+    if (listView) listView.classList.add('hidden');
 }
 
 async function completeSupport(classId, className) {
@@ -659,10 +653,9 @@ async function completeSupport(classId, className) {
             score += data.rewards.score;
             updateUI();
 
-            // 重新整理兩個列表
-            await loadSupportClasses();
-            const modalData = await apiRequest('/task/support/list', 'GET');
-            renderSupportClasses('supportModalList', modalData);
+            // 重新整理列表
+            const listData = await apiRequest('/task/support/list', 'GET');
+            renderSupportClasses('supportClassListContainer', listData);
         } else {
             alert(data.message || '支援失敗');
         }
@@ -815,8 +808,8 @@ const ACTION_HANDLERS = {
     analyzeFood,
     calculateReward,
     scrollToSection: (el) => scrollToSection(el.dataset.arg),
-    openSupport,
-    closeSupport,
+    openSupportTask,
+    backSupportTask,
     completeSupport: (el) => completeSupport(el.dataset.classId, el.dataset.className),
     openLottery,
     closeLottery,

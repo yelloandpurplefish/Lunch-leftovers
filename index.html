@@ -180,9 +180,29 @@
 
             <h2>🤝 支援任務</h2>
 
-            <p>完成自己的餐盤後，幫助其他班級分完剩食</p>
+            <div id="supportIntro">
 
-            <button data-action="openSupport">選擇支援班級</button>
+                <p>完成自己的餐盤後，幫助其他班級分完剩食</p>
+
+                <button data-action="openSupportTask">選擇支援班級</button>
+
+            </div>
+
+            <div id="supportClassListView" class="hidden">
+
+                <h3>可支援班級</h3>
+
+                <div id="supportClassListContainer">
+
+                    <p>載入中...</p>
+
+                </div>
+
+                <br>
+
+                <button data-action="backSupportTask">返回</button>
+
+            </div>
 
         </div>
 <div class="ranking" id="ranking">
@@ -356,18 +376,6 @@
 
 </div>
 
-    <div class="support-list" id="mySupportList">
-
-        <h2>🤝 可支援班級</h2>
-
-        <div id="supportClassesList">
-
-            <p>載入中...</p>
-
-        </div>
-
-    </div>
-
 </div>
 
 <!-- 抽獎彈窗 -->
@@ -383,18 +391,6 @@
 
     </section>
 
-</div>
-
-<!-- 支援任務彈窗 -->
-<div id="supportModal" class="lottery-modal">
-    <div class="lottery-content">
-        <span class="close-btn" data-action="closeSupport">&times;</span>
-        <h2>🤝 選擇支援班級</h2>
-        <p>完成自己餐盤後，協助其他班級分完剩食</p>
-        <div id="supportModalList" class="support-modal-list">
-            <p>載入中...</p>
-        </div>
-    </div>
 </div>
 
 <script src="firebase-config.js"></script>
