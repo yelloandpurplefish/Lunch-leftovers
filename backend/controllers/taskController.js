@@ -1,5 +1,32 @@
 const { db, admin } = require('../config/firebase');
 
+// 可支援班級列表（示範用）
+const SUPPORT_CLASSES = [
+  { classId: 'class-1a', className: '一年A班', leftoverWeight: 12 },
+  { classId: 'class-1b', className: '一年B班', leftoverWeight: 25 },
+  { classId: 'class-2a', className: '二年A班', leftoverWeight: 8 },
+  { classId: 'class-2b', className: '二年B班', leftoverWeight: 32 },
+  { classId: 'class-3a', className: '三年A班', leftoverWeight: 18 }
+];
+
+// 支援任務獎勵：光盤行動的 1.5 倍
+const SUPPORT_REWARDS = {
+  eCoin: 15,
+  sCoin: 8,
+  score: 45
+};
+
+function isToday(date) {
+  const now = new Date();
+  return date.getFullYear() === now.getFullYear() &&
+         date.getMonth() === now.getMonth() &&
+         date.getDate() === now.getDate();
+}
+
+function getUserTaskRecords(recordsSnapshot) {
+  return recordsSnapshot.docs.map(doc => doc.data());
+}
+
 // 取得使用者某類任務的最新記錄
 // 只以 userId 查詢，避免 Firestore 要求複合索引
 async function getLastTaskRecord(userId, taskType) {
@@ -248,4 +275,146 @@ const submitSurvey = async (req, res) => {
   }
 };
 
-module.exports = { completeLightDisc, claimLeftoverReward, submitSurvey };
+// 取得可支援班級列表
+const getSupportClasses = async (req, res) => {
+  try {
+    const userId = req.user.uid;
+    const recordsSnapshot = await db.collection('task_records')
+      .where('userId', '==', userId)
+      .get();
+    const records = getUserTaskRecords(recordsSnapshot);
+    const today = new Date();
+
+    // 檢查今天是否完成過光盤行動
+    const lightDiscCompleted = records.some(record =>
+      record.taskType === 'light_disc' &&
+      record.completedAt &&
+      isToday(record.completedAt.toDate())
+    );
+
+    if (!lightDiscCompleted) {
+      return res.status(200).json({
+        success: true,
+        unlocked: false,
+        message: '請先完成今日光盤行動，即可開啟支援任務',
+        classes: []
+      });
+    }
+
+    // 今天已支援過的班級
+    const supportedToday = new Set(
+      records
+        .filter(record =>
+          record.taskType === 'support' &&
+          record.completedAt &&
+          isToday(record.completedAt.toDate())
+        )
+        .map(record => record.classId)
+    );
+
+    const classes = SUPPORT_CLASSES.map(c => ({
+      ...c,
+      completed: supportedToday.has(c.classId)
+    }));
+
+    res.status(200).json({
+      success: true,
+      unlocked: true,
+      classes
+    });
+  } catch (error) {
+    console.error('取得支援班級失敗:', error);
+    res.status(500).json({
+      success: false,
+      message: error.message || '取得支援班級失敗'
+    });
+  }
+};
+
+// 完成支援任務
+const completeSupport = async (req, res) => {
+  try {
+    const userId = req.user.uid;
+    const { classId } = req.body;
+
+    if (!classId) {
+      return res.status(400).json({
+        success: false,
+        message: '請選擇要支援的班級'
+      });
+    }
+
+    const classInfo = SUPPORT_CLASSES.find(c => c.classId === classId);
+    if (!classInfo) {
+      return res.status(404).json({
+        success: false,
+        message: '班級不存在'
+      });
+    }
+
+    const recordsSnapshot = await db.collection('task_records')
+      .where('userId', '==', userId)
+      .get();
+    const records = getUserTaskRecords(recordsSnapshot);
+
+    const lightDiscCompleted = records.some(record =>
+      record.taskType === 'light_disc' &&
+      record.completedAt &&
+      isToday(record.completedAt.toDate())
+    );
+
+    if (!lightDiscCompleted) {
+      return res.status(400).json({
+        success: false,
+        message: '請先完成今日光盤行動'
+      });
+    }
+
+    const alreadySupported = records.some(record =>
+      record.taskType === 'support' &&
+      record.classId === classId &&
+      record.completedAt &&
+      isToday(record.completedAt.toDate())
+    );
+
+    if (alreadySupported) {
+      return res.status(400).json({
+        success: false,
+        message: '今天已支援過這個班級'
+      });
+    }
+
+    const now = admin.firestore.FieldValue.serverTimestamp();
+
+    await db.collection('users').doc(userId).update({
+      eCoin: admin.firestore.FieldValue.increment(SUPPORT_REWARDS.eCoin),
+      sCoin: admin.firestore.FieldValue.increment(SUPPORT_REWARDS.sCoin),
+      score: admin.firestore.FieldValue.increment(SUPPORT_REWARDS.score)
+    });
+
+    await db.collection('task_records').add({
+      userId,
+      taskType: 'support',
+      classId,
+      className: classInfo.className,
+      leftoverWeight: classInfo.leftoverWeight,
+      completedAt: now,
+      rewards: SUPPORT_REWARDS,
+      metadata: {}
+    });
+
+    res.status(200).json({
+      success: true,
+      message: `成功支援 ${classInfo.className}！`,
+      rewards: SUPPORT_REWARDS
+    });
+  } catch (error) {
+    console.error('完成支援任務失敗:', error);
+    res.status(500).json({
+      success: false,
+      message: error.message || '完成支援任務失敗'
+    });
+  }
+};
+
+module.exports = { completeLightDisc, claimLeftoverReward, submitSurvey, getSupportClasses, completeSupport };

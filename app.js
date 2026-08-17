@@ -335,6 +335,9 @@ async function startApp(){
 
     // 載入最新資料
     await loadUserData();
+
+    // 載入可支援班級
+    await loadSupportClasses();
 }
 
 // 完成任務
@@ -569,6 +572,93 @@ async function parentSignIn() {
     }
 }
 
+// 支援任務
+function renderSupportClasses(containerId, data) {
+    const container = document.getElementById(containerId);
+    if (!container) return;
+
+    if (!data.unlocked) {
+        container.innerHTML = `<p class="support-locked">🔒 ${data.message || '請先完成今日光盤行動'}</p>`;
+        return;
+    }
+
+    if (!data.classes || data.classes.length === 0) {
+        container.innerHTML = '<p>目前沒有可支援的班級</p>';
+        return;
+    }
+
+    const rows = data.classes.map(c => `
+        <div class="support-class-item">
+            <div class="support-class-info">
+                <strong>${c.className}</strong>
+                <span>剩食 ${c.leftoverWeight}g</span>
+            </div>
+            ${c.completed
+                ? '<span class="support-completed">今日已支援</span>'
+                : `<button data-action="completeSupport" data-class-id="${c.classId}" data-class-name="${c.className}">前往支援</button>`
+            }
+        </div>
+    `).join('');
+
+    container.innerHTML = rows;
+}
+
+async function loadSupportClasses() {
+    try {
+        const data = await apiRequest('/task/support/list', 'GET');
+        renderSupportClasses('supportClassesList', data);
+    } catch (error) {
+        console.error('載入可支援班級失敗:', error);
+    }
+}
+
+async function openSupport() {
+    const modal = document.getElementById('supportModal');
+    if (modal) modal.style.display = 'block';
+
+    try {
+        const data = await apiRequest('/task/support/list', 'GET');
+        renderSupportClasses('supportModalList', data);
+    } catch (error) {
+        console.error('開啟支援任務失敗:', error);
+    }
+}
+
+function closeSupport() {
+    const modal = document.getElementById('supportModal');
+    if (modal) modal.style.display = 'none';
+}
+
+async function completeSupport(classId, className) {
+    try {
+        const data = await apiRequest('/task/support/complete', 'POST', { classId });
+
+        if (data.success) {
+            alert(
+                `🎉 成功支援 ${className}！\n\n` +
+                `E幣 +${data.rewards.eCoin}\n` +
+                `S幣 +${data.rewards.sCoin}\n` +
+                `積分 +${data.rewards.score}`
+            );
+
+            eCoin += data.rewards.eCoin;
+            sCoin += data.rewards.sCoin;
+            score += data.rewards.score;
+            updateUI();
+
+            // 重新整理兩個列表
+            await loadSupportClasses();
+            const modalData = await apiRequest('/task/support/list', 'GET');
+            renderSupportClasses('supportModalList', modalData);
+        } else {
+            alert(data.message || '支援失敗');
+        }
+    } catch (error) {
+        console.error('支援任務失敗:', error);
+        alert('支援失敗，請稍後再試');
+    }
+}
+
 // 抽獎相關功能
 function openLottery(){
     document.getElementById("lotteryModal").style.display = "block";
@@ -712,6 +802,9 @@ const ACTION_HANDLERS = {
     analyzeFood,
     calculateReward,
     scrollToSection: (el) => scrollToSection(el.dataset.arg),
+    openSupport,
+    closeSupport,
+    completeSupport: (el) => completeSupport(el.dataset.classId, el.dataset.className),
     openLottery,
     closeLottery,
     spinLottery
