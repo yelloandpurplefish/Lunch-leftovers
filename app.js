@@ -411,6 +411,18 @@ async function buyS(price, name){
         alert('兌換失敗，請稍後再試');
     }
 }
+function displaySurveyResult(favorite, hate) {
+    const display = document.getElementById('surveyDisplay');
+    if (!display) return;
+
+    const today = new Date().toLocaleDateString('zh-TW');
+    display.innerHTML = `
+        <h3>📝 本次問卷結果（${today}）</h3>
+        <p><strong>最喜歡：</strong> ${favorite}</p>
+        <p><strong>最不喜歡：</strong> ${hate}</p>
+    `;
+}
+
 async function submitSurvey(){
     try {
         let favorite = document.getElementById("favoriteFood").value;
@@ -419,6 +431,7 @@ async function submitSurvey(){
         const data = await apiRequest('/task/submit-survey', 'POST', { favoriteFood: favorite, hateFood: hate });
 
         if (data.success) {
+            displaySurveyResult(favorite, hate);
             alert(
                 "✅ 問卷已送出！\n\n" +
                 "最喜歡：" + favorite + "\n" +
