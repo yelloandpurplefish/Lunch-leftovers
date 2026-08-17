@@ -178,6 +178,18 @@ async function seedTestAccounts(password) {
   if (results.created.length) console.log(`  ✓ 已建立：${results.created.join(', ')}`);
   if (results.existing.length) console.log(`  ✓ 已存在：${results.existing.join(', ')}`);
 
+  // 輸出測試帳號登入資訊，方便開發測試
+  console.log('  📋 測試帳號登入資訊：');
+  console.log('  ' + '='.repeat(60));
+  console.log(`  ${'角色'.padEnd(8)} | ${'顯示名稱'.padEnd(8)} | Email`);
+  console.log('  ' + '-'.repeat(60));
+  TEST_ACCOUNTS.forEach(({ email, displayName, role }) => {
+    console.log(`  ${role.padEnd(8)} | ${displayName.padEnd(8)} | ${email}`);
+  });
+  console.log('  ' + '='.repeat(60));
+  console.log(`  共用密碼：${password}`);
+  console.log('  ⚠️  這些帳號僅供開發測試，正式上線前請刪除');
+
   return results;
 }
 
