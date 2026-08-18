@@ -37,6 +37,16 @@ const REWARD_ITEMS = [
     category: 'exchange',
     stock: null,
     isActive: true
+  },
+  {
+    itemId: 'eco_bag',
+    name: '環保購物袋',
+    description: '耐用環保購物袋，減少塑膠袋使用',
+    costType: 'G',
+    cost: 20,
+    category: 'exchange',
+    stock: null,
+    isActive: true
   }
 ];
 
@@ -74,10 +84,10 @@ const DEFAULT_MENU_ITEMS = [
 // ============================================================
 
 const TEST_ACCOUNTS = [
-  { email: 'dev@lunch-leftovers.local', displayName: '開發人員', role: 'admin', eCoin: 1000, sCoin: 500, score: 10000 },
-  { email: 'qa@lunch-leftovers.local', displayName: '測試人員', role: 'admin', eCoin: 1000, sCoin: 500, score: 10000 },
-  { email: 'teacher@lunch-leftovers.local', displayName: '測試老師', role: 'teacher', eCoin: 500, sCoin: 300, score: 5000 },
-  { email: 'student@lunch-leftovers.local', displayName: '測試學生', role: 'student', eCoin: 100, sCoin: 50, score: 1000 }
+  { email: 'dev@lunch-leftovers.local', displayName: '開發人員', role: 'admin', eCoin: 1000, sCoin: 500, gCoin: 200, score: 10000 },
+  { email: 'qa@lunch-leftovers.local', displayName: '測試人員', role: 'admin', eCoin: 1000, sCoin: 500, gCoin: 200, score: 10000 },
+  { email: 'teacher@lunch-leftovers.local', displayName: '測試老師', role: 'teacher', eCoin: 500, sCoin: 300, gCoin: 100, score: 5000 },
+  { email: 'student@lunch-leftovers.local', displayName: '測試學生', role: 'student', eCoin: 100, sCoin: 50, gCoin: 30, score: 1000 }
 ];
 
 // ============================================================
@@ -159,6 +169,7 @@ async function seedTestAccounts(password) {
           passwordHash,
           eCoin: account.eCoin,
           sCoin: account.sCoin,
+          gCoin: account.gCoin || 0,
           score: account.score,
           role: account.role,
           isActive: true,
@@ -221,6 +232,7 @@ async function seedExtraTestAccounts(count, password) {
           passwordHash,
           eCoin: 50,
           sCoin: 20,
+          gCoin: 10,
           score: 100,
           role: 'student',
           isActive: true,

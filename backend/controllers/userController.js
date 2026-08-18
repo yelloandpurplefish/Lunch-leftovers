@@ -27,6 +27,7 @@ const getProfile = async (req, res) => {
         email: userData.email,
         eCoin: userData.eCoin,
         sCoin: userData.sCoin,
+        gCoin: userData.gCoin || 0,
         score: userData.score,
         createdAt: userData.createdAt,
         lastLoginAt: userData.lastLoginAt,

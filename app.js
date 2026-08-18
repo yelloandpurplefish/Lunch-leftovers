@@ -168,6 +168,7 @@ async function handleLogout() {
     idToken = null;
     eCoin = 0;
     sCoin = 0;
+    gCoin = 0;
     score = 0;
     localStorage.removeItem('token');
     localStorage.removeItem('user');
@@ -185,6 +186,7 @@ async function loadUserData() {
     if (data.success) {
       eCoin = data.userData.eCoin || 0;
       sCoin = data.userData.sCoin || 0;
+      gCoin = data.userData.gCoin || 0;
       score = data.userData.score || 0;
 
       // 同步前端 currentUser
@@ -224,6 +226,8 @@ function showLoggedInState() {
 
 // 更新已登入狀態的統計數據
 function updateLoggedInStats() {
+  const userGCoinEl = document.getElementById('userGCoin');
+  if (userGCoinEl) userGCoinEl.textContent = gCoin;
   document.getElementById('userECoin').textContent = eCoin;
   document.getElementById('userSCoin').textContent = sCoin;
   document.getElementById('userScore').textContent = score;
@@ -233,6 +237,7 @@ function updateLoggedInStats() {
 function updateUI() {
   document.getElementById('ecoin').textContent = eCoin;
   document.getElementById('scoin').textContent = sCoin;
+  document.getElementById('gcoin').textContent = gCoin;
   document.getElementById('score').textContent = score;
   document.getElementById('myRankScore').textContent = score;
   updateLoggedInStats();
@@ -408,6 +413,26 @@ async function buyS(price, name){
         alert('兌換失敗，請稍後再試');
     }
 }
+
+async function buyG(price, name){
+    try {
+        const itemId = 'eco_bag';
+
+        const data = await apiRequest('/exchange/redeem', 'POST', { itemId });
+
+        if (data.success) {
+            gCoin = data.remainingCoin;
+            updateUI();
+            alert("🎉 成功兌換：" + name);
+        } else {
+            alert(data.message || '兌換失敗');
+        }
+    } catch (error) {
+        console.error('兌換失敗:', error);
+        alert('兌換失敗，請稍後再試');
+    }
+}
+
 function displaySurveyResult(favorite, hate) {
     const display = document.getElementById('surveyDisplay');
     if (!display) return;
@@ -804,6 +829,7 @@ const ACTION_HANDLERS = {
     parentSignIn,
     buyE: (el) => buyE(Number(el.dataset.price), el.dataset.item),
     buyS: (el) => buyS(Number(el.dataset.price), el.dataset.item),
+    buyG: (el) => buyG(Number(el.dataset.price), el.dataset.item),
     submitSurvey,
     analyzeFood,
     calculateReward,

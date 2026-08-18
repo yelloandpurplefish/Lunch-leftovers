@@ -57,6 +57,7 @@ const register = async (req, res) => {
       passwordHash,
       eCoin: 0,
       sCoin: 0,
+      gCoin: 0,
       score: 0,
       role: 'student',
       isActive: true,
@@ -80,6 +81,7 @@ const register = async (req, res) => {
         email,
         eCoin: 0,
         sCoin: 0,
+        gCoin: 0,
         score: 0,
         role: 'student'
       }
@@ -150,6 +152,7 @@ const login = async (req, res) => {
         email: userData.email,
         eCoin: userData.eCoin || 0,
         sCoin: userData.sCoin || 0,
+        gCoin: userData.gCoin || 0,
         score: userData.score || 0,
         role: userData.role
       }

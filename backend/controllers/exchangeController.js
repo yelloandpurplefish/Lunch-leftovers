@@ -42,7 +42,13 @@ const redeemItem = async (req, res) => {
         return { error: { status: 400, message: '物品庫存不足' } };
       }
 
-      const coinField = item.costType === 'E' ? 'eCoin' : 'sCoin';
+      const coinFieldMap = { E: 'eCoin', S: 'sCoin', G: 'gCoin' };
+      const coinField = coinFieldMap[item.costType];
+
+      if (!coinField) {
+        return { error: { status: 400, message: '不支援的貨幣類型' } };
+      }
+
       const balance = userData[coinField] || 0;
 
       if (balance < item.cost) {
