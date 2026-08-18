@@ -565,6 +565,29 @@ function analyzeFood(){
     document.getElementById("leastFood").innerHTML =
         "🥗 剩最少：" + least.name + "（" + least.value + " 克）";
 
+    // 繪製剩食柱狀圖
+    renderFoodBarChart(foods);
+
+}
+
+function renderFoodBarChart(foods){
+
+    const container = document.getElementById("foodChartContainer");
+    if(!container) return;
+
+    const max = Math.max(...foods.map(f => f.value), 1);
+
+    container.innerHTML = foods.map(food => {
+        const height = Math.round((food.value / max) * 100);
+        return `
+            <div style="flex: 1; display: flex; flex-direction: column; align-items: center; justify-content: flex-end; text-align: center;">
+                <div style="font-size: 12px; margin-bottom: 5px;">${food.value}g</div>
+                <div style="width: 80%; background: linear-gradient(to top, #4caf50, #81c784); border-radius: 6px 6px 0 0; height: ${height}%;"></div>
+                <div style="font-size: 12px; margin-top: 8px; word-break: keep-all;">${food.name}</div>
+            </div>
+        `;
+    }).join('');
+
 }
 async function calculateReward(){
     try {
