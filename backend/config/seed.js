@@ -84,10 +84,10 @@ const DEFAULT_MENU_ITEMS = [
 // ============================================================
 
 const TEST_ACCOUNTS = [
-  { email: 'dev@lunch-leftovers.local', displayName: '開發人員', role: 'admin', eCoin: 1000, sCoin: 500, gCoin: 200, score: 10000 },
-  { email: 'qa@lunch-leftovers.local', displayName: '測試人員', role: 'admin', eCoin: 1000, sCoin: 500, gCoin: 200, score: 10000 },
-  { email: 'teacher@lunch-leftovers.local', displayName: '測試老師', role: 'teacher', eCoin: 500, sCoin: 300, gCoin: 100, score: 5000 },
-  { email: 'student@lunch-leftovers.local', displayName: '測試學生', role: 'student', eCoin: 100, sCoin: 50, gCoin: 30, score: 1000 }
+  { email: 'dev@lunch-leftovers.local', displayName: '開發人員', role: 'admin', eCoin: 1000, sCoin: 500, gCoin: 200, score: 10000, classId: 'class-3a' },
+  { email: 'qa@lunch-leftovers.local', displayName: '測試人員', role: 'admin', eCoin: 1000, sCoin: 500, gCoin: 200, score: 10000, classId: 'class-3a' },
+  { email: 'teacher@lunch-leftovers.local', displayName: '測試老師', role: 'teacher', eCoin: 500, sCoin: 300, gCoin: 100, score: 5000, classId: 'class-3a' },
+  { email: 'student@lunch-leftovers.local', displayName: '測試學生', role: 'student', eCoin: 100, sCoin: 50, gCoin: 30, score: 1000, classId: 'class-3a' }
 ];
 
 // ============================================================
@@ -171,6 +171,7 @@ async function seedTestAccounts(password) {
           sCoin: account.sCoin,
           gCoin: account.gCoin || 0,
           score: account.score,
+          classId: account.classId || null,
           role: account.role,
           isActive: true,
           isTestAccount: true,
@@ -234,6 +235,7 @@ async function seedExtraTestAccounts(count, password) {
           sCoin: 20,
           gCoin: 10,
           score: 100,
+          classId: 'class-extra',
           role: 'student',
           isActive: true,
           isTestAccount: true,

@@ -239,7 +239,6 @@ function updateUI() {
   document.getElementById('scoin').textContent = sCoin;
   document.getElementById('gcoin').textContent = gCoin;
   document.getElementById('score').textContent = score;
-  document.getElementById('myRankScore').textContent = score;
   updateLoggedInStats();
 }
 
@@ -310,6 +309,42 @@ window.addEventListener('scroll', function() {
     }
 });
 
+// 載入班級排行榜
+async function loadClassRanking() {
+    try {
+        const data = await apiRequest('/leaderboard', 'GET');
+        const tbody = document.getElementById('classRankingList');
+        if (!tbody) return;
+
+        if (!data.success) {
+            tbody.innerHTML = `<tr><td colspan="3">載入失敗</td></tr>`;
+            return;
+        }
+
+        const rows = data.leaderboard.map(student => `
+            <tr>
+                <td>${student.rank}</td>
+                <td>${student.displayName}</td>
+                <td>${student.score}</td>
+            </tr>
+        `).join('');
+
+        tbody.innerHTML = rows;
+
+        if (data.myRank) {
+            tbody.innerHTML += `
+                <tr class="my-rank-row">
+                    <td>⭐</td>
+                    <td>你</td>
+                    <td>${data.myRank.rank} 名（${data.myRank.score}）</td>
+                </tr>
+            `;
+        }
+    } catch (error) {
+        console.error('載入班級排行榜失敗:', error);
+    }
+}
+
 // 滾動到指定區塊
 function scrollToSection(sectionId) {
     const section = document.getElementById(sectionId);
@@ -340,6 +375,9 @@ async function startApp(){
 
     // 載入最新資料
     await loadUserData();
+
+    // 載入班級排行榜
+    await loadClassRanking();
 }
 
 // 完成任務

@@ -1,61 +1,42 @@
 const { db } = require('../config/firebase');
 
-// 獲取排行榜
+// 獲取班級排行榜
 const getLeaderboard = async (req, res) => {
   try {
-    const limit = parseInt(req.query.limit) || 10;
-    const schoolId = req.query.schoolId;
-
-    // 構建查詢
-    let query = db.collection('users')
-      .where('isActive', '==', true)
-      .orderBy('score', 'desc')
-      .limit(limit);
-
-    // 如果指定學校，過濾學校
-    if (schoolId) {
-      query = query.where('schoolId', '==', schoolId);
-    }
-
-    const leaderboardQuery = await query.get();
-
-    const leaderboard = leaderboardQuery.docs.map((doc, index) => {
-      const data = doc.data();
-      return {
-        rank: index + 1,
-        displayName: data.displayName,
-        score: data.score,
-        schoolId: data.schoolId,
-        classId: data.classId
-      };
-    });
-
-    // 獲取當前使用者的排名
     const userId = req.user.uid;
     const userDoc = await db.collection('users').doc(userId).get();
+
+    if (!userDoc.exists) {
+      return res.status(404).json({
+        success: false,
+        message: '使用者不存在'
+      });
+    }
+
     const userData = userDoc.data();
+    const classId = userData.classId || null;
+    const limit = parseInt(req.query.limit) || 10;
 
-    // 計算使用者排名（需要查詢所有使用者）
-    let allUsersQuery = db.collection('users')
-      .where('isActive', '==', true)
-      .orderBy('score', 'desc');
+    // 在 Node.js 端依 classId 篩選並排序，避免 Firestore 複合索引
+    const snapshot = await db.collection('users').get();
 
-    if (schoolId) {
-      allUsersQuery = allUsersQuery.where('schoolId', '==', schoolId);
-    }
+    const allStudents = snapshot.docs
+      .map(doc => ({ id: doc.id, ...doc.data() }))
+      .filter(user => user.isActive !== false && (user.classId || null) === classId)
+      .sort((a, b) => (b.score || 0) - (a.score || 0));
 
-    const allUsers = await allUsersQuery.get();
-    let myRank = null;
-    
-    for (let i = 0; i < allUsers.docs.length; i++) {
-      if (allUsers.docs[i].id === userId) {
-        myRank = {
-          rank: i + 1,
-          score: userData.score
-        };
-        break;
-      }
-    }
+    const leaderboard = allStudents.slice(0, limit).map((student, index) => ({
+      rank: index + 1,
+      displayName: student.displayName || '匿名',
+      score: student.score || 0,
+      classId: student.classId || null
+    }));
+
+    // 計算自己的名次
+    const myIndex = allStudents.findIndex(s => s.id === userId);
+    const myRank = myIndex >= 0
+      ? { rank: myIndex + 1, score: allStudents[myIndex].score || 0 }
+      : null;
 
     res.status(200).json({
       success: true,
@@ -63,10 +44,10 @@ const getLeaderboard = async (req, res) => {
       myRank
     });
   } catch (error) {
-    console.error('獲取排行榜失敗:', error);
+    console.error('獲取班級排行榜失敗:', error);
     res.status(500).json({
       success: false,
-      message: error.message || '獲取排行榜失敗'
+      message: error.message || '獲取班級排行榜失敗'
     });
   }
 };
