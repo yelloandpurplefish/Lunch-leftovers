@@ -761,100 +761,69 @@ function closeLottery(){
     document.getElementById("lotteryModal").style.display = "none";
 }
 
-function spinLottery(){
+async function spinLottery(){
     if(eCoin < 10){
         alert("❌ E幣不足！需要 10 E幣進行抽獎");
         return;
     }
 
-    eCoin -= 10;
-    document.getElementById("ecoin").innerHTML = eCoin;
-
     const resultDiv = document.getElementById("lotteryResult");
     resultDiv.innerHTML = "<div class='spinning'>🎰 抽獎中...</div>";
 
-    // 抽獎結果：大獎5%，普通30%，小獎65%
-    const rand = Math.random() * 100;
-    let prize, prizeType, prizeValue;
+    try {
+        const data = await apiRequest('/lottery/spin', 'POST');
 
-    if(rand < 5){
-        // 大獎
-        const grandPrizes = [
-            {name: "🎁 豪華文具組", value: 60},
-            {name: "🌟 特別獎勵包", value: 55},
-            {name: "💎 稀有空氣清新劑", value: 50},
-            {name: "🎧 無線藍牙耳機", value: 70},
-            {name: "🎮 掌上遊戲機", value: 65},
-            {name: "🎒 限量後背包", value: 58}
-        ];
-        const selected = grandPrizes[Math.floor(Math.random() * grandPrizes.length)];
-        prize = selected.name;
-        prizeValue = selected.value;
-        prizeType = "grand";
-    }else if(rand < 35){
-        // 普通
-        const normalPrizes = [
-            {name: "📝 筆記本", value: 30},
-            {name: "✏️ 鉛筆組", value: 25},
-            {name: "📏 尺", value: 20},
-            {name: "🔖 書籤", value: 15},
-            {name: "🖊️ 原子筆", value: 18},
-            {name: "🗂️ 資料夾", value: 22},
-            {name: "🧃 果汁", value: 12},
-            {name: "🍪 餅乾", value: 14}
-        ];
-        const selected = normalPrizes[Math.floor(Math.random() * normalPrizes.length)];
-        prize = selected.name;
-        prizeValue = selected.value;
-        prizeType = "normal";
-    }else{
-        // 小獎
-        const smallPrizes = [
-            {name: "🍬 糖果", value: 5},
-            {name: "🧻 紙巾", value: 3},
-            {name: "💧 飲用水", value: 2},
-            {name: "🍭 棒棒糖", value: 4},
-            {name: "🍫 巧克力", value: 6},
-            {name: "🥠 幸運餅乾", value: 3},
-            {name: "🧼 小肥皂", value: 2},
-            {name: "🎈 氣球", value: 2}
-        ];
-        const selected = smallPrizes[Math.floor(Math.random() * smallPrizes.length)];
-        prize = selected.name;
-        prizeValue = selected.value;
-        prizeType = "small";
+        if (!data.success) {
+            await loadUserData();
+            alert(data.message || '❌ 抽獎失敗');
+            resultDiv.innerHTML = '';
+            return;
+        }
+
+        const prizeType = data.prize.type;
+        const prize = data.prize.name;
+        const prizeValue = data.prize.value;
+        const isGrandPrize = data.prize.isGrandPrize;
+
+        // 模擬抽獎動畫
+        setTimeout(() => {
+            let effectClass = "";
+            if (prizeType === "grand") {
+                effectClass = "grand-prize";
+            } else if (prizeType === "normal") {
+                effectClass = "normal-prize";
+            } else {
+                effectClass = "small-prize";
+            }
+
+            const prizeIcon = prizeType === "grand" ? "🎉" : prizeType === "normal" ? "🎁" : "🎊";
+            const prizeLabel = prizeType === "grand" ? "大獎！" : prizeType === "normal" ? "普通獎" : "小獎";
+
+            resultDiv.innerHTML = `
+                <div class="prize-result ${effectClass}">
+                    <div class="prize-icon">${prizeIcon}</div>
+                    <div class="prize-name">${prize}</div>
+                    <div class="prize-type">${prizeLabel}</div>
+                    <div class="prize-value">價值：${prizeValue} E幣</div>
+                    <div class="prize-balance">E幣餘額：${data.remainingECoin}</div>
+                </div>
+            `;
+
+            // 大獎特效
+            if (isGrandPrize) {
+                createConfetti();
+            }
+
+            // 同步 E幣餘額
+            eCoin = data.remainingECoin;
+            updateUI();
+
+        }, 1500);
+    } catch (error) {
+        console.error('抽獎失敗:', error);
+        alert('❌ 抽獎失敗，請稍後再試');
+        resultDiv.innerHTML = '';
     }
-
-    // 模擬抽獎動畫
-    setTimeout(() => {
-        let effectClass = "";
-        if(prizeType === "grand"){
-            effectClass = "grand-prize";
-        }else if(prizeType === "normal"){
-            effectClass = "normal-prize";
-        }else{
-            effectClass = "small-prize";
-        }
-
-        resultDiv.innerHTML = `
-            <div class="prize-result ${effectClass}">
-                <div class="prize-icon">${prizeType === "grand" ? "🎉" : prizeType === "normal" ? "🎁" : "🎊"}</div>
-                <div class="prize-name">${prize}</div>
-                <div class="prize-type">${prizeType === "grand" ? "大獎！" : prizeType === "normal" ? "普通獎" : "小獎"}</div>
-                <div class="prize-value">價值：${prizeValue} E幣</div>
-            </div>
-        `;
-
-        // 如果是大獎，添加特效
-        if(prizeType === "grand"){
-            createConfetti();
-        }
-
-        // 獎勵直接加到E幣
-        eCoin += prizeValue;
-        document.getElementById("ecoin").innerHTML = eCoin;
-
-    }, 1500);
 }
 
 // 大獎特效 - 彩帶效果
