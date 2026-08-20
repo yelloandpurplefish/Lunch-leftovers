@@ -476,6 +476,7 @@ async function finishTask(){
                 "✅ 光盤行動已送出老師審核\n\n" +
                 "E幣 +" + data.rewards.eCoin + "\n" +
                 "S幣 +" + data.rewards.sCoin + "\n" +
+                "綠點 +" + data.rewards.gCoin + "\n" +
                 "積分 +" + data.rewards.score + "\n\n" +
                 "（老師核准後才會發放）"
             );
@@ -687,7 +688,8 @@ async function calculateReward(){
             alert(
                 "✅ 剩食獎勵已送出老師審核\n\n" +
                 "E幣 +" + data.rewards.eCoin + "\n" +
-                "S幣 +" + data.rewards.sCoin + "\n\n" +
+                "S幣 +" + data.rewards.sCoin + "\n" +
+                "綠點 +" + data.rewards.gCoin + "\n\n" +
                 "（老師核准後才會發放）"
             );
         } else {
@@ -787,11 +789,13 @@ async function completeSupport(classId, className) {
                 `🎉 成功支援 ${className}！\n\n` +
                 `E幣 +${data.rewards.eCoin}\n` +
                 `S幣 +${data.rewards.sCoin}\n` +
+                `綠點 +${data.rewards.gCoin}\n` +
                 `積分 +${data.rewards.score}`
             );
 
             eCoin += data.rewards.eCoin;
             sCoin += data.rewards.sCoin;
+            gCoin += data.rewards.gCoin || 0;
             score += data.rewards.score;
             updateUI();
 

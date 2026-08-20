@@ -13,6 +13,7 @@ const SUPPORT_CLASSES = [
 const SUPPORT_REWARDS = {
   eCoin: 15,
   sCoin: 8,
+  gCoin: 5,
   score: 45
 };
 
@@ -71,6 +72,7 @@ const completeLightDisc = async (req, res) => {
     const rewards = {
       eCoin: 10,
       sCoin: 5,
+      gCoin: 3,
       score: 30
     };
 
@@ -134,22 +136,26 @@ const claimLeftoverReward = async (req, res) => {
       });
     }
 
-    let addE, addS;
+    let addE, addS, addG;
     if (leftoverWeight <= 10) {
       addE = 20;
       addS = 10;
+      addG = 5;
     } else if (leftoverWeight <= 30) {
       addE = 15;
       addS = 8;
+      addG = 4;
     } else if (leftoverWeight <= 50) {
       addE = 10;
       addS = 5;
+      addG = 3;
     } else {
       addE = 5;
       addS = 2;
+      addG = 2;
     }
 
-    const rewards = { eCoin: addE, sCoin: addS };
+    const rewards = { eCoin: addE, sCoin: addS, gCoin: addG };
 
     await db.collection('task_records').add({
       userId,
@@ -312,6 +318,7 @@ const verifyTask = async (req, res) => {
 
       if (rewards.eCoin) updates.eCoin = admin.firestore.FieldValue.increment(rewards.eCoin);
       if (rewards.sCoin) updates.sCoin = admin.firestore.FieldValue.increment(rewards.sCoin);
+      if (rewards.gCoin) updates.gCoin = admin.firestore.FieldValue.increment(rewards.gCoin);
       if (rewards.score) updates.score = admin.firestore.FieldValue.increment(rewards.score);
 
       if (Object.keys(updates).length > 0) {
