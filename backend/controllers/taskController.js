@@ -28,7 +28,6 @@ function getUserTaskRecords(recordsSnapshot) {
 }
 
 // 取得使用者某類任務的最新記錄
-// 只以 userId 查詢，避免 Firestore 要求複合索引
 async function getLastTaskRecord(userId, taskType) {
   const snapshot = await db.collection('task_records')
     .where('userId', '==', userId)
@@ -44,66 +43,51 @@ async function getLastTaskRecord(userId, taskType) {
   return records[0] || null;
 }
 
-// 計算剩餘冷卻時間（小時）
-function getHoursRemaining(cooldownMs, lastCompletedAt) {
-  const timeSinceLast = Date.now() - lastCompletedAt.toDate().getTime();
-  if (timeSinceLast >= cooldownMs) return 0;
-  return Math.ceil((cooldownMs - timeSinceLast) / (60 * 60 * 1000));
+// 檢查是否已有待審核的同類記錄
+async function hasPendingRecord(userId, taskType) {
+  const snapshot = await db.collection('task_records')
+    .where('userId', '==', userId)
+    .get();
+
+  return snapshot.docs.some(doc => {
+    const data = doc.data();
+    return data.taskType === taskType && data.status === 'pending';
+  });
 }
 
-// 完成光盤行動任務
+// 完成光盤行動任務（改為老師驗證）
 const completeLightDisc = async (req, res) => {
   try {
     const userId = req.user.uid;
     const now = admin.firestore.FieldValue.serverTimestamp();
-    const cooldownHours = 24;
-    const cooldownMs = cooldownHours * 60 * 60 * 1000;
 
-    // 檢查上次完成時間
-    const lastRecord = await getLastTaskRecord(userId, 'light_disc');
-
-    if (lastRecord) {
-      const hoursRemaining = getHoursRemaining(cooldownMs, lastRecord.completedAt);
-      if (hoursRemaining > 0) {
-        return res.status(400).json({
-          success: false,
-          message: '尚未達到領取時間',
-          hoursRemaining
-        });
-      }
+    if (await hasPendingRecord(userId, 'light_disc')) {
+      return res.status(400).json({
+        success: false,
+        message: '已有待審核的光盤行動記錄'
+      });
     }
 
-    // 計算獎勵
     const rewards = {
       eCoin: 10,
       sCoin: 5,
       score: 30
     };
 
-    // 更新使用者貨幣
-    await db.collection('users').doc(userId).update({
-      eCoin: admin.firestore.FieldValue.increment(rewards.eCoin),
-      sCoin: admin.firestore.FieldValue.increment(rewards.sCoin),
-      score: admin.firestore.FieldValue.increment(rewards.score)
-    });
-
-    // 記錄任務完成
     await db.collection('task_records').add({
       userId,
       taskType: 'light_disc',
-      completedAt: now,
+      status: 'pending',
+      requestedAt: now,
       rewards,
       metadata: {}
     });
 
-    // 計算下次可領取時間
-    const nextAvailableAt = new Date(Date.now() + cooldownMs);
-
     res.status(200).json({
       success: true,
-      message: '任務完成！',
-      rewards,
-      nextAvailableAt: nextAvailableAt.toISOString()
+      message: '已送出老師審核',
+      pending: true,
+      rewards
     });
   } catch (error) {
     console.error('完成光盤行動失敗:', error);
@@ -114,16 +98,13 @@ const completeLightDisc = async (req, res) => {
   }
 };
 
-// 領取剩食獎勵
+// 領取剩食獎勵（改為老師驗證）
 const claimLeftoverReward = async (req, res) => {
   try {
     const userId = req.user.uid;
     const { leftoverWeight, foodAnalysis } = req.body;
     const now = admin.firestore.FieldValue.serverTimestamp();
-    const cooldownHours = 24;
-    const cooldownMs = cooldownHours * 60 * 60 * 1000;
 
-    // 驗證輸入
     if (!leftoverWeight || leftoverWeight < 0) {
       return res.status(400).json({
         success: false,
@@ -138,7 +119,6 @@ const claimLeftoverReward = async (req, res) => {
       });
     }
 
-    // 檢查是否有填寫剩食資料
     const hasAnalysis = foodAnalysis.some(item => item.leftoverGrams > 0);
     if (!hasAnalysis) {
       return res.status(400).json({
@@ -147,21 +127,13 @@ const claimLeftoverReward = async (req, res) => {
       });
     }
 
-    // 檢查上次領取時間
-    const lastRecord = await getLastTaskRecord(userId, 'leftover_reward');
-
-    if (lastRecord) {
-      const hoursRemaining = getHoursRemaining(cooldownMs, lastRecord.completedAt);
-      if (hoursRemaining > 0) {
-        return res.status(400).json({
-          success: false,
-          message: '尚未達到領取時間',
-          hoursRemaining
-        });
-      }
+    if (await hasPendingRecord(userId, 'leftover_reward')) {
+      return res.status(400).json({
+        success: false,
+        message: '已有待審核的剩食獎勵記錄'
+      });
     }
 
-    // 計算獎勵
     let addE, addS;
     if (leftoverWeight <= 10) {
       addE = 20;
@@ -179,17 +151,11 @@ const claimLeftoverReward = async (req, res) => {
 
     const rewards = { eCoin: addE, sCoin: addS };
 
-    // 更新使用者貨幣
-    await db.collection('users').doc(userId).update({
-      eCoin: admin.firestore.FieldValue.increment(rewards.eCoin),
-      sCoin: admin.firestore.FieldValue.increment(rewards.sCoin)
-    });
-
-    // 記錄任務完成
     await db.collection('task_records').add({
       userId,
       taskType: 'leftover_reward',
-      completedAt: now,
+      status: 'pending',
+      requestedAt: now,
       rewards,
       metadata: {
         leftoverWeight,
@@ -197,14 +163,11 @@ const claimLeftoverReward = async (req, res) => {
       }
     });
 
-    // 計算下次可領取時間
-    const nextAvailableAt = new Date(Date.now() + cooldownMs);
-
     res.status(200).json({
       success: true,
-      message: '獎勵已發放！',
-      rewards,
-      nextAvailableAt: nextAvailableAt.toISOString()
+      message: '已送出老師審核',
+      pending: true,
+      rewards
     });
   } catch (error) {
     console.error('領取剩食獎勵失敗:', error);
@@ -215,16 +178,13 @@ const claimLeftoverReward = async (req, res) => {
   }
 };
 
-// 提交問卷
+// 提交問卷（改為老師驗證）
 const submitSurvey = async (req, res) => {
   try {
     const userId = req.user.uid;
     const { favoriteFood, hateFood } = req.body;
     const now = admin.firestore.FieldValue.serverTimestamp();
-    const cooldownHours = 24;
-    const cooldownMs = cooldownHours * 60 * 60 * 1000;
 
-    // 驗證輸入
     if (!favoriteFood || !hateFood) {
       return res.status(400).json({
         success: false,
@@ -232,25 +192,18 @@ const submitSurvey = async (req, res) => {
       });
     }
 
-    // 檢查上次提交時間
-    const lastRecord = await getLastTaskRecord(userId, 'survey');
-
-    if (lastRecord) {
-      const hoursRemaining = getHoursRemaining(cooldownMs, lastRecord.completedAt);
-      if (hoursRemaining > 0) {
-        return res.status(400).json({
-          success: false,
-          message: '尚未達到送出時間',
-          hoursRemaining
-        });
-      }
+    if (await hasPendingRecord(userId, 'survey')) {
+      return res.status(400).json({
+        success: false,
+        message: '已有待審核的問卷記錄'
+      });
     }
 
-    // 記錄問卷提交
     await db.collection('task_records').add({
       userId,
       taskType: 'survey',
-      completedAt: now,
+      status: 'pending',
+      requestedAt: now,
       rewards: {},
       metadata: {
         favoriteFood,
@@ -258,19 +211,142 @@ const submitSurvey = async (req, res) => {
       }
     });
 
-    // 計算下次可送出時間
-    const nextAvailableAt = new Date(Date.now() + cooldownMs);
-
     res.status(200).json({
       success: true,
-      message: '問卷已送出！',
-      nextAvailableAt: nextAvailableAt.toISOString()
+      message: '已送出老師審核',
+      pending: true
     });
   } catch (error) {
     console.error('提交問卷失敗:', error);
     res.status(500).json({
       success: false,
       message: error.message || '提交問卷失敗'
+    });
+  }
+};
+
+// 老師取得待審核項目
+const getPendingTasks = async (req, res) => {
+  try {
+    const snapshot = await db.collection('task_records')
+      .where('status', '==', 'pending')
+      .get();
+
+    const pendingList = [];
+    for (const doc of snapshot.docs) {
+      const data = doc.data();
+      const userDoc = await db.collection('users').doc(data.userId).get();
+      const userData = userDoc.exists ? userDoc.data() : {};
+
+      pendingList.push({
+        recordId: doc.id,
+        userId: data.userId,
+        displayName: userData.displayName || '匿名',
+        taskType: data.taskType,
+        rewards: data.rewards || {},
+        metadata: data.metadata || {},
+        requestedAt: data.requestedAt ? data.requestedAt.toDate().toISOString() : null
+      });
+    }
+
+    pendingList.sort((a, b) => new Date(b.requestedAt || 0) - new Date(a.requestedAt || 0));
+
+    res.status(200).json({
+      success: true,
+      pending: pendingList
+    });
+  } catch (error) {
+    console.error('取得待審核項目失敗:', error);
+    res.status(500).json({
+      success: false,
+      message: error.message || '取得待審核項目失敗'
+    });
+  }
+};
+
+// 老師審核項目
+const verifyTask = async (req, res) => {
+  try {
+    const teacherId = req.user.uid;
+    const { recordId, action } = req.body;
+
+    if (!recordId || !action) {
+      return res.status(400).json({
+        success: false,
+        message: '請提供記錄 ID 與審核動作'
+      });
+    }
+
+    if (action !== 'approve' && action !== 'reject') {
+      return res.status(400).json({
+        success: false,
+        message: '審核動作必須為 approve 或 reject'
+      });
+    }
+
+    const recordRef = db.collection('task_records').doc(recordId);
+    const recordDoc = await recordRef.get();
+
+    if (!recordDoc.exists) {
+      return res.status(404).json({
+        success: false,
+        message: '記錄不存在'
+      });
+    }
+
+    const record = recordDoc.data();
+
+    if (record.status !== 'pending') {
+      return res.status(400).json({
+        success: false,
+        message: '此記錄已審核過'
+      });
+    }
+
+    const userRef = db.collection('users').doc(record.userId);
+    const now = admin.firestore.FieldValue.serverTimestamp();
+
+    if (action === 'approve') {
+      const updates = {};
+      const rewards = record.rewards || {};
+
+      if (rewards.eCoin) updates.eCoin = admin.firestore.FieldValue.increment(rewards.eCoin);
+      if (rewards.sCoin) updates.sCoin = admin.firestore.FieldValue.increment(rewards.sCoin);
+      if (rewards.score) updates.score = admin.firestore.FieldValue.increment(rewards.score);
+
+      if (Object.keys(updates).length > 0) {
+        await userRef.update(updates);
+      }
+
+      await recordRef.update({
+        status: 'approved',
+        completedAt: now,
+        verifiedAt: now,
+        verifiedBy: teacherId
+      });
+
+      res.status(200).json({
+        success: true,
+        message: '已核准',
+        rewards
+      });
+    } else {
+      await recordRef.update({
+        status: 'rejected',
+        rejectedAt: now,
+        rejectedBy: teacherId
+      });
+
+      res.status(200).json({
+        success: true,
+        message: '已拒絕'
+      });
+    }
+  } catch (error) {
+    console.error('審核任務失敗:', error);
+    res.status(500).json({
+      success: false,
+      message: error.message || '審核任務失敗'
     });
   }
 };
@@ -285,7 +361,6 @@ const getSupportClasses = async (req, res) => {
     const records = getUserTaskRecords(recordsSnapshot);
     const today = new Date();
 
-    // 檢查今天是否完成過光盤行動
     const lightDiscCompleted = records.some(record =>
       record.taskType === 'light_disc' &&
       record.completedAt &&
@@ -301,7 +376,6 @@ const getSupportClasses = async (req, res) => {
       });
     }
 
-    // 今天已支援過的班級
     const supportedToday = new Set(
       records
         .filter(record =>
@@ -417,4 +491,4 @@ const completeSupport = async (req, res) => {
   }
 };
 
-module.exports = { completeLightDisc, claimLeftoverReward, submitSurvey, getSupportClasses, completeSupport };
+module.exports = { completeLightDisc, claimLeftoverReward, submitSurvey, getSupportClasses, completeSupport, getPendingTasks, verifyTask };

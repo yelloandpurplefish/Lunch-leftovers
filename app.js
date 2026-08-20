@@ -218,10 +218,19 @@ function showAuthForm() {
 function showLoggedInState() {
   document.getElementById('authContainer').classList.add('hidden');
   document.getElementById('loggedInContainer').classList.remove('hidden');
-  
+
   const displayName = currentUser.displayName || currentUser.email || '使用者';
   document.getElementById('userDisplayName').textContent = displayName;
   updateLoggedInStats();
+
+  const teacherPanel = document.getElementById('teacherPanel');
+  if (teacherPanel) {
+    if (currentUser && (currentUser.role === 'teacher' || currentUser.role === 'admin')) {
+      teacherPanel.classList.remove('hidden');
+    } else {
+      teacherPanel.classList.add('hidden');
+    }
+  }
 }
 
 // 更新已登入狀態的統計數據
@@ -345,6 +354,78 @@ async function loadClassRanking() {
     }
 }
 
+// 老師載入待審核項目
+async function loadPendingTasks() {
+    try {
+        const data = await apiRequest('/task/pending', 'GET');
+        const container = document.getElementById('pendingList');
+        if (!container) return;
+
+        if (!data.success) {
+            container.innerHTML = `<p>載入失敗：${data.message}</p>`;
+            return;
+        }
+
+        if (!data.pending || data.pending.length === 0) {
+            container.innerHTML = '<p>目前沒有待審核項目</p>';
+            return;
+        }
+
+        const taskTypeNames = {
+            light_disc: '光盤行動',
+            leftover_reward: '剩食獎勵',
+            survey: '今日問卷'
+        };
+
+        container.innerHTML = data.pending.map(item => {
+            const taskName = taskTypeNames[item.taskType] || item.taskType;
+            const rewardText = item.rewards && (item.rewards.eCoin || item.rewards.sCoin)
+                ? `（E幣 +${item.rewards.eCoin || 0}, S幣 +${item.rewards.sCoin || 0}, 積分 +${item.rewards.score || 0}）`
+                : '';
+            let detailText = '';
+            if (item.taskType === 'survey') {
+                detailText = `最喜歡：${item.metadata.favoriteFood || ''} / 最不喜歡：${item.metadata.hateFood || ''}`;
+            } else if (item.taskType === 'leftover_reward') {
+                detailText = `剩食重量：${item.metadata.leftoverWeight || 0}g`;
+            }
+
+            return `
+                <div class="pending-item" style="border: 1px solid #ddd; padding: 12px; margin-bottom: 10px; border-radius: 8px; background: #fff;">
+                    <div><strong>${item.displayName}</strong> 申請了 <strong>${taskName}</strong> ${rewardText}</div>
+                    <div style="font-size: 14px; color: #666; margin: 6px 0;">${detailText}</div>
+                    <div style="margin-top: 8px;">
+                        <button data-action="verifyTask" data-record-id="${item.recordId}" data-verify-action="approve" style="margin-right: 8px;">✅ 核准</button>
+                        <button data-action="verifyTask" data-record-id="${item.recordId}" data-verify-action="reject">❌ 拒絕</button>
+                    </div>
+                </div>
+            `;
+        }).join('');
+    } catch (error) {
+        console.error('載入待審核項目失敗:', error);
+    }
+}
+
+// 老師審核項目
+async function verifyTask(el) {
+    try {
+        const recordId = el.dataset.recordId;
+        const action = el.dataset.verifyAction;
+
+        const data = await apiRequest('/task/verify', 'POST', { recordId, action });
+
+        if (data.success) {
+            alert(data.message);
+            await loadPendingTasks();
+            await loadUserData();
+        } else {
+            alert(data.message || '審核失敗');
+        }
+    } catch (error) {
+        console.error('審核失敗:', error);
+        alert('審核失敗，請稍後再試');
+    }
+}
+
 // 滾動到指定區塊
 function scrollToSection(sectionId) {
     const section = document.getElementById(sectionId);
@@ -378,6 +459,11 @@ async function startApp(){
 
     // 載入班級排行榜
     await loadClassRanking();
+
+    // 老師載入待審核項目
+    if (currentUser && (currentUser.role === 'teacher' || currentUser.role === 'admin')) {
+        await loadPendingTasks();
+    }
 }
 
 // 完成任務
@@ -386,31 +472,19 @@ async function finishTask(){
         const data = await apiRequest('/task/complete-light-disc', 'POST');
 
         if (data.success) {
-            eCoin += data.rewards.eCoin;
-            sCoin += data.rewards.sCoin;
-            score += data.rewards.score;
-            updateUI();
-
             alert(
-                "🎉 任務完成！\n\n" +
+                "✅ 光盤行動已送出老師審核\n\n" +
                 "E幣 +" + data.rewards.eCoin + "\n" +
                 "S幣 +" + data.rewards.sCoin + "\n" +
                 "積分 +" + data.rewards.score + "\n\n" +
-                "⏰ 24小時後可再次領取"
+                "（老師核准後才會發放）"
             );
         } else {
-            if (data.hoursRemaining) {
-                alert(
-                    "⏰ 尚未達到領取時間！\n\n" +
-                    "距離下次領取還需 " + data.hoursRemaining + " 小時"
-                );
-            } else {
-                alert(data.message || '任務完成失敗');
-            }
+            alert(data.message || '任務送出失敗');
         }
     } catch (error) {
         console.error('完成任務失敗:', error);
-        alert('任務完成失敗，請稍後再試');
+        alert('任務送出失敗，請稍後再試');
     }
 }
 async function buyE(price, name){
@@ -493,20 +567,13 @@ async function submitSurvey(){
         if (data.success) {
             displaySurveyResult(favorite, hate);
             alert(
-                "✅ 問卷已送出！\n\n" +
+                "✅ 問卷已送出老師審核！\n\n" +
                 "最喜歡：" + favorite + "\n" +
                 "最不喜歡：" + hate + "\n\n" +
-                "⏰ 24小時後可再次送出"
+                "（老師核准後才會記錄）"
             );
         } else {
-            if (data.hoursRemaining) {
-                alert(
-                    "⏰ 尚未達到送出時間！\n\n" +
-                    "距離下次送出還需 " + data.hoursRemaining + " 小時"
-                );
-            } else {
-                alert(data.message || '問卷送出失敗');
-            }
+            alert(data.message || '問卷送出失敗');
         }
     } catch (error) {
         console.error('提交問卷失敗:', error);
@@ -617,25 +684,14 @@ async function calculateReward(){
         });
 
         if (data.success) {
-            eCoin += data.rewards.eCoin;
-            sCoin += data.rewards.sCoin;
-            updateUI();
-
             alert(
-                "🎉 今日獎勵已發放！\n\n" +
+                "✅ 剩食獎勵已送出老師審核\n\n" +
                 "E幣 +" + data.rewards.eCoin + "\n" +
                 "S幣 +" + data.rewards.sCoin + "\n\n" +
-                "⏰ 24小時後可再次領取"
+                "（老師核准後才會發放）"
             );
         } else {
-            if (data.hoursRemaining) {
-                alert(
-                    "⏰ 尚未達到領取時間！\n\n" +
-                    "距離下次領取還需 " + data.hoursRemaining + " 小時"
-                );
-            } else {
-                alert(data.message || '獎勵發放失敗');
-            }
+            alert(data.message || '獎勵送出失敗');
         }
     } catch (error) {
         console.error('計算獎勵失敗:', error);
@@ -869,7 +925,9 @@ const ACTION_HANDLERS = {
     completeSupport: (el) => completeSupport(el.dataset.classId, el.dataset.className),
     openLottery,
     closeLottery,
-    spinLottery
+    spinLottery,
+    loadPendingTasks,
+    verifyTask: (el) => verifyTask(el)
 };
 
 // 使用事件委派，一次綁定處理所有 data-action 元素
