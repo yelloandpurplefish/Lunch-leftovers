@@ -645,13 +645,20 @@ function renderFoodBarChart(foods){
 
     const max = Math.max(...foods.map(f => f.value), 1);
 
+    container.style.flexDirection = 'column';
+    container.style.alignItems = 'stretch';
+    container.style.justifyContent = 'flex-start';
+    container.style.height = 'auto';
+
     container.innerHTML = foods.map(food => {
-        const height = Math.round((food.value / max) * 100);
+        const width = Math.round((food.value / max) * 100);
         return `
-            <div style="flex: 1; display: flex; flex-direction: column; align-items: center; justify-content: flex-end; text-align: center;">
-                <div style="font-size: 12px; margin-bottom: 5px;">${food.value}g</div>
-                <div style="width: 80%; background: linear-gradient(to top, #4caf50, #81c784); border-radius: 6px 6px 0 0; height: ${height}%;"></div>
-                <div style="font-size: 12px; margin-top: 8px; word-break: keep-all;">${food.name}</div>
+            <div style="display: flex; align-items: center; margin-bottom: 12px;">
+                <div style="width: 110px; font-size: 14px; text-align: right; padding-right: 12px; white-space: nowrap; overflow: hidden; text-overflow: ellipsis;">${food.name}</div>
+                <div style="flex: 1; background: #eee; border-radius: 6px; height: 24px; position: relative; overflow: hidden;">
+                    <div style="width: ${width}%; height: 100%; background: linear-gradient(to right, #4caf50, #81c784); border-radius: 6px;"></div>
+                </div>
+                <div style="width: 50px; font-size: 14px; text-align: left; padding-left: 12px;">${food.value}g</div>
             </div>
         `;
     }).join('');
