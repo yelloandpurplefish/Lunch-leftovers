@@ -56,17 +56,26 @@ async function hasPendingRecord(userId, taskType) {
   });
 }
 
-// 完成光盤行動任務（改為老師驗證）
+// 完成光盤行動任務（24 小時認領制）
 const completeLightDisc = async (req, res) => {
   try {
     const userId = req.user.uid;
     const now = admin.firestore.FieldValue.serverTimestamp();
+    const cooldownHours = 24;
+    const cooldownMs = cooldownHours * 60 * 60 * 1000;
 
-    if (await hasPendingRecord(userId, 'light_disc')) {
-      return res.status(400).json({
-        success: false,
-        message: '已有待審核的光盤行動記錄'
-      });
+    const lastRecord = await getLastTaskRecord(userId, 'light_disc');
+
+    if (lastRecord) {
+      const timeSince = Date.now() - lastRecord.completedAt.toDate().getTime();
+      if (timeSince < cooldownMs) {
+        const hoursRemaining = Math.ceil((cooldownMs - timeSince) / (60 * 60 * 1000));
+        return res.status(400).json({
+          success: false,
+          message: '尚未達到領取時間',
+          hoursRemaining
+        });
+      }
     }
 
     const rewards = {
@@ -76,20 +85,29 @@ const completeLightDisc = async (req, res) => {
       score: 30
     };
 
+    await db.collection('users').doc(userId).update({
+      eCoin: admin.firestore.FieldValue.increment(rewards.eCoin),
+      sCoin: admin.firestore.FieldValue.increment(rewards.sCoin),
+      gCoin: admin.firestore.FieldValue.increment(rewards.gCoin),
+      score: admin.firestore.FieldValue.increment(rewards.score)
+    });
+
     await db.collection('task_records').add({
       userId,
       taskType: 'light_disc',
-      status: 'pending',
-      requestedAt: now,
+      status: 'completed',
+      completedAt: now,
       rewards,
       metadata: {}
     });
 
+    const nextAvailableAt = new Date(Date.now() + cooldownMs);
+
     res.status(200).json({
       success: true,
-      message: '已送出老師審核',
-      pending: true,
-      rewards
+      message: '任務完成！',
+      rewards,
+      nextAvailableAt: nextAvailableAt.toISOString()
     });
   } catch (error) {
     console.error('完成光盤行動失敗:', error);

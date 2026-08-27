@@ -475,20 +475,33 @@ async function finishTask(){
         const data = await apiRequest('/task/complete-light-disc', 'POST');
 
         if (data.success) {
+            eCoin += data.rewards.eCoin;
+            sCoin += data.rewards.sCoin;
+            gCoin += data.rewards.gCoin;
+            score += data.rewards.score;
+            updateUI();
+
             alert(
-                "✅ 光盤行動已送出老師審核\n\n" +
+                "🎉 任務完成！\n\n" +
                 "E幣 +" + data.rewards.eCoin + "\n" +
                 "S幣 +" + data.rewards.sCoin + "\n" +
                 "減碳存摺 +" + data.rewards.gCoin + "\n" +
                 "積分 +" + data.rewards.score + "\n\n" +
-                "（老師核准後才會發放）"
+                "⏰ 24小時後可再次領取"
             );
         } else {
-            alert(data.message || '任務送出失敗');
+            if (data.hoursRemaining) {
+                alert(
+                    "⏰ 尚未達到領取時間！\n\n" +
+                    "距離下次領取還需 " + data.hoursRemaining + " 小時"
+                );
+            } else {
+                alert(data.message || '任務完成失敗');
+            }
         }
     } catch (error) {
         console.error('完成任務失敗:', error);
-        alert('任務送出失敗，請稍後再試');
+        alert('任務完成失敗，請稍後再試');
     }
 }
 async function buyE(price, name){
