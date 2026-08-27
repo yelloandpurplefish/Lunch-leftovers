@@ -460,6 +460,9 @@ async function startApp(){
     // 載入班級排行榜
     await loadClassRanking();
 
+    // 滑到全班剩食長條圖時自動繪製
+    observeFoodChart();
+
     // 載入全站大獎公告
     await loadLotteryAnnouncement();
 
@@ -656,15 +659,23 @@ function analyzeFood(){
     document.getElementById("leastFood").innerHTML =
         "🥗 剩最少：" + least.name + "（" + least.value + " 克）";
 
-    // 繪製剩食柱狀圖
-    renderFoodBarChart(foods);
+    // 繪製剩食長條圖
+    renderFoodBarChart();
 
 }
 
-function renderFoodBarChart(foods){
+function renderFoodBarChart(){
 
     const container = document.getElementById("foodChartContainer");
     if(!container) return;
+
+    const foods = [
+        { name: "🍗 香酥雞腿", value: Number(document.getElementById("food1").value) || 0 },
+        { name: "🥬 高麗菜", value: Number(document.getElementById("food2").value) || 0 },
+        { name: "🥚 蒸蛋", value: Number(document.getElementById("food3").value) || 0 },
+        { name: "🍎 蘋果", value: Number(document.getElementById("food4").value) || 0 },
+        { name: "🥣 玉米濃湯", value: Number(document.getElementById("food5").value) || 0 }
+    ];
 
     const max = Math.max(...foods.map(f => f.value), 1);
 
@@ -687,6 +698,27 @@ function renderFoodBarChart(foods){
     }).join('');
 
 }
+
+// 滑到全班剩食長條圖時自動繪製
+function observeFoodChart(){
+    const container = document.getElementById("foodChartContainer");
+    if(!container) return;
+
+    if(!window.IntersectionObserver){
+        renderFoodBarChart();
+        return;
+    }
+
+    const observer = new IntersectionObserver((entries) => {
+        if(entries[0].isIntersecting){
+            renderFoodBarChart();
+            observer.unobserve(container);
+        }
+    }, { threshold: 0.3 });
+
+    observer.observe(container);
+}
+
 async function calculateReward(){
     try {
         // 收集剩食分析資料
