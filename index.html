@@ -23,8 +23,8 @@
         }
         @keyframes meteorFall {
             0% { transform: translate(200px, -200px) rotate(-45deg); opacity: 1; }
-            80% { transform: translate(-20px, 140px) rotate(-45deg); opacity: 1; }
-            100% { transform: translate(-40px, 170px) rotate(-45deg); opacity: 0; }
+            70% { transform: translate(-30px, 220px) rotate(-45deg); opacity: 1; }
+            100% { transform: translate(-40px, 240px) rotate(-45deg); opacity: 0; }
         }
         @keyframes impactFlash {
             0% { transform: scale(0); opacity: 0.9; }
@@ -229,6 +229,10 @@
                 <span id="score">0</span>
             </div>
 
+        </div>
+
+        <div class="greenpoint-link" style="text-align: center; margin: 10px 0;">
+            <a href="greenpoint.html" style="display: inline-block; padding: 12px 24px; background: #4caf50; color: #fff; border-radius: 25px; text-decoration: none; font-size: 16px;">🚌 大眾運輸集點</a>
         </div>
 
         <div class="menu">
@@ -491,11 +495,11 @@
 
 <!-- 抽獎彈窗 -->
 <div id="lotteryModal" class="lottery-modal">
-    <div class="lottery-content" style="position: relative; overflow: hidden;">
+    <div class="lottery-content" style="position: relative; overflow: hidden; min-height: 320px;">
         <span class="close-btn" data-action="closeLottery">&times;</span>
         <h2>🎰 幸運抽獎</h2>
         <p>消耗 10 E幣進行抽獎</p>
-        <div id="lotteryEffects" style="position: absolute; top: 0; left: 0; width: 100%; height: 100%; pointer-events: none; overflow: hidden; z-index: 5;"></div>
+        <div id="lotteryEffects" style="position: absolute; top: 0; left: 0; right: 0; bottom: 0; pointer-events: none; overflow: hidden; z-index: 5;"></div>
         <div id="lotteryResult" class="lottery-result" style="position: relative; z-index: 10;"></div>
         <button class="spin-btn" data-action="spinLottery">開始抽獎</button>
     </div>

@@ -584,13 +584,20 @@ async function submitSurvey(){
         if (data.success) {
             displaySurveyResult(favorite, hate);
             alert(
-                "✅ 問卷已送出老師審核！\n\n" +
+                "✅ 問卷已送出！\n\n" +
                 "最喜歡：" + favorite + "\n" +
                 "最不喜歡：" + hate + "\n\n" +
-                "（老師核准後才會記錄）"
+                "⏰ 24小時後可再次送出"
             );
         } else {
-            alert(data.message || '問卷送出失敗');
+            if (data.hoursRemaining) {
+                alert(
+                    "⏰ 尚未達到送出時間！\n\n" +
+                    "距離下次送出還需 " + data.hoursRemaining + " 小時"
+                );
+            } else {
+                alert(data.message || '問卷送出失敗');
+            }
         }
     } catch (error) {
         console.error('提交問卷失敗:', error);
@@ -708,15 +715,27 @@ async function calculateReward(){
         });
 
         if (data.success) {
+            eCoin += data.rewards.eCoin;
+            sCoin += data.rewards.sCoin;
+            gCoin += data.rewards.gCoin;
+            updateUI();
+
             alert(
-                "✅ 剩食獎勵已送出老師審核\n\n" +
+                "🎉 今日獎勵已發放！\n\n" +
                 "E幣 +" + data.rewards.eCoin + "\n" +
                 "S幣 +" + data.rewards.sCoin + "\n" +
                 "減碳存摺 +" + data.rewards.gCoin + "\n\n" +
-                "（老師核准後才會發放）"
+                "⏰ 24小時後可再次領取"
             );
         } else {
-            alert(data.message || '獎勵送出失敗');
+            if (data.hoursRemaining) {
+                alert(
+                    "⏰ 尚未達到領取時間！\n\n" +
+                    "距離下次領取還需 " + data.hoursRemaining + " 小時"
+                );
+            } else {
+                alert(data.message || '獎勵發放失敗');
+            }
         }
     } catch (error) {
         console.error('計算獎勵失敗:', error);

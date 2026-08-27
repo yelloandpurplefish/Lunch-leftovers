@@ -118,12 +118,14 @@ const completeLightDisc = async (req, res) => {
   }
 };
 
-// 領取剩食獎勵（改為老師驗證）
+// 領取剩食獎勵（24 小時認領制）
 const claimLeftoverReward = async (req, res) => {
   try {
     const userId = req.user.uid;
     const { leftoverWeight, foodAnalysis } = req.body;
     const now = admin.firestore.FieldValue.serverTimestamp();
+    const cooldownHours = 24;
+    const cooldownMs = cooldownHours * 60 * 60 * 1000;
 
     if (!leftoverWeight || leftoverWeight < 0) {
       return res.status(400).json({
@@ -147,11 +149,18 @@ const claimLeftoverReward = async (req, res) => {
       });
     }
 
-    if (await hasPendingRecord(userId, 'leftover_reward')) {
-      return res.status(400).json({
-        success: false,
-        message: '已有待審核的剩食獎勵記錄'
-      });
+    const lastRecord = await getLastTaskRecord(userId, 'leftover_reward');
+
+    if (lastRecord) {
+      const timeSince = Date.now() - lastRecord.completedAt.toDate().getTime();
+      if (timeSince < cooldownMs) {
+        const hoursRemaining = Math.ceil((cooldownMs - timeSince) / (60 * 60 * 1000));
+        return res.status(400).json({
+          success: false,
+          message: '尚未達到領取時間',
+          hoursRemaining
+        });
+      }
     }
 
     let addE, addS, addG;
@@ -175,11 +184,17 @@ const claimLeftoverReward = async (req, res) => {
 
     const rewards = { eCoin: addE, sCoin: addS, gCoin: addG };
 
+    await db.collection('users').doc(userId).update({
+      eCoin: admin.firestore.FieldValue.increment(rewards.eCoin),
+      sCoin: admin.firestore.FieldValue.increment(rewards.sCoin),
+      gCoin: admin.firestore.FieldValue.increment(rewards.gCoin)
+    });
+
     await db.collection('task_records').add({
       userId,
       taskType: 'leftover_reward',
-      status: 'pending',
-      requestedAt: now,
+      status: 'completed',
+      completedAt: now,
       rewards,
       metadata: {
         leftoverWeight,
@@ -187,11 +202,13 @@ const claimLeftoverReward = async (req, res) => {
       }
     });
 
+    const nextAvailableAt = new Date(Date.now() + cooldownMs);
+
     res.status(200).json({
       success: true,
-      message: '已送出老師審核',
-      pending: true,
-      rewards
+      message: '獎勵已發放！',
+      rewards,
+      nextAvailableAt: nextAvailableAt.toISOString()
     });
   } catch (error) {
     console.error('領取剩食獎勵失敗:', error);
@@ -202,12 +219,14 @@ const claimLeftoverReward = async (req, res) => {
   }
 };
 
-// 提交問卷（改為老師驗證）
+// 提交問卷（24 小時認領制）
 const submitSurvey = async (req, res) => {
   try {
     const userId = req.user.uid;
     const { favoriteFood, hateFood } = req.body;
     const now = admin.firestore.FieldValue.serverTimestamp();
+    const cooldownHours = 24;
+    const cooldownMs = cooldownHours * 60 * 60 * 1000;
 
     if (!favoriteFood || !hateFood) {
       return res.status(400).json({
@@ -216,18 +235,25 @@ const submitSurvey = async (req, res) => {
       });
     }
 
-    if (await hasPendingRecord(userId, 'survey')) {
-      return res.status(400).json({
-        success: false,
-        message: '已有待審核的問卷記錄'
-      });
+    const lastRecord = await getLastTaskRecord(userId, 'survey');
+
+    if (lastRecord) {
+      const timeSince = Date.now() - lastRecord.completedAt.toDate().getTime();
+      if (timeSince < cooldownMs) {
+        const hoursRemaining = Math.ceil((cooldownMs - timeSince) / (60 * 60 * 1000));
+        return res.status(400).json({
+          success: false,
+          message: '尚未達到送出時間',
+          hoursRemaining
+        });
+      }
     }
 
     await db.collection('task_records').add({
       userId,
       taskType: 'survey',
-      status: 'pending',
-      requestedAt: now,
+      status: 'completed',
+      completedAt: now,
       rewards: {},
       metadata: {
         favoriteFood,
@@ -235,10 +261,12 @@ const submitSurvey = async (req, res) => {
       }
     });
 
+    const nextAvailableAt = new Date(Date.now() + cooldownMs);
+
     res.status(200).json({
       success: true,
-      message: '已送出老師審核',
-      pending: true
+      message: '問卷已送出！',
+      nextAvailableAt: nextAvailableAt.toISOString()
     });
   } catch (error) {
     console.error('提交問卷失敗:', error);
