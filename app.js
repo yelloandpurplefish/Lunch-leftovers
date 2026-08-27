@@ -460,6 +460,9 @@ async function startApp(){
     // 載入班級排行榜
     await loadClassRanking();
 
+    // 載入全站大獎公告
+    await loadLotteryAnnouncement();
+
     // 老師載入待審核項目
     if (currentUser && (currentUser.role === 'teacher' || currentUser.role === 'admin')) {
         await loadPendingTasks();
@@ -822,10 +825,14 @@ async function completeSupport(classId, className) {
 function openLottery(){
     document.getElementById("lotteryModal").style.display = "block";
     document.getElementById("lotteryResult").innerHTML = "";
+    const effectsDiv = document.getElementById("lotteryEffects");
+    if (effectsDiv) effectsDiv.innerHTML = "";
 }
 
 function closeLottery(){
     document.getElementById("lotteryModal").style.display = "none";
+    const effectsDiv = document.getElementById("lotteryEffects");
+    if (effectsDiv) effectsDiv.innerHTML = "";
 }
 
 async function spinLottery(){
@@ -835,7 +842,9 @@ async function spinLottery(){
     }
 
     const resultDiv = document.getElementById("lotteryResult");
+    const effectsDiv = document.getElementById("lotteryEffects");
     resultDiv.innerHTML = "<div class='spinning'>🎰 抽獎中...</div>";
+    if (effectsDiv) effectsDiv.innerHTML = "";
 
     try {
         const data = await apiRequest('/lottery/spin', 'POST');
@@ -850,46 +859,77 @@ async function spinLottery(){
         const prizeType = data.prize.type;
         const prize = data.prize.name;
         const prizeValue = data.prize.value;
-        const isGrandPrize = data.prize.isGrandPrize;
 
-        // 模擬抽獎動畫
-        setTimeout(() => {
-            let effectClass = "";
-            if (prizeType === "grand") {
-                effectClass = "grand-prize";
-            } else if (prizeType === "normal") {
-                effectClass = "normal-prize";
-            } else {
-                effectClass = "small-prize";
-            }
+        const typeLabel = prizeType === 'grand' ? '大獎' : prizeType === 'rare' ? '稀有獎' : '小獎';
 
-            const prizeIcon = prizeType === "grand" ? "🎉" : prizeType === "normal" ? "🎁" : "🎊";
-            const prizeLabel = prizeType === "grand" ? "大獎！" : prizeType === "normal" ? "普通獎" : "小獎";
+        if (effectsDiv) effectsDiv.innerHTML = "";
 
+        if (prizeType === 'small') {
             resultDiv.innerHTML = `
-                <div class="prize-result ${effectClass}">
-                    <div class="prize-icon">${prizeIcon}</div>
-                    <div class="prize-name">${prize}</div>
-                    <div class="prize-type">${prizeLabel}</div>
+                <div class="prize-result" style="position: relative; padding-top: 60px;">
+                    <div class="lottery-congrats" style="top: 0; color: #ff6b00;">🎉 恭喜中獎</div>
+                    <div class="prize-name" style="margin-top: 20px;">${prize}</div>
+                    <div class="prize-type">${typeLabel}</div>
                     <div class="prize-value">價值：${prizeValue} E幣</div>
                     <div class="prize-balance">E幣餘額：${data.remainingECoin}</div>
                 </div>
             `;
-
-            // 大獎特效
-            if (isGrandPrize) {
-                createConfetti();
+        } else if (prizeType === 'rare') {
+            if (effectsDiv) {
+                effectsDiv.innerHTML = `
+                    <div class="meteor" style="top: 0; right: 0; animation: meteorFall 1.2s ease-in forwards;"></div>
+                    <div class="impact" style="bottom: 30px; right: 40px; animation-delay: 1.1s;"></div>
+                `;
             }
+            resultDiv.innerHTML = `
+                <div class="prize-result">
+                    <div class="prize-name">${prize}</div>
+                    <div class="prize-type">${typeLabel}！</div>
+                    <div class="prize-value">價值：${prizeValue} E幣</div>
+                    <div class="prize-balance">E幣餘額：${data.remainingECoin}</div>
+                </div>
+            `;
+        } else if (prizeType === 'grand') {
+            if (effectsDiv) {
+                effectsDiv.innerHTML = `
+                    <div class="light-pillar" style="height: 0;"></div>
+                    <div class="impact" style="top: 80%; left: 50%; transform: translateX(-50%); width: 120px; height: 120px; background: radial-gradient(circle, rgba(0,170,255,0.8) 0%, transparent 70%); animation: impactFlash 1.5s ease-out forwards;"></div>
+                `;
+            }
+            resultDiv.innerHTML = `
+                <div class="prize-result">
+                    <div class="prize-name" style="font-size: 26px; color: #00aaff; text-shadow: 0 0 20px #00aaff;">${prize}</div>
+                    <div class="prize-type" style="font-size: 20px;">✨ ${typeLabel} ✨</div>
+                    <div class="prize-value">價值：${prizeValue} E幣</div>
+                    <div class="prize-balance">E幣餘額：${data.remainingECoin}</div>
+                </div>
+            `;
+            loadLotteryAnnouncement();
+        }
 
-            // 同步 E幣餘額
-            eCoin = data.remainingECoin;
-            updateUI();
+        // 同步 E幣餘額（僅扣除抽獎成本，不返還獎品價值）
+        eCoin = data.remainingECoin;
+        updateUI();
 
-        }, 1500);
     } catch (error) {
         console.error('抽獎失敗:', error);
         alert('❌ 抽獎失敗，請稍後再試');
         resultDiv.innerHTML = '';
+    }
+}
+
+// 載入並顯示全站大獎公告
+async function loadLotteryAnnouncement() {
+    try {
+        const data = await apiRequest('/lottery/announcement', 'GET');
+        const banner = document.getElementById('globalAnnouncement');
+        if (!banner || !data.success || !data.announcement) return;
+
+        banner.innerHTML = `🎊 恭喜 <strong>${data.announcement.displayName}</strong> 抽到 <strong>${data.announcement.prizeName}</strong>！全站慶祝！ 🎊`;
+        banner.classList.remove('hidden');
+        banner.classList.add('global-announcement');
+    } catch (error) {
+        console.error('載入大獎公告失敗:', error);
     }
 }
 
