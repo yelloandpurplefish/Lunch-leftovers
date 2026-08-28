@@ -457,6 +457,9 @@ async function startApp(){
     // 載入最新資料
     await loadUserData();
 
+    // 載入商城商品
+    await loadShopItems();
+
     // 載入班級排行榜
     await loadClassRanking();
 
@@ -507,54 +510,56 @@ async function finishTask(){
         alert('任務完成失敗，請稍後再試');
     }
 }
-async function buyE(price, name){
+async function loadShopItems() {
     try {
-        // 先獲取物品ID（這裡簡化處理，實際應該從物品列表獲取）
-        const itemId = name === '環保杯' ? 'eco_cup' : name === '環保餐具' ? 'eco_utensils' : 'unknown';
-        
-        const data = await apiRequest('/exchange/redeem', 'POST', { itemId });
+        const data = await apiRequest('/exchange/items?limit=3', 'GET');
+        const container = document.getElementById('shopList');
+        if (!container) return;
 
-        if (data.success) {
-            eCoin = data.remainingCoin;
-            updateUI();
-            alert("🎉 成功兌換：" + name);
-        } else {
-            alert(data.message || '兌換失敗');
+        if (!data.success || !data.items || data.items.length === 0) {
+            container.innerHTML = '<p>目前沒有可兌換的商品</p>';
+            return;
         }
+
+        container.innerHTML = data.items.map(item => {
+            const coinName = { E: 'E幣', S: 'S幣', G: '減碳存摺' }[item.costType] || item.costType;
+            const stockText = item.stock === null || item.stock === undefined
+                ? '剩餘：無限'
+                : `剩餘：${item.stock}`;
+
+            return `
+                <div class="gift">
+                    <h3>${item.name}</h3>
+                    <p>${item.description || ''}</p>
+                    <p>需要：${item.cost} ${coinName}</p>
+                    <p class="stock">${stockText}</p>
+                    <button data-action="buyItem" data-item-id="${item.itemId}" data-cost-type="${item.costType}" data-name="${item.name}">兌換</button>
+                </div>
+            `;
+        }).join('');
     } catch (error) {
-        console.error('兌換失敗:', error);
-        alert('兌換失敗，請稍後再試');
+        console.error('載入商城失敗:', error);
+        const container = document.getElementById('shopList');
+        if (container) container.innerHTML = '<p>載入商城失敗</p>';
     }
 }
 
-async function buyS(price, name){
+async function buyItem(el){
     try {
-        const itemId = 'stationery_set'; // 簡化處理
-        
-        const data = await apiRequest('/exchange/redeem', 'POST', { itemId });
-
-        if (data.success) {
-            sCoin = data.remainingCoin;
-            updateUI();
-            alert("🎉 成功兌換：" + name);
-        } else {
-            alert(data.message || '兌換失敗');
-        }
-    } catch (error) {
-        console.error('兌換失敗:', error);
-        alert('兌換失敗，請稍後再試');
-    }
-}
-
-async function buyG(price, name){
-    try {
-        const itemId = 'eco_bag';
+        const itemId = el.dataset.itemId;
+        const costType = el.dataset.costType;
+        const name = el.dataset.name;
 
         const data = await apiRequest('/exchange/redeem', 'POST', { itemId });
 
         if (data.success) {
-            gCoin = data.remainingCoin;
+            const coinFieldMap = { E: 'eCoin', S: 'sCoin', G: 'gCoin' };
+            const coinField = coinFieldMap[costType];
+            if (coinField && data.remainingCoin !== undefined) {
+                window[coinField] = data.remainingCoin;
+            }
             updateUI();
+            await loadShopItems();
             alert("🎉 成功兌換：" + name);
         } else {
             alert(data.message || '兌換失敗');
@@ -1028,9 +1033,7 @@ const ACTION_HANDLERS = {
     startApp,
     finishTask,
     parentSignIn,
-    buyE: (el) => buyE(Number(el.dataset.price), el.dataset.item),
-    buyS: (el) => buyS(Number(el.dataset.price), el.dataset.item),
-    buyG: (el) => buyG(Number(el.dataset.price), el.dataset.item),
+    buyItem,
     submitSurvey,
     analyzeFood,
     calculateReward,

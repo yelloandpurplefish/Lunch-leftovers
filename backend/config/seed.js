@@ -15,7 +15,7 @@ const REWARD_ITEMS = [
     costType: 'E',
     cost: 50,
     category: 'exchange',
-    stock: null,
+    stock: 5,
     isActive: true
   },
   {
@@ -25,7 +25,7 @@ const REWARD_ITEMS = [
     costType: 'E',
     cost: 80,
     category: 'exchange',
-    stock: null,
+    stock: 3,
     isActive: true
   },
   {
@@ -35,7 +35,7 @@ const REWARD_ITEMS = [
     costType: 'S',
     cost: 30,
     category: 'exchange',
-    stock: null,
+    stock: 8,
     isActive: true
   },
   {
@@ -45,7 +45,37 @@ const REWARD_ITEMS = [
     costType: 'G',
     cost: 20,
     category: 'exchange',
-    stock: null,
+    stock: 10,
+    isActive: true
+  },
+  {
+    itemId: 'reusable_straw',
+    name: '不鏽鋼吸管組',
+    description: '便攜不鏽鋼吸管，附清潔刷',
+    costType: 'E',
+    cost: 45,
+    category: 'exchange',
+    stock: 6,
+    isActive: true
+  },
+  {
+    itemId: 'recycled_notebook',
+    name: '再生紙筆記本',
+    description: '100% 再生紙製成，環保又實用',
+    costType: 'S',
+    cost: 25,
+    category: 'exchange',
+    stock: 7,
+    isActive: true
+  },
+  {
+    itemId: 'seed_pencil',
+    name: '種子鉛筆',
+    description: '用完後可種植的環保鉛筆',
+    costType: 'G',
+    cost: 15,
+    category: 'exchange',
+    stock: 12,
     isActive: true
   }
 ];
@@ -99,8 +129,8 @@ async function seedRewardItems() {
 
   REWARD_ITEMS.forEach(({ itemId, ...data }) => {
     const ref = db.collection('reward_items').doc(itemId);
-    // merge: true → 已存在時只補上缺少的欄位，不覆寫管理員的手動調整
-    batch.set(ref, data, { merge: true });
+    // mergeFields → 只覆寫預設欄位，保留管理員手動加入的其他欄位
+    batch.set(ref, data, { mergeFields: Object.keys(data) });
   });
 
   await batch.commit();

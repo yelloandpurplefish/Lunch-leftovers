@@ -68,7 +68,8 @@ const redeemItem = async (req, res) => {
 
       if (item.stock !== null && item.stock !== undefined) {
         transaction.update(itemRef, {
-          stock: admin.firestore.FieldValue.increment(-1)
+          stock: admin.firestore.FieldValue.increment(-1),
+          isActive: item.stock > 1
         });
       }
 
@@ -85,7 +86,9 @@ const redeemItem = async (req, res) => {
       return {
         itemName: item.name,
         cost: item.cost,
-        remainingCoin: balance - item.cost
+        costType: item.costType,
+        remainingCoin: balance - item.cost,
+        remainingStock: item.stock !== null && item.stock !== undefined ? item.stock - 1 : null
       };
     });
 
@@ -98,6 +101,8 @@ const redeemItem = async (req, res) => {
       success: true,
       message: '兌換成功！',
       remainingCoin: result.remainingCoin,
+      remainingStock: result.remainingStock,
+      costType: result.costType,
       exchangeRecord: {
         recordId: recordRef.id,
         itemName: result.itemName,
@@ -116,23 +121,29 @@ const redeemItem = async (req, res) => {
 // 獲取可兌換物品列表
 const getExchangeItems = async (req, res) => {
   try {
+    const limit = parseInt(req.query.limit) || 3;
+
     const itemsQuery = await db.collection('reward_items')
-      .where('isActive', '==', true)
       .where('category', '==', 'exchange')
       .get();
 
-    const items = itemsQuery.docs.map(doc => {
-      const data = doc.data();
-      return {
-        itemId: doc.id,
-        name: data.name,
-        description: data.description,
-        costType: data.costType,
-        cost: data.cost,
-        stock: data.stock,
-        imageUrl: data.imageUrl
-      };
-    });
+    const items = itemsQuery.docs
+      .map(doc => {
+        const data = doc.data();
+        return {
+          itemId: doc.id,
+          name: data.name,
+          description: data.description,
+          costType: data.costType,
+          cost: data.cost,
+          stock: data.stock,
+          imageUrl: data.imageUrl,
+          isActive: data.isActive !== false
+        };
+      })
+      .filter(item => item.isActive && (item.stock === null || item.stock === undefined || item.stock > 0))
+      .sort((a, b) => (a.costType || '').localeCompare(b.costType || ''))
+      .slice(0, limit);
 
     res.status(200).json({
       success: true,
