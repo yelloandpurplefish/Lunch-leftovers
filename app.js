@@ -469,6 +469,9 @@ async function startApp(){
     // 載入全站大獎公告
     await loadLotteryAnnouncement();
 
+    // 載入支援任務狀態
+    await loadSupportStatus();
+
     // 老師載入待審核項目
     if (currentUser && (currentUser.role === 'teacher' || currentUser.role === 'admin')) {
         await loadPendingTasks();
@@ -486,6 +489,7 @@ async function finishTask(){
             gCoin += data.rewards.gCoin;
             score += data.rewards.score;
             updateUI();
+            await loadSupportStatus();
 
             alert(
                 "🎉 任務完成！\n\n" +
@@ -852,6 +856,27 @@ function backSupportTask() {
 
     if (intro) intro.classList.remove('hidden');
     if (listView) listView.classList.add('hidden');
+}
+
+async function loadSupportStatus() {
+    try {
+        const data = await apiRequest('/task/support/list', 'GET');
+        const intro = document.getElementById('supportIntro');
+        if (!intro) return;
+
+        if (data.unlocked) {
+            intro.innerHTML = `
+                <p>完成自己的餐盤後，幫助其他班級分完剩食</p>
+                <button data-action="openSupportTask">選擇支援班級</button>
+            `;
+        } else {
+            intro.innerHTML = `
+                <p class="support-locked">🔒 ${data.message || '請先完成今日光盤行動，即可開啟支援任務'}</p>
+            `;
+        }
+    } catch (error) {
+        console.error('載入支援任務狀態失敗:', error);
+    }
 }
 
 async function completeSupport(classId, className) {
