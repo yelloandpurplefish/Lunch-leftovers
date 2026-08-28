@@ -463,8 +463,8 @@ async function startApp(){
     // 載入班級排行榜
     await loadClassRanking();
 
-    // 滑到全班剩食長條圖時自動繪製
-    observeFoodChart();
+    // 自動分析剩食
+    setupFoodAnalysis();
 
     // 載入全站大獎公告
     await loadLotteryAnnouncement();
@@ -704,24 +704,19 @@ function renderFoodBarChart(){
 
 }
 
-// 滑到全班剩食長條圖時自動繪製
-function observeFoodChart(){
-    const container = document.getElementById("foodChartContainer");
-    if(!container) return;
+// 自動分析剩食：輸入改變時即更新最多/最少與長條圖
+function setupFoodAnalysis(){
+    const ids = ["food1", "food2", "food3", "food4", "food5"];
 
-    if(!window.IntersectionObserver){
-        renderFoodBarChart();
-        return;
-    }
-
-    const observer = new IntersectionObserver((entries) => {
-        if(entries[0].isIntersecting){
-            renderFoodBarChart();
-            observer.unobserve(container);
+    ids.forEach(id => {
+        const input = document.getElementById(id);
+        if(input){
+            input.addEventListener("input", analyzeFood);
         }
-    }, { threshold: 0.3 });
+    });
 
-    observer.observe(container);
+    // 頁面載入時先分析一次
+    analyzeFood();
 }
 
 async function calculateReward(){
@@ -1035,7 +1030,6 @@ const ACTION_HANDLERS = {
     parentSignIn,
     buyItem,
     submitSurvey,
-    analyzeFood,
     calculateReward,
     scrollToSection: (el) => scrollToSection(el.dataset.arg),
     openSupportTask,
