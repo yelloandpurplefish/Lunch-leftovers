@@ -858,6 +858,20 @@ function backSupportTask() {
     if (listView) listView.classList.add('hidden');
 }
 
+// 跳過開場影片
+function skipIntro() {
+    const intro = document.getElementById('introVideo');
+    if (intro) {
+        intro.classList.add('hidden');
+        // 停止影片播放
+        const iframe = intro.querySelector('iframe');
+        if (iframe) {
+            iframe.src = '';
+        }
+    }
+    localStorage.setItem('lunchIntroSkipped', 'true');
+}
+
 async function loadSupportStatus() {
     try {
         const data = await apiRequest('/task/support/list', 'GET');
@@ -1056,6 +1070,7 @@ const ACTION_HANDLERS = {
     buyItem,
     submitSurvey,
     calculateReward,
+    skipIntro,
     scrollToSection: (el) => scrollToSection(el.dataset.arg),
     openSupportTask,
     backSupportTask,
@@ -1082,6 +1097,16 @@ document.addEventListener('click', (event) => {
         console.error(`執行 ${target.dataset.action} 失敗:`, error);
     });
 });
+
+// 若已跳過開場影片，直接隱藏
+if (localStorage.getItem('lunchIntroSkipped') === 'true') {
+    const intro = document.getElementById('introVideo');
+    if (intro) {
+        intro.classList.add('hidden');
+        const iframe = intro.querySelector('iframe');
+        if (iframe) iframe.src = '';
+    }
+}
 
 // 頁面載入時嘗試恢復登入狀態
 restoreSession();
