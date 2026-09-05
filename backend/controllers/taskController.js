@@ -149,6 +149,14 @@ const claimLeftoverReward = async (req, res) => {
       });
     }
 
+    const hasNegative = foodAnalysis.some(item => item.leftoverGrams < 0);
+    if (hasNegative) {
+      return res.status(400).json({
+        success: false,
+        message: '剩食克數不能為負數'
+      });
+    }
+
     const lastRecord = await getLastTaskRecord(userId, 'leftover_reward');
 
     if (lastRecord) {

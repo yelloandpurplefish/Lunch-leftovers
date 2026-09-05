@@ -688,6 +688,11 @@ async function calculateReward(){
 
         const leftover = Number(document.getElementById("leftover").value);
 
+        if (leftover < 0 || foodAnalysis.some(item => item.leftoverGrams < 0)) {
+            alert("❌ 剩食重量不能為負數");
+            return;
+        }
+
         const data = await apiRequest('/task/claim-leftover-reward', 'POST', {
             leftoverWeight: leftover,
             foodAnalysis: foodAnalysis
