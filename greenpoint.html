@@ -17,9 +17,106 @@
             font-size: 16px;
         }
         .back-link:hover { text-decoration: underline; }
+        .greenpoint-hero {
+            background: linear-gradient(135deg, #2e7d32, #4caf50);
+            color: white;
+            padding: 40px 20px;
+            text-align: center;
+            border-radius: 0 0 20px 20px;
+            margin-bottom: 25px;
+        }
+        .greenpoint-hero h2 {
+            font-size: 28px;
+            margin-bottom: 10px;
+        }
+        .greenpoint-hero p {
+            font-size: 16px;
+            opacity: 0.95;
+        }
         .greenpoint-section {
             margin: 20px auto;
             max-width: 500px;
+            padding: 0 15px;
+        }
+        .greenpoint-section .menu {
+            text-align: left;
+        }
+        .greenpoint-section h2 {
+            color: #2e7d32;
+            margin-bottom: 12px;
+        }
+        .transport-grid,
+        .card-grid {
+            display: flex;
+            flex-wrap: wrap;
+            gap: 10px;
+            justify-content: center;
+            margin: 15px 0;
+        }
+        .transport-item,
+        .ticket-item {
+            flex: 1 1 120px;
+            background: #e8f5e9;
+            border-radius: 12px;
+            padding: 15px 10px;
+            text-align: center;
+            font-size: 14px;
+        }
+        .transport-item .icon,
+        .ticket-item .icon {
+            display: block;
+            font-size: 24px;
+            margin-bottom: 6px;
+        }
+        .rule-card {
+            flex: 1 1 140px;
+            background: white;
+            border: 2px solid #4caf50;
+            border-radius: 15px;
+            padding: 20px 15px;
+            text-align: center;
+        }
+        .rule-card .amount {
+            font-size: 20px;
+            font-weight: bold;
+            color: #ff9800;
+        }
+        .steps {
+            counter-reset: step;
+            list-style: none;
+            padding: 0;
+        }
+        .steps li {
+            position: relative;
+            padding-left: 45px;
+            margin-bottom: 15px;
+            line-height: 1.6;
+        }
+        .steps li::before {
+            counter-increment: step;
+            content: counter(step);
+            position: absolute;
+            left: 0;
+            top: 0;
+            width: 28px;
+            height: 28px;
+            background: #4caf50;
+            color: white;
+            border-radius: 50%;
+            display: flex;
+            align-items: center;
+            justify-content: center;
+            font-weight: bold;
+        }
+        .notice-box {
+            background: #fff3e0;
+            border-left: 5px solid #ff9800;
+            padding: 15px;
+            border-radius: 10px;
+            color: #5d4037;
+        }
+        .notice-box h2 {
+            color: #e65100;
         }
     </style>
 </head>
@@ -32,60 +129,64 @@
 
     <a href="index.html" class="back-link">← 返回首頁</a>
 
+    <div class="greenpoint-hero">
+        <h2>🚌 大眾運輸集點</h2>
+        <p>每次搭乘都是一次減碳行動，讓你的移動為地球加分！</p>
+    </div>
+
     <div class="greenpoint-section">
         <div class="menu">
-            <h2>🚌 大眾運輸集點</h2>
-            <p>搭乘大眾運輸，減少碳排放</p>
-            <ul>
-                <li>🌍 保護地球，從選擇大眾運輸開始</li>
-                <li>💳 綁定電子票證，輕鬆累積減碳存摺</li>
-            </ul>
+            <h2>🌍 為什麼要搭大眾運輸？</h2>
+            <p>選擇捷運、公車、火車，不只能減少路上的車輛，更能降低二氧化碳排放。只要綁定電子票證，通勤、出遊都能自動累積「減碳存摺」點數，把綠色行動變成實際獎勵！</p>
         </div>
     </div>
 
     <div class="greenpoint-section">
         <div class="menu">
-            <h2>🚇 搭乘範圍</h2>
-            <ul>
-                <li>🚇 台北捷運</li>
-                <li>🚊 新北捷運 / 輕軌</li>
-                <li>🚝 桃園捷運</li>
-                <li>🚄 台中捷運</li>
-                <li>🚉 高雄捷運 / 輕軌</li>
-                <li>🚂 台灣鐵路</li>
-                <li>🚅 台灣高鐵</li>
-                <li>🚌 市區公車</li>
-                <li>🚍 國道客運</li>
-                <li>🚲 公共自行車</li>
-            </ul>
-        </div>
-    </div>
-
-    <div class="greenpoint-section">
-        <div class="menu">
-            <h2>💳 電子票證</h2>
-            <ul>
-                <li>🟦 悠遊卡</li>
-                <li>🟩 一卡通</li>
-                <li>🟥 愛金卡</li>
-            </ul>
-        </div>
-    </div>
-
-    <div class="greenpoint-section">
-        <h3 style="text-align: center;">📏 集點規則</h3>
-        <div class="coin" style="justify-content: center; flex-wrap: wrap;">
-            <div class="card" style="min-width: 140px;">
-                <h3>🚇 一般運輸</h3>
-                <p>2 元 1 點</p>
+            <h2>🚇 哪些運具可以集點？</h2>
+            <div class="transport-grid">
+                <div class="transport-item"><span class="icon">🚇</span>台北捷運</div>
+                <div class="transport-item"><span class="icon">🚊</span>新北捷運 / 輕軌</div>
+                <div class="transport-item"><span class="icon">🚝</span>桃園捷運</div>
+                <div class="transport-item"><span class="icon">🚄</span>台中捷運</div>
+                <div class="transport-item"><span class="icon">🚉</span>高雄捷運 / 輕軌</div>
+                <div class="transport-item"><span class="icon">🚂</span>台灣鐵路</div>
+                <div class="transport-item"><span class="icon">🚅</span>台灣高鐵</div>
+                <div class="transport-item"><span class="icon">🚌</span>市區公車</div>
+                <div class="transport-item"><span class="icon">🚍</span>國道客運</div>
+                <div class="transport-item"><span class="icon">🚲</span>公共自行車</div>
             </div>
-            <div class="card" style="min-width: 140px;">
-                <h3>🚊 雙北捷運</h3>
-                <p>4 元 1 點</p>
+        </div>
+    </div>
+
+    <div class="greenpoint-section">
+        <div class="menu">
+            <h2>💳 支援的電子票證</h2>
+            <p>綁定以下任一張票證，就能開始累積：</p>
+            <div class="card-grid">
+                <div class="ticket-item"><span class="icon">🟦</span>悠遊卡</div>
+                <div class="ticket-item"><span class="icon">🟩</span>一卡通</div>
+                <div class="ticket-item"><span class="icon">🟥</span>愛金卡</div>
             </div>
-            <div class="card" style="min-width: 140px;">
-                <h3>🚲 公共自行車</h3>
-                <p>1 元 3 點</p>
+        </div>
+    </div>
+
+    <div class="greenpoint-section">
+        <div class="menu" style="text-align: center;">
+            <h2>📏 集點規則</h2>
+            <div class="card-grid">
+                <div class="rule-card">
+                    <h3>🚇 一般運輸</h3>
+                    <p class="amount">每 2 元 1 點</p>
+                </div>
+                <div class="rule-card">
+                    <h3>🚊 雙北捷運</h3>
+                    <p class="amount">每 4 元 1 點</p>
+                </div>
+                <div class="rule-card">
+                    <h3>🚲 公共自行車</h3>
+                    <p class="amount">每 1 元 3 點</p>
+                </div>
             </div>
         </div>
     </div>
@@ -93,23 +194,20 @@
     <div class="greenpoint-section">
         <div class="menu">
             <h2>📝 參加步驟</h2>
-            <ul>
-                <li>1️⃣ 登入帳戶，新增載具</li>
-                <li>2️⃣ 輸入電子票證卡號完成綁定</li>
-                <li>3️⃣ 持綁定票證嗶卡搭乘</li>
-                <li>4️⃣ 3-14 日內自動入帳</li>
-            </ul>
+            <ol class="steps">
+                <li><strong>登入帳戶</strong>，進入載具管理新增票證</li>
+                <li><strong>輸入電子票證卡號</strong>完成綁定</li>
+                <li><strong>持綁定票證嗶卡搭乘</strong>，自動記錄行程</li>
+                <li><strong>3-14 日內自動入帳</strong>，點數直接匯入減碳存摺</li>
+            </ol>
         </div>
     </div>
 
     <div class="greenpoint-section">
-        <div class="menu">
-            <h2>⚠️ 注意</h2>
-            <ul>
-                <li>🚫 定期票 / 月票 / 社福點數不給點</li>
-                <li>🚫 信用卡 / 電子支付 / 乘車碼不適用</li>
-                <li>⏰ 疑義請於搭乘日次月底前提出</li>
-            </ul>
+        <div class="notice-box">
+            <h2>⚠️ 小提醒</h2>
+            <p>定期票 / 月票 / 社福點數不給點；信用卡 / 電子支付 / 乘車碼不適用。</p>
+            <p>若有搭乘資料疑義，請於搭乘日次月底前提出。</p>
         </div>
     </div>
 </div>

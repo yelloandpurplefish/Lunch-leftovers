@@ -616,63 +616,6 @@ async function submitSurvey(){
         alert('問卷送出失敗，請稍後再試');
     }
 }
-function analyzeFood(){
-
-    const foods = [
-
-        {
-            name:"🍗 香酥雞腿",
-            value:Number(document.getElementById("food1").value)
-        },
-
-        {
-            name:"🥬 高麗菜",
-            value:Number(document.getElementById("food2").value)
-        },
-
-        {
-            name:"🥚 蒸蛋",
-            value:Number(document.getElementById("food3").value)
-        },
-
-        {
-            name:"🍎 蘋果",
-            value:Number(document.getElementById("food4").value)
-        },
-
-        {
-            name:"🥣 玉米濃湯",
-            value:Number(document.getElementById("food5").value)
-        }
-
-    ];
-
-    let most = foods[0];
-    let least = foods[0];
-
-    for(const food of foods){
-
-        if(food.value > most.value){
-            most = food;
-        }
-
-        if(food.value < least.value){
-            least = food;
-        }
-
-    }
-
-    document.getElementById("mostFood").innerHTML =
-        "🥇 剩最多：" + most.name + "（" + most.value + " 克）";
-
-    document.getElementById("leastFood").innerHTML =
-        "🥗 剩最少：" + least.name + "（" + least.value + " 克）";
-
-    // 繪製剩食長條圖
-    renderFoodBarChart();
-
-}
-
 function renderFoodBarChart(){
 
     const container = document.getElementById("foodChartContainer");
@@ -708,19 +651,19 @@ function renderFoodBarChart(){
 
 }
 
-// 自動分析剩食：輸入改變時即更新最多/最少與長條圖
+// 自動繪製剩食長條圖：輸入改變時即更新
 function setupFoodAnalysis(){
     const ids = ["food1", "food2", "food3", "food4", "food5"];
 
     ids.forEach(id => {
         const input = document.getElementById(id);
         if(input){
-            input.addEventListener("input", analyzeFood);
+            input.addEventListener("input", renderFoodBarChart);
         }
     });
 
-    // 頁面載入時先分析一次
-    analyzeFood();
+    // 頁面載入時先繪製一次
+    renderFoodBarChart();
 }
 
 async function calculateReward(){
