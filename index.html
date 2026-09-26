@@ -1,7 +1,3 @@
-
-
-
-
 <!DOCTYPE html>
 <html lang="zh-Hant">
 <head>
@@ -108,7 +104,9 @@
 </head>
 <body>
 
-<!-- 開場全螢幕影片 -->
+<!-- ============================================================
+     開場全螢幕影片（覆蓋層，跳過後才看得到下面的畫面）
+     ============================================================ -->
 <div id="introVideo" class="intro-video">
     <iframe src="https://www.youtube.com/embed/IDVkzhq6cig?si=5bPYkP2kUNmk1Ega&autoplay=1&mute=1&playsinline=1&rel=0" title="食安宣導影片" frameborder="0" allow="accelerometer; autoplay; clipboard-write; encrypted-media; gyroscope; picture-in-picture; web-share" referrerpolicy="strict-origin-when-cross-origin" allowfullscreen></iframe>
     <button data-action="skipIntro" class="skip-btn">跳過</button>
@@ -121,7 +119,10 @@
         <p>珍惜食物｜守護地球</p>
     </header>
 
-    <section class="video">
+    <!-- ============================================================
+         登入區：未登入（或登入後尚未按「開始使用」）時唯一顯示的區塊
+         ============================================================ -->
+    <section class="auth-view" id="authView">
 
         <!-- 登入/註冊表單 -->
         <div class="auth-container" id="authContainer">
@@ -179,6 +180,7 @@
                     <label>確認密碼：</label>
                     <input type="password" id="registerConfirmPassword" placeholder="再次輸入密碼">
                 </div>
+
                 <div id="studentRegisterFields" class="parent-register-fields">
                     <div class="form-group">
                         <label>年級：</label>
@@ -216,6 +218,7 @@
                     <button data-action="verifyStudentBinding" class="verify-btn" id="verifyStudentBtn">🔍 先驗證孩子資料</button>
                     <p id="verifyStudentResult" class="verify-result"></p>
                 </div>
+
                 <button data-action="handleRegister" class="auth-btn">註冊</button>
                 <p id="registerError" class="error-message"></p>
             </div>
@@ -225,7 +228,7 @@
         <div class="logged-in-container hidden" id="loggedInContainer">
             <div class="user-info">
                 <h3>👤 歡迎回來，<span id="userDisplayName"></span>！</h3>
-                <p style="color:#2e7d32; margin-top:6px; font-size:15px;">一起減碳 零廚餘愛地球</p>
+                <p class="user-slogan">一起減碳 零廚餘愛地球</p>
                 <div class="user-stats">
                     <div class="stat-item">
                         <span class="stat-label">E幣 <small>（光盤）</small></span>
@@ -246,301 +249,266 @@
         </div>
 
     </section>
-<nav class="bottom-nav" id="bottomNav">
 
-    <button data-action="scrollToSection" data-arg="home" data-roles="student,lunch_leader,teacher,admin">🏠<br>首頁</button>
+    <!-- ============================================================
+         主要內容：登入並按下「開始使用」之後才顯示。
+         以下每個 <section> 都是彼此獨立的區塊，不互相巢狀。
+         ============================================================ -->
+    <main id="appContent" class="hidden">
 
-    <button data-action="scrollToSection" data-arg="teacher" data-roles="teacher,admin">📋<br>檢查清單</button>
+        <!-- 區塊：首頁 -->
+        <section id="home" class="home">
 
-    <button data-action="scrollToSection" data-arg="ranking" data-roles="student,lunch_leader,teacher,admin">🏆<br>排行榜</button>
+            <div class="coin">
 
-    <button data-action="scrollToSection" data-arg="shop" data-roles="student,admin">🎁<br>兌換</button>
+                <div class="card">
+                    <h3>E幣 <small>（光盤）</small></h3>
+                    <span id="ecoin">0</span>
+                </div>
 
-    <button data-action="scrollToSection" data-arg="leader" data-roles="lunch_leader,admin">🍳<br>午餐長紀錄</button>
+                <div class="card">
+                    <h3>S幣 <small>（減碳）</small></h3>
+                    <span id="scoin">0</span>
+                </div>
 
-    <button data-action="scrollToSection" data-arg="parentZone" data-roles="parent">👨‍👩‍👧<br>家長專區</button>
+                <div class="card">
+                    <h3>積分</h3>
+                    <span id="score">0</span>
+                </div>
 
-</nav>
-
-    <section id="home" class="hidden">
-
-        <div class="coin">
-
-            <div class="card">
-                <h3>E幣 <small>（光盤）</small></h3>
-                <span id="ecoin">0</span>
             </div>
 
-            <div class="card">
-                <h3>S幣 <small>（減碳）</small></h3>
-                <span id="scoin">0</span>
+            <div class="menu">
+                <h2>🍱 今日菜單</h2>
+                <ul>
+                    <li>🍗 香酥雞腿</li>
+                    <li>🥬 高麗菜</li>
+                    <li>🥚 蒸蛋</li>
+                    <li>🍎 蘋果</li>
+                    <li>🥣 玉米濃湯</li>
+                </ul>
             </div>
 
-            <div class="card">
-                <h3>積分</h3>
-                <span id="score">0</span>
+            <div class="task">
+                <h2>✅ 今日午餐狀況</h2>
+                <p class="field-hint">吃完自己的部分由老師在「檢查清單」確認，確認後自動獲得 E幣 +1、S幣 +1。</p>
+                <div id="myMealStatus">載入中...</div>
             </div>
 
-        </div>
+            <div class="task hidden" id="parentSignIn">
+                <h2>👨‍👩‍👧 家長專區</h2>
+                <p>家長登入後即可直接簽到，不需要額外輸入。</p>
+                <button data-action="parentSignIn">家長簽到</button>
+            </div>
 
-        <div class="menu">
+            <div class="task" id="supportTaskCard">
+                <h2>🤝 今日各菜品剩餘量</h2>
+                <p class="field-hint">只有本班某道菜剩得不多時，才會顯示其他班是否還有。</p>
+                <div id="supportDishList">載入中...</div>
+                <button data-action="loadSupportDishes">🔄 重新載入</button>
+            </div>
 
-            <h2>🍱 今日菜單</h2>
+        </section>
 
-            <ul>
+        <!-- 區塊：班級排行榜 -->
+        <section class="ranking" id="ranking">
 
-                <li>🍗 香酥雞腿</li>
+            <h2>🏆 班級排行榜</h2>
 
-                <li>🥬 高麗菜</li>
+            <table>
+                <thead>
+                    <tr>
+                        <th>名次</th>
+                        <th>姓名</th>
+                        <th>積分</th>
+                    </tr>
+                </thead>
+                <tbody id="classRankingList">
+                    <tr>
+                        <td colspan="3">載入中...</td>
+                    </tr>
+                </tbody>
+            </table>
 
-                <li>🥚 蒸蛋</li>
+        </section>
 
-                <li>🍎 蘋果</li>
+        <!-- 區塊：獎勵兌換商城 -->
+        <section class="shop" id="shop">
 
-                <li>🥣 玉米濃湯</li>
+            <div class="shop-header">
+                <h2>🎁 獎勵兌換商城</h2>
+                <button class="lottery-btn" data-action="openLottery">🎰 幸運抽獎</button>
+            </div>
 
-            </ul>
+            <div id="shopList">
+                <p>載入中...</p>
+            </div>
 
-        </div>
+        </section>
 
-        <div class="task">
+        <!-- 區塊：午餐長專區（四桶剩食紀錄 + 剩食登記表） -->
+        <section class="leader hidden" id="leader">
 
-            <h2>✅ 今日午餐狀況</h2>
+            <h2>👨‍🍳 午餐長專區</h2>
 
-            <p class="field-hint">吃完自己的部分由老師在「檢查清單」確認，確認後自動獲得 E幣 +1、S幣 +1。</p>
+            <div class="reward" id="recordPanel">
 
-            <div id="myMealStatus">載入中...</div>
+                <h3>📷 四桶剩食紀錄</h3>
 
-        </div>
+                <p class="field-hint">
+                    依序拍攝：主食桶 → 配菜桶A → 配菜桶B → 湯桶。系統辨識各菜殘餘比例後，
+                    由你確認再送出；辨識服務未啟動時會改用預設估算，務必自行確認數值。
+                </p>
 
-        <div class="task" id="parentSignIn">
+                <p id="recordVisionStatus" class="verify-result"></p>
+
+                <div id="recordStatus">載入中...</div>
+
+                <button data-action="startRecord" id="startRecordBtn">開始今日紀錄</button>
+
+                <div id="recordBuckets"></div>
+
+                <div id="recordSummary"></div>
+
+            </div>
+
+            <h3>✍️ 剩食登記表</h3>
+
+            <table>
+                <tr>
+                    <th>菜色</th>
+                    <th>剩食(克)</th>
+                </tr>
+                <tr>
+                    <td>🍗 香酥雞腿</td>
+                    <td><input type="number" min="0" id="food1" value="0"></td>
+                </tr>
+                <tr>
+                    <td>🥬 高麗菜</td>
+                    <td><input type="number" min="0" id="food2" value="0"></td>
+                </tr>
+                <tr>
+                    <td>🥚 蒸蛋</td>
+                    <td><input type="number" min="0" id="food3" value="0"></td>
+                </tr>
+                <tr>
+                    <td>🍎 蘋果</td>
+                    <td><input type="number" min="0" id="food4" value="0"></td>
+                </tr>
+                <tr>
+                    <td>🥣 玉米濃湯</td>
+                    <td><input type="number" min="0" id="food5" value="0"></td>
+                </tr>
+            </table>
+
+        </section>
+
+        <!-- 區塊：今日菜色問卷 -->
+        <section class="survey" id="survey">
+
+            <h2>📝 今日菜色問卷</h2>
+
+            <label for="favoriteFood">😊 今天最喜歡哪一道菜？</label>
+            <select id="favoriteFood">
+                <option>香酥雞腿</option>
+                <option>高麗菜</option>
+                <option>蒸蛋</option>
+                <option>蘋果</option>
+                <option>玉米濃湯</option>
+            </select>
+
+            <label for="hateFood">😖 今天最不喜歡哪一道菜？</label>
+            <select id="hateFood">
+                <option>香酥雞腿</option>
+                <option>高麗菜</option>
+                <option>蒸蛋</option>
+                <option>蘋果</option>
+                <option>玉米濃湯</option>
+            </select>
+
+            <button data-action="submitSurvey">送出問卷</button>
+
+            <div id="surveyDisplay" class="survey-display">
+                <p class="survey-placeholder">送出問卷後會顯示結果</p>
+            </div>
+
+        </section>
+
+        <!-- 區塊：全班剩食長條圖 -->
+        <section class="food-chart" id="foodChartSection">
+
+            <h2>📊 全班剩食長條圖</h2>
+
+            <div id="foodChartContainer">
+                <p class="chart-placeholder">滑到最下面即可顯示全班剩食長條圖</p>
+            </div>
+
+        </section>
+
+        <!-- 區塊：老師每日逐生檢查「吃完他的部分」 -->
+        <section id="teacher" class="teacher-panel hidden">
+
+            <h2>👩‍🏫 今日用餐檢查</h2>
+
+            <p class="field-hint">勾選代表該學生吃完自己的部分（即「吃完一餐」），系統立即給該生 E幣 +1、S幣 +1；取消勾選會沖銷。</p>
+
+            <div id="checkSummary" class="check-summary"></div>
+
+            <div class="check-actions">
+                <button data-action="loadCheckRoster">🔄 重新載入</button>
+                <button data-action="finishAllChecks" class="secondary-btn">✅ 全班都吃完</button>
+            </div>
+
+            <div id="checkRoster">
+                <p>載入中...</p>
+            </div>
+
+        </section>
+
+        <!-- 區塊：家長簽到與孩子午餐狀況 -->
+        <section id="parentZone" class="teacher-panel hidden">
 
             <h2>👨‍👩‍👧 家長專區</h2>
 
-            <p>家長登入後即可直接簽到，不需要額外輸入。</p>
+            <div id="childStatus">載入中...</div>
 
-            <button data-action="parentSignIn">家長簽到</button>
+            <button data-action="parentSignIn" id="parentSignInBtn">今日簽到（孩子 +1 S幣）</button>
 
-        </div>
+            <p id="parentSignInResult" class="verify-result"></p>
 
-        <div class="task" id="supportTaskCard">
+        </section>
 
-            <h2>🤝 今日各菜品剩餘量</h2>
-
-            <p class="field-hint">只有本班某道菜剩得不多時，才會顯示其他班是否還有。</p>
-
-            <div id="supportDishList">載入中...</div>
-
-            <button data-action="loadSupportDishes">🔄 重新載入</button>
-
-        </div>
-
-        </div>
-<div class="ranking" id="ranking">
-
-    <h2>🏆 班級排行榜</h2>
-
-    <table>
-
-        <thead>
-
-            <tr>
-                <th>名次</th>
-                <th>姓名</th>
-                <th>積分</th>
-            </tr>
-
-        </thead>
-
-        <tbody id="classRankingList">
-
-            <tr>
-                <td colspan="3">載入中...</td>
-            </tr>
-
-        </tbody>
-
-    </table>
-
-</div>
-<div class="shop" id="shop">
-
-    <div class="shop-header">
-        <h2>🎁 獎勵兌換商城</h2>
-        <button class="lottery-btn" data-action="openLottery">🎰 幸運抽獎</button>
-    </div>
-
-    <div id="shopList">
-        <p>載入中...</p>
-    </div>
-<div class="survey">
-<div class="leader" id="leader">
-
-    <h2>👨‍🍳 午餐長專區</h2>
-<div class="reward" id="recordPanel">
-
-    <h2>📷 四桶剩食紀錄</h2>
-
-    <p class="field-hint">
-        依序拍攝：主食桶 → 配菜桶A → 配菜桶B → 湯桶。系統辨識各菜殘餘比例後，
-        由你確認再送出；辨識服務未啟動時會改用預設估算，務必自行確認數值。
-    </p>
-
-    <p id="recordVisionStatus" class="verify-result"></p>
-
-    <div id="recordStatus">載入中...</div>
-
-    <button data-action="startRecord" id="startRecordBtn">開始今日紀錄</button>
-
-    <div id="recordBuckets"></div>
-
-    <div id="recordSummary"></div>
+    </main>
 
 </div>
 
-    <table>
+<!-- ============================================================
+     覆蓋層：不屬於任何內容區塊，放在最外層才不會被父層一起隱藏
+     ============================================================ -->
 
-        <tr>
-            <th>菜色</th>
-            <th>剩食(克)</th>
-        </tr>
-
-        <tr>
-            <td>🍗 香酥雞腿</td>
-            <td><input type="number" min="0" id="food1" value="0"></td>
-        </tr>
-
-        <tr>
-            <td>🥬 高麗菜</td>
-            <td><input type="number" min="0" id="food2" value="0"></td>
-        </tr>
-
-        <tr>
-            <td>🥚 蒸蛋</td>
-            <td><input type="number" min="0" id="food3" value="0"></td>
-        </tr>
-
-        <tr>
-            <td>🍎 蘋果</td>
-            <td><input type="number" min="0" id="food4" value="0"></td>
-        </tr>
-
-        <tr>
-            <td>🥣 玉米濃湯</td>
-            <td><input type="number" min="0" id="food5" value="0"></td>
-        </tr>
-
-    </table>
-
-</div>
-
-    <h2>📝 今日菜色問卷</h2>
-
-    <label>😊 今天最喜歡哪一道菜？</label>
-
-    <select id="favoriteFood">
-
-        <option>香酥雞腿</option>
-        <option>高麗菜</option>
-        <option>蒸蛋</option>
-        <option>蘋果</option>
-        <option>玉米濃湯</option>
-
-    </select>
-
-    <br><br>
-
-    <label>😖 今天最不喜歡哪一道菜？</label>
-
-    <select id="hateFood">
-
-        <option>香酥雞腿</option>
-        <option>高麗菜</option>
-        <option>蒸蛋</option>
-        <option>蘋果</option>
-        <option>玉米濃湯</option>
-
-    </select>
-
-    <br><br>
-
-    <button data-action="submitSurvey">
-
-        送出問卷
-
-    </button>
-
-    <div id="surveyDisplay" class="survey-display" style="margin-top: 20px;">
-        <p class="survey-placeholder">送出問卷後會顯示結果</p>
-    </div>
-
-</div>
-
-</div>
-
-<!-- 全班剩食長條圖 -->
-<div class="food-chart" id="foodChartSection" style="margin-top: 30px;">
-
-    <h2>📊 全班剩食長條圖</h2>
-
-    <div id="foodChartContainer" style="display: flex; align-items: flex-end; justify-content: space-around; gap: 10px; height: 220px; padding: 15px; border: 1px solid #ddd; border-radius: 10px; background: #f9f9f9;">
-
-        <p style="width: 100%; text-align: center; color: #888;">滑到最下面即可顯示全班剩食長條圖</p>
-
-    </div>
-
-</div>
+<!-- 底部導覽列：登入並進入系統後才出現 -->
+<nav class="bottom-nav hidden" id="bottomNav">
+    <button data-action="scrollToSection" data-arg="home" data-roles="student,lunch_leader,teacher,admin">🏠<br>首頁</button>
+    <button data-action="scrollToSection" data-arg="teacher" data-roles="teacher,admin">📋<br>檢查清單</button>
+    <button data-action="scrollToSection" data-arg="ranking" data-roles="student,lunch_leader,teacher,admin">🏆<br>排行榜</button>
+    <button data-action="scrollToSection" data-arg="shop" data-roles="student,admin">🎁<br>兌換</button>
+    <button data-action="scrollToSection" data-arg="leader" data-roles="lunch_leader,admin">🍳<br>午餐長紀錄</button>
+    <button data-action="scrollToSection" data-arg="parentZone" data-roles="parent">👨‍👩‍👧<br>家長專區</button>
+</nav>
 
 <!-- 全站大獎公告 -->
-<div id="globalAnnouncement" class="hidden" style="position: fixed; top: 0; left: 0; right: 0; z-index: 9999; background: linear-gradient(90deg, #1e3c72, #2a5298); color: #fff; text-align: center; padding: 12px; font-size: 16px; box-shadow: 0 4px 12px rgba(0,0,0,0.3);"></div>
+<div id="globalAnnouncement" class="announcement-banner hidden"></div>
 
 <!-- 抽獎彈窗 -->
 <div id="lotteryModal" class="lottery-modal">
-    <div class="lottery-content" style="position: relative; overflow: hidden; min-height: 320px;">
+    <div class="lottery-content">
         <span class="close-btn" data-action="closeLottery">&times;</span>
         <h2>🎰 幸運抽獎</h2>
         <p>消耗 10 E幣進行抽獎</p>
-        <div id="lotteryEffects" style="position: absolute; top: 0; left: 0; right: 0; bottom: 0; pointer-events: none; overflow: hidden; z-index: 5;"></div>
-        <div id="lotteryResult" class="lottery-result" style="position: relative; z-index: 10;"></div>
+        <div id="lotteryEffects"></div>
+        <div id="lotteryResult" class="lottery-result"></div>
         <button class="spin-btn" data-action="spinLottery">開始抽獎</button>
     </div>
-</div>
-
-        <!-- 老師：每日逐生檢查「吃完他的部分」 -->
-    <div id="teacher" class="teacher-panel hidden">
-
-        <h2>👩‍🏫 今日用餐檢查</h2>
-
-        <p class="field-hint">勾選代表該學生吃完自己的部分（即「吃完一餐」），系統立即給該生 E幣 +1、S幣 +1；取消勾選會沖銷。</p>
-
-        <div id="checkSummary" class="check-summary"></div>
-
-        <div class="check-actions">
-            <button data-action="loadCheckRoster">🔄 重新載入</button>
-            <button data-action="finishAllChecks" class="secondary-btn">✅ 全班都吃完</button>
-        </div>
-
-        <div id="checkRoster">
-            <p>載入中...</p>
-        </div>
-
-    </div>
-
-        <!-- 家長：簽到與孩子午餐狀況 -->
-    <div id="parentZone" class="teacher-panel hidden">
-
-        <h2>👨‍👩‍👧 家長專區</h2>
-
-        <div id="childStatus">載入中...</div>
-
-        <button data-action="parentSignIn" id="parentSignInBtn">今日簽到（孩子 +1 S幣）</button>
-
-        <p id="parentSignInResult" class="verify-result"></p>
-
-    </div>
-
-</section>
-
 </div>
 
 <script src="firebase-config.js"></script>

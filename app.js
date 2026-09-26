@@ -321,16 +321,32 @@ async function loadUserData() {
   }
 }
 
+// 只顯示登入區：主要內容與底部導覽列一律收起來
+function showAuthOnly() {
+  const authView = document.getElementById('authView');
+  const appContent = document.getElementById('appContent');
+  const bottomNav = document.getElementById('bottomNav');
+
+  if (authView) authView.classList.remove('hidden');
+  if (appContent) appContent.classList.add('hidden');
+  if (bottomNav) {
+    bottomNav.classList.add('hidden');
+    bottomNav.classList.remove('visible');
+  }
+}
+
 // 顯示登入表單
 function showAuthForm() {
   document.getElementById('authContainer').classList.remove('hidden');
   document.getElementById('loggedInContainer').classList.add('hidden');
+  showAuthOnly();
 }
 
-// 顯示已登入狀態
+// 顯示已登入狀態（仍停留在登入區，按「開始使用」才進入主要內容）
 function showLoggedInState() {
   document.getElementById('authContainer').classList.add('hidden');
   document.getElementById('loggedInContainer').classList.remove('hidden');
+  showAuthOnly();
 
   const displayName = currentUser.displayName || currentUser.email || '使用者';
   document.getElementById('userDisplayName').textContent = displayName;
@@ -420,8 +436,9 @@ async function apiRequest(endpoint, method = 'GET', body = null) {
 // 底部導覽列顯示/隱藏
 window.addEventListener('scroll', function() {
     const bottomNav = document.querySelector('.bottom-nav');
-    if (!bottomNav) return;
-    
+    // 尚未進入系統時導覽列是隱藏的，不要因為捲動又把它叫出來
+    if (!bottomNav || bottomNav.classList.contains('hidden')) return;
+
     const scrollPosition = window.innerHeight + window.scrollY;
     const pageHeight = document.documentElement.scrollHeight;
     
@@ -490,11 +507,10 @@ async function startApp(){
         rankUserCell.textContent = displayName;
     }
 
-    // 隱藏影片區
-    document.querySelector(".video").style.display = "none";
-
-    // 顯示首頁
-    document.getElementById("home").classList.remove("hidden");
+    // 收起登入區，改顯示主要內容與底部導覽列
+    document.getElementById("authView").classList.add("hidden");
+    document.getElementById("appContent").classList.remove("hidden");
+    document.getElementById("bottomNav").classList.remove("hidden");
 
     // 載入最新資料
     await loadUserData();
@@ -819,26 +835,15 @@ function applyRoleView() {
         ['parentZone', ['parent']],
         ['leader', ['lunch_leader', 'admin']],
         ['supportTaskCard', ['student', 'lunch_leader', 'teacher', 'admin']],
-        ['parentSignIn', ['parent']]
+        ['parentSignIn', ['parent']],
+        // 兌換與抽獎只有學生能用（午餐長只累積不消耗）。
+        // 問卷已獨立成 #survey 區塊，因此可以整段收起 #shop。
+        ['shop', ['student', 'admin']]
     ];
     panels.forEach(([id, allowed]) => {
         const el = document.getElementById(id);
         if (el) el.classList.toggle('hidden', !allowed.includes(role));
     });
-
-    // 兌換與抽獎只有學生能用（午餐長只累積不消耗）。
-    // 注意：問卷區塊在 HTML 上巢狀於 #shop 內，所以不能整段隱藏 #shop，
-    // 只收起「兌換清單」與「抽獎入口」這兩個真正會消耗幣的入口。
-    const canSpend = ['student', 'admin'].includes(role);
-    const shopList = document.getElementById('shopList');
-    const lotteryBtn = document.querySelector('.lottery-btn');
-    if (shopList) shopList.classList.toggle('hidden', !canSpend);
-    if (lotteryBtn) lotteryBtn.classList.toggle('hidden', !canSpend);
-
-    const shopHeader = document.querySelector('.shop-header h2');
-    if (shopHeader) {
-        shopHeader.textContent = canSpend ? '🎁 獎勵兌換商城' : '🎁 獎勵兌換商城（午餐長不開放）';
-    }
 
     const roleTag = document.getElementById('userRoleTag');
     if (roleTag) roleTag.textContent = ROLE_LABEL[role] || role;

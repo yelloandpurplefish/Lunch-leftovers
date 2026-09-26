@@ -78,7 +78,7 @@ header p{
     backdrop-filter:blur(4px);
 }
 
-.video{
+.auth-view{
     width:90%;
     max-width:900px;
     margin:30px auto;
@@ -1618,5 +1618,200 @@ td{
     color:#f57c00;
 
     margin:8px 0 0;
+
+}
+
+/* ============================================================
+   獨立區塊（原本靠巢狀共用樣式，拆開後各自補齊）
+   ============================================================ */
+
+/* 主要內容區：最後一塊不要被底部導覽列蓋住 */
+
+#appContent{
+
+    padding-bottom:90px;
+
+}
+
+.food-chart,
+.teacher-panel{
+
+    width:90%;
+
+    max-width:900px;
+
+    margin:30px auto;
+
+    background:white;
+
+    padding:20px;
+
+    border-radius:20px;
+
+    box-shadow:0 5px 15px rgba(0,0,0,.15);
+
+}
+
+.food-chart h2,
+.teacher-panel h2{
+
+    color:#2e7d32;
+
+    margin-bottom:15px;
+
+}
+
+/* ===== 登入區 ===== */
+
+.user-slogan{
+
+    color:#2e7d32;
+
+    margin-top:6px;
+
+    font-size:15px;
+
+}
+
+/* ===== 午餐長：四桶紀錄卡已在專區內，不必再自己置中縮排 ===== */
+
+.leader .reward{
+
+    width:auto;
+
+    margin:20px 0;
+
+    text-align:left;
+
+}
+
+.leader h3,
+.reward h3{
+
+    color:#2e7d32;
+
+    margin-bottom:10px;
+
+}
+
+/* ===== 問卷（原本夾在商城裡，靠 <br> 排版） ===== */
+
+.survey label{
+
+    display:block;
+
+    margin-top:16px;
+
+}
+
+.survey button{
+
+    margin-top:18px;
+
+}
+
+.survey-display{
+
+    margin-top:20px;
+
+}
+
+/* ===== 全班剩食長條圖 ===== */
+
+#foodChartContainer{
+
+    display:flex;
+
+    align-items:flex-end;
+
+    justify-content:space-around;
+
+    gap:10px;
+
+    height:220px;
+
+    padding:15px;
+
+    border:1px solid #ddd;
+
+    border-radius:10px;
+
+    background:#f9f9f9;
+
+}
+
+.chart-placeholder{
+
+    width:100%;
+
+    text-align:center;
+
+    color:#888;
+
+}
+
+/* ===== 全站大獎公告 ===== */
+
+.announcement-banner{
+
+    position:fixed;
+
+    top:0;
+
+    left:0;
+
+    right:0;
+
+    z-index:9999;
+
+    background:linear-gradient(90deg,#1e3c72,#2a5298);
+
+    color:#fff;
+
+    text-align:center;
+
+    padding:12px;
+
+    font-size:16px;
+
+    box-shadow:0 4px 12px rgba(0,0,0,0.3);
+
+}
+
+/* ===== 抽獎彈窗（原本寫在 HTML inline style） ===== */
+
+.lottery-content{
+
+    overflow:hidden;
+
+    min-height:320px;
+
+}
+
+#lotteryEffects{
+
+    position:absolute;
+
+    top:0;
+
+    left:0;
+
+    right:0;
+
+    bottom:0;
+
+    pointer-events:none;
+
+    overflow:hidden;
+
+    z-index:5;
+
+}
+
+#lotteryResult{
+
+    position:relative;
+
+    z-index:10;
 
 }
