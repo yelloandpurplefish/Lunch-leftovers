@@ -17,10 +17,44 @@ function signToken(user) {
   );
 }
 
+function normalizeRole(role) {
+  return role === 'parent' ? 'parent' : 'student';
+}
+
+function buildUserResponse(userData) {
+  const response = {
+    userId: userData.userId,
+    displayName: userData.displayName,
+    email: userData.email,
+    eCoin: userData.eCoin || 0,
+    sCoin: userData.sCoin || 0,
+    score: userData.score || 0,
+    role: userData.role
+  };
+
+  if (userData.studentBinding) {
+    response.studentBinding = userData.studentBinding;
+  }
+
+  return response;
+}
+
 // 註冊新使用者
 const register = async (req, res) => {
   try {
-    const { email, password, displayName, schoolId, classId } = req.body;
+    const {
+      email,
+      password,
+      displayName,
+      role,
+      schoolId,
+      classId,
+      studentGrade,
+      studentClass,
+      studentSeat,
+      studentAccount
+    } = req.body;
+    const normalizedRole = normalizeRole(role);
 
     if (!email || !password || !displayName) {
       return res.status(400).json({
@@ -36,6 +70,15 @@ const register = async (req, res) => {
       });
     }
 
+    if (normalizedRole === 'parent') {
+      if (!studentGrade || !studentClass || !studentSeat || !studentAccount) {
+        return res.status(400).json({
+          success: false,
+          message: '家長註冊需填寫學生年級、班級、座號與帳號'
+        });
+      }
+    }
+
     // 檢查 Email 是否已註冊
     const existing = await db.collection('users').where('email', '==', email).limit(1).get();
     if (!existing.empty) {
@@ -49,6 +92,15 @@ const register = async (req, res) => {
     const userId = db.collection('users').doc().id;
     const passwordHash = await bcrypt.hash(password, 10);
     const now = admin.firestore.FieldValue.serverTimestamp();
+    const userRole = normalizedRole;
+    const studentBinding = userRole === 'parent'
+      ? {
+          grade: String(studentGrade).trim(),
+          className: String(studentClass).trim(),
+          seatNo: String(studentSeat).trim(),
+          account: String(studentAccount).trim()
+        }
+      : null;
 
     const userData = {
       userId,
@@ -57,17 +109,60 @@ const register = async (req, res) => {
       passwordHash,
       eCoin: 0,
       sCoin: 0,
-      gCoin: 0,
       score: 0,
-      role: 'student',
+      role: userRole,
       isActive: true,
       schoolId: schoolId || null,
       classId: classId || null,
       createdAt: now,
-      lastLoginAt: now
+      lastLoginAt: now,
+      studentBinding
     };
 
-    await db.collection('users').doc(userId).set(userData);
+    const userRef = db.collection('users').doc(userId);
+
+    if (userRole === 'parent') {
+      const studentSnapshot = await db.collection('users')
+        .where('email', '==', studentBinding.account)
+        .limit(1)
+        .get();
+
+      if (studentSnapshot.empty) {
+        return res.status(404).json({
+          success: false,
+          message: '找不到對應的學生帳號'
+        });
+      }
+
+      const studentDoc = studentSnapshot.docs[0];
+      const studentData = studentDoc.data();
+
+      if (studentData.role !== 'student') {
+        return res.status(400).json({
+          success: false,
+          message: '綁定帳號必須是學生身份'
+        });
+      }
+
+      if (studentData.parentUserId && studentData.parentUserId !== userId) {
+        return res.status(400).json({
+          success: false,
+          message: '此學生已綁定家長帳號'
+        });
+      }
+
+      const batch = db.batch();
+      batch.set(userRef, userData);
+      batch.set(studentDoc.ref, {
+        studentGrade: studentBinding.grade,
+        studentClass: studentBinding.className,
+        studentSeat: studentBinding.seatNo,
+        parentUserId: userId
+      }, { merge: true });
+      await batch.commit();
+    } else {
+      await userRef.set(userData);
+    }
 
     const token = signToken(userData);
 
@@ -75,16 +170,7 @@ const register = async (req, res) => {
       success: true,
       userId,
       token,
-      userData: {
-        userId,
-        displayName,
-        email,
-        eCoin: 0,
-        sCoin: 0,
-        gCoin: 0,
-        score: 0,
-        role: 'student'
-      }
+      userData: buildUserResponse(userData)
     });
   } catch (error) {
     console.error('註冊失敗:', error);
@@ -146,16 +232,7 @@ const login = async (req, res) => {
       success: true,
       message: '登入成功',
       token,
-      userData: {
-        userId: userData.userId,
-        displayName: userData.displayName,
-        email: userData.email,
-        eCoin: userData.eCoin || 0,
-        sCoin: userData.sCoin || 0,
-        gCoin: userData.gCoin || 0,
-        score: userData.score || 0,
-        role: userData.role
-      }
+      userData: buildUserResponse(userData)
     });
   } catch (error) {
     console.error('登入失敗:', error);

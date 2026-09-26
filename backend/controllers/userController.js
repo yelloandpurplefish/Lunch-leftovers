@@ -27,13 +27,17 @@ const getProfile = async (req, res) => {
         email: userData.email,
         eCoin: userData.eCoin,
         sCoin: userData.sCoin,
-        gCoin: userData.gCoin || 0,
         score: userData.score,
         createdAt: userData.createdAt,
         lastLoginAt: userData.lastLoginAt,
         schoolId: userData.schoolId,
         classId: userData.classId,
-        role: userData.role
+        role: userData.role,
+        studentBinding: userData.studentBinding || null,
+        parentUserId: userData.parentUserId || null,
+        studentGrade: userData.studentGrade || null,
+        studentClass: userData.studentClass || null,
+        studentSeat: userData.studentSeat || null
       }
     });
   } catch (error) {
@@ -48,12 +52,15 @@ const getProfile = async (req, res) => {
 // 更新使用者資料
 const updateProfile = async (req, res) => {
   try {
-    const { displayName, schoolId, classId } = req.body;
+    const { displayName, schoolId, classId, studentGrade, studentClass, studentSeat } = req.body;
     const updateData = {};
 
     if (displayName) updateData.displayName = displayName;
     if (schoolId !== undefined) updateData.schoolId = schoolId;
     if (classId !== undefined) updateData.classId = classId;
+    if (studentGrade !== undefined) updateData.studentGrade = studentGrade;
+    if (studentClass !== undefined) updateData.studentClass = studentClass;
+    if (studentSeat !== undefined) updateData.studentSeat = studentSeat;
 
     await db.collection('users').doc(req.user.uid).update(updateData);
 
@@ -73,39 +80,38 @@ const updateProfile = async (req, res) => {
 // 家長簽到
 const parentSignIn = async (req, res) => {
   try {
-    const { parentName } = req.body;
-
-    if (!parentName || parentName.trim().length === 0) {
-      return res.status(400).json({
+    if (req.user.role !== 'parent') {
+      return res.status(403).json({
         success: false,
-        message: '請填寫家長姓名'
+        message: '僅家長身份可簽到'
       });
     }
 
-    const studentId = req.user.uid;
-    const userDoc = await db.collection('users').doc(studentId).get();
+    const parentId = req.user.uid;
+    const userDoc = await db.collection('users').doc(parentId).get();
 
     if (!userDoc.exists) {
       return res.status(404).json({
         success: false,
-        message: '學生資料不存在'
+        message: '家長資料不存在'
       });
     }
 
     const userData = userDoc.data();
 
     await db.collection('parent_sign_ins').add({
-      studentId,
-      studentName: userData.displayName,
-      studentEmail: userData.email,
-      parentName: parentName.trim(),
+      parentId,
+      parentName: userData.displayName,
+      parentEmail: userData.email,
+      studentBinding: userData.studentBinding || null,
       signedInAt: admin.firestore.FieldValue.serverTimestamp()
     });
 
     res.status(201).json({
       success: true,
       message: '家長簽到成功',
-      parentName: parentName.trim()
+      parentName: userData.displayName,
+      studentBinding: userData.studentBinding || null
     });
   } catch (error) {
     console.error('家長簽到失敗:', error);

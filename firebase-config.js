@@ -8,5 +8,4 @@ let currentUser = null;
 let idToken = null;
 let eCoin = 0;
 let sCoin = 0;
-let gCoin = 0;
 let score = 0;

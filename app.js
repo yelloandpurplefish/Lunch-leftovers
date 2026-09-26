@@ -50,6 +50,23 @@ function switchTab(tab) {
     loginForm.classList.add('hidden');
     registerForm.classList.remove('hidden');
     tabs[1].classList.add('active');
+    syncRegisterFields();
+  }
+}
+
+function getSelectedRegisterRole() {
+  const selected = document.querySelector('input[name="registerRole"]:checked');
+  return selected ? selected.value : 'student';
+}
+
+function syncRegisterFields() {
+  const parentFields = document.getElementById('parentRegisterFields');
+  if (!parentFields) return;
+
+  if (getSelectedRegisterRole() === 'parent') {
+    parentFields.classList.remove('hidden');
+  } else {
+    parentFields.classList.add('hidden');
   }
 }
 
@@ -105,6 +122,11 @@ async function handleRegister() {
   const email = document.getElementById('registerEmail').value;
   const password = document.getElementById('registerPassword').value;
   const confirmPassword = document.getElementById('registerConfirmPassword').value;
+  const role = getSelectedRegisterRole();
+  const studentGrade = document.getElementById('parentStudentGrade');
+  const studentClass = document.getElementById('parentStudentClass');
+  const studentSeat = document.getElementById('parentStudentSeat');
+  const studentAccount = document.getElementById('parentStudentAccount');
   const errorElement = document.getElementById('registerError');
   const registerBtn = document.querySelector('#registerForm .auth-btn');
 
@@ -123,6 +145,18 @@ async function handleRegister() {
     return;
   }
 
+  if (role === 'parent') {
+    const gradeValue = studentGrade ? studentGrade.value.trim() : '';
+    const classValue = studentClass ? studentClass.value.trim() : '';
+    const seatValue = studentSeat ? studentSeat.value.trim() : '';
+    const accountValue = studentAccount ? studentAccount.value.trim() : '';
+
+    if (!gradeValue || !classValue || !seatValue || !accountValue) {
+      errorElement.textContent = '家長註冊需填寫學生年級、班級、座號與帳號';
+      return;
+    }
+  }
+
   // 設置載入狀態
   registerBtn.disabled = true;
   registerBtn.textContent = '註冊中...';
@@ -134,7 +168,16 @@ async function handleRegister() {
     const response = await fetch(`${API_BASE_URL}/auth/register`, {
       method: 'POST',
       headers: { 'Content-Type': 'application/json' },
-      body: JSON.stringify({ email, password, displayName: name })
+      body: JSON.stringify({
+        email,
+        password,
+        displayName: name,
+        role,
+        studentGrade: studentGrade ? studentGrade.value.trim() : '',
+        studentClass: studentClass ? studentClass.value.trim() : '',
+        studentSeat: studentSeat ? studentSeat.value.trim() : '',
+        studentAccount: studentAccount ? studentAccount.value.trim() : ''
+      })
     });
 
     const data = await response.json().catch(() => ({ success: false, message: '伺服器回應錯誤' }));
@@ -168,7 +211,6 @@ async function handleLogout() {
     idToken = null;
     eCoin = 0;
     sCoin = 0;
-    gCoin = 0;
     score = 0;
     localStorage.removeItem('token');
     localStorage.removeItem('user');
@@ -186,7 +228,6 @@ async function loadUserData() {
     if (data.success) {
       eCoin = data.userData.eCoin || 0;
       sCoin = data.userData.sCoin || 0;
-      gCoin = data.userData.gCoin || 0;
       score = data.userData.score || 0;
 
       // 同步前端 currentUser
@@ -194,7 +235,8 @@ async function loadUserData() {
         uid: data.userData.userId,
         email: data.userData.email,
         displayName: data.userData.displayName,
-        role: data.userData.role
+        role: data.userData.role,
+        studentBinding: data.userData.studentBinding || null
       };
       localStorage.setItem('user', JSON.stringify(currentUser));
 
@@ -222,6 +264,7 @@ function showLoggedInState() {
   const displayName = currentUser.displayName || currentUser.email || '使用者';
   document.getElementById('userDisplayName').textContent = displayName;
   updateLoggedInStats();
+  syncRolePanels();
 
   const teacherPanel = document.getElementById('teacherPanel');
   if (teacherPanel) {
@@ -235,8 +278,6 @@ function showLoggedInState() {
 
 // 更新已登入狀態的統計數據
 function updateLoggedInStats() {
-  const userGCoinEl = document.getElementById('userGCoin');
-  if (userGCoinEl) userGCoinEl.textContent = gCoin;
   document.getElementById('userECoin').textContent = eCoin;
   document.getElementById('userSCoin').textContent = sCoin;
   document.getElementById('userScore').textContent = score;
@@ -246,9 +287,19 @@ function updateLoggedInStats() {
 function updateUI() {
   document.getElementById('ecoin').textContent = eCoin;
   document.getElementById('scoin').textContent = sCoin;
-  document.getElementById('gcoin').textContent = gCoin;
   document.getElementById('score').textContent = score;
   updateLoggedInStats();
+}
+
+function syncRolePanels() {
+    const parentCard = document.getElementById('parentSignIn');
+    if (!parentCard) return;
+
+    if (currentUser && currentUser.role === 'parent') {
+        parentCard.classList.remove('hidden');
+    } else {
+        parentCard.classList.add('hidden');
+    }
 }
 
 // 獲取錯誤訊息
@@ -486,7 +537,6 @@ async function finishTask(){
         if (data.success) {
             eCoin += data.rewards.eCoin;
             sCoin += data.rewards.sCoin;
-            gCoin += data.rewards.gCoin;
             score += data.rewards.score;
             updateUI();
             await loadSupportStatus();
@@ -495,7 +545,6 @@ async function finishTask(){
                 "🎉 任務完成！\n\n" +
                 "E幣 +" + data.rewards.eCoin + "\n" +
                 "S幣 +" + data.rewards.sCoin + "\n" +
-                "減碳存摺 +" + data.rewards.gCoin + "\n" +
                 "積分 +" + data.rewards.score + "\n\n" +
                 "⏰ 24小時後可再次領取"
             );
@@ -525,8 +574,10 @@ async function loadShopItems() {
             return;
         }
 
-        container.innerHTML = data.items.map(item => {
-            const coinName = { E: 'E幣', S: 'S幣', G: '減碳存摺' }[item.costType] || item.costType;
+        const visibleItems = data.items.filter(item => item.costType !== 'G');
+
+        container.innerHTML = visibleItems.map(item => {
+            const coinName = { E: 'E幣', S: 'S幣' }[item.costType] || item.costType;
             const stockText = item.stock === null || item.stock === undefined
                 ? '剩餘：無限'
                 : `剩餘：${item.stock}`;
@@ -557,10 +608,12 @@ async function buyItem(el){
         const data = await apiRequest('/exchange/redeem', 'POST', { itemId });
 
         if (data.success) {
-            const coinFieldMap = { E: 'eCoin', S: 'sCoin', G: 'gCoin' };
-            const coinField = coinFieldMap[costType];
-            if (coinField && data.remainingCoin !== undefined) {
-                window[coinField] = data.remainingCoin;
+            if (data.remainingCoin !== undefined) {
+                if (costType === 'E') {
+                    eCoin = data.remainingCoin;
+                } else if (costType === 'S') {
+                    sCoin = data.remainingCoin;
+                }
             }
             updateUI();
             await loadShopItems();
@@ -701,14 +754,12 @@ async function calculateReward(){
         if (data.success) {
             eCoin += data.rewards.eCoin;
             sCoin += data.rewards.sCoin;
-            gCoin += data.rewards.gCoin;
             updateUI();
 
             alert(
                 "🎉 今日獎勵已發放！\n\n" +
                 "E幣 +" + data.rewards.eCoin + "\n" +
                 "S幣 +" + data.rewards.sCoin + "\n" +
-                "減碳存摺 +" + data.rewards.gCoin + "\n\n" +
                 "⏰ 24小時後可再次領取"
             );
         } else {
@@ -729,20 +780,11 @@ async function calculateReward(){
 
 // 家長簽到
 async function parentSignIn() {
-    const parentNameInput = document.getElementById('parentName');
-    const parentName = parentNameInput ? parentNameInput.value.trim() : '';
-
-    if (!parentName) {
-        alert('請填寫家長姓名');
-        return;
-    }
-
     try {
-        const data = await apiRequest('/user/parent-sign-in', 'POST', { parentName });
+        const data = await apiRequest('/user/parent-sign-in', 'POST');
 
         if (data.success) {
-            alert(`✅ 家長「${data.parentName}」簽到成功`);
-            parentNameInput.value = '';
+            alert(`✅ ${data.parentName || '家長'} 簽到成功`);
         } else {
             alert(data.message || '簽到失敗');
         }
@@ -850,13 +892,11 @@ async function completeSupport(classId, className) {
                 `🎉 成功支援 ${className}！\n\n` +
                 `E幣 +${data.rewards.eCoin}\n` +
                 `S幣 +${data.rewards.sCoin}\n` +
-                `減碳存摺 +${data.rewards.gCoin}\n` +
                 `積分 +${data.rewards.score}`
             );
 
             eCoin += data.rewards.eCoin;
             sCoin += data.rewards.sCoin;
-            gCoin += data.rewards.gCoin || 0;
             score += data.rewards.score;
             updateUI();
 
@@ -1046,6 +1086,12 @@ document.addEventListener('click', (event) => {
     });
 });
 
+document.addEventListener('change', (event) => {
+    if (event.target && event.target.name === 'registerRole') {
+        syncRegisterFields();
+    }
+});
+
 // 若已跳過開場影片，直接隱藏
 if (localStorage.getItem('lunchIntroSkipped') === 'true') {
     const intro = document.getElementById('introVideo');
@@ -1055,6 +1101,8 @@ if (localStorage.getItem('lunchIntroSkipped') === 'true') {
         if (iframe) iframe.src = '';
     }
 }
+
+syncRegisterFields();
 
 // 頁面載入時嘗試恢復登入狀態
 restoreSession();

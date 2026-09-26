@@ -6,7 +6,7 @@
     <meta http-equiv="Cache-Control" content="no-cache, no-store, must-revalidate">
     <meta http-equiv="Pragma" content="no-cache">
     <meta http-equiv="Expires" content="0">
-    <title>學校午餐零廚餘AI光盤減碳克金 銀行啟動!!</title>
+    <title>學校午餐零廚餘管理系統</title>
 
     <link rel="stylesheet" href="style.css">
     <style>
@@ -113,7 +113,7 @@
 <div id="app">
 
     <header>
-        <h1>🌱 學校午餐零廚餘AI光盤減碳克金 銀行啟動!!</h1>
+        <h1>🌱 學校午餐零廚餘管理系統</h1>
         <p>珍惜食物｜守護地球</p>
     </header>
 
@@ -143,6 +143,19 @@
             <!-- 註冊表單 -->
             <div class="auth-form hidden" id="registerForm">
                 <div class="form-group">
+                    <label>註冊身份：</label>
+                    <div class="role-options">
+                        <label class="role-option">
+                            <input type="radio" name="registerRole" value="student" checked>
+                            <span>學生</span>
+                        </label>
+                        <label class="role-option">
+                            <input type="radio" name="registerRole" value="parent">
+                            <span>家長</span>
+                        </label>
+                    </div>
+                </div>
+                <div class="form-group">
                     <label>顯示名稱：</label>
                     <input type="text" id="registerName" placeholder="例如：王小明">
                 </div>
@@ -157,6 +170,24 @@
                 <div class="form-group">
                     <label>確認密碼：</label>
                     <input type="password" id="registerConfirmPassword" placeholder="再次輸入密碼">
+                </div>
+                <div id="parentRegisterFields" class="parent-register-fields hidden">
+                    <div class="form-group">
+                        <label>學生年級：</label>
+                        <input type="text" id="parentStudentGrade" placeholder="例如：三年級">
+                    </div>
+                    <div class="form-group">
+                        <label>學生班級：</label>
+                        <input type="text" id="parentStudentClass" placeholder="例如：三年A班">
+                    </div>
+                    <div class="form-group">
+                        <label>學生座號：</label>
+                        <input type="text" id="parentStudentSeat" placeholder="例如：12">
+                    </div>
+                    <div class="form-group">
+                        <label>學生帳號（Email）：</label>
+                        <input type="email" id="parentStudentAccount" placeholder="請輸入學生登入帳號">
+                    </div>
                 </div>
                 <button data-action="handleRegister" class="auth-btn">註冊</button>
                 <p id="registerError" class="error-message"></p>
@@ -176,10 +207,6 @@
                     <div class="stat-item">
                         <span class="stat-label">S幣 <small>（減碳）</small></span>
                         <span class="stat-value" id="userSCoin">0</span>
-                    </div>
-                    <div class="stat-item">
-                        <span class="stat-label">減碳存摺</span>
-                        <span class="stat-value" id="userGCoin">0</span>
                     </div>
                     <div class="stat-item">
                         <span class="stat-label">積分</span>
@@ -219,20 +246,10 @@
             </div>
 
             <div class="card">
-                <h3>減碳存摺</h3>
-                <span id="gcoin">0</span>
-            </div>
-
-            <div class="card">
                 <h3>積分</h3>
                 <span id="score">0</span>
             </div>
 
-        </div>
-
-        <div class="greenpoint-link" style="text-align: center; margin: 10px 0;">
-            <a href="greenpoint.html" style="display: inline-block; padding: 12px 24px; background: #4caf50; color: #fff; border-radius: 25px; text-decoration: none; font-size: 16px; margin: 0 5px;">🚌 大眾運輸集點</a>
-            <a href="poster.html" style="display: inline-block; padding: 12px 24px; background: #ff9800; color: #fff; border-radius: 25px; text-decoration: none; font-size: 16px; margin: 0 5px;">🖼️ 宣導圖片</a>
         </div>
 
         <div class="menu">
@@ -269,13 +286,9 @@
 
         <div class="task" id="parentSignIn">
 
-            <h2>👨‍👩‍👧 家長簽到</h2>
+            <h2>👨‍👩‍👧 家長專區</h2>
 
-            <p>請輸入陪同家長姓名：</p>
-
-            <input type="text" id="parentName" placeholder="例如：王先生">
-
-            <br><br>
+            <p>家長登入後即可直接簽到，不需要額外輸入。</p>
 
             <button data-action="parentSignIn">家長簽到</button>
 

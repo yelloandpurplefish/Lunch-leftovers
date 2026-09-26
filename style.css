@@ -216,6 +216,34 @@ header p{
 
 }
 
+.role-options{
+    display:flex;
+    gap:12px;
+    flex-wrap:wrap;
+}
+
+.role-option{
+    display:inline-flex;
+    align-items:center;
+    gap:8px;
+    padding:8px 12px;
+    border:1px solid #cfd8cf;
+    border-radius:999px;
+    color:#2e7d32;
+    background:#f7fbf7;
+    cursor:pointer;
+}
+
+.role-option input{
+    accent-color:#2e7d32;
+}
+
+.parent-register-fields{
+    margin-top:4px;
+    padding-top:10px;
+    border-top:1px solid #e6eee6;
+}
+
 .form-group{
 
     margin-bottom:15px;
@@ -320,6 +348,17 @@ header p{
 
     text-align:center;
 
+}
+
+.parent-tools{
+    margin-top:18px;
+    text-align:center;
+}
+
+.parent-tools p{
+    color:#4d5b4d;
+    margin-bottom:12px;
+    line-height:1.6;
 }
 
 .user-info h3{
@@ -462,21 +501,17 @@ button:hover{
 
 .hidden{
 
-    display:none;
+    display:none !important;
 
 }
 
 .coin{
 
-    display:flex;
-
-    justify-content:center;
-
-    gap:20px;
-
+    display:grid;
+    grid-template-columns:repeat(3,minmax(0,1fr));
+    gap:clamp(8px,2vw,20px);
     margin:30px;
-
-    flex-wrap:wrap;
+    width:100%;
 
 }
 
@@ -484,36 +519,52 @@ button:hover{
 
     background:white;
 
-    width:180px;
-
+    width:100%;
     border-radius:20px;
-
     text-align:center;
-
-    padding:20px;
-
+    padding:clamp(14px,2vw,20px);
     box-shadow:0 5px 15px rgba(0,0,0,.15);
+    min-width:0;
 
 }
 
 .card h3{
 
     color:#2e7d32;
+    font-size:clamp(13px,2vw,16px);
+    line-height:1.3;
+    text-wrap:balance;
 
 }
 
 .card span{
 
     display:block;
-
     margin-top:10px;
-
-    font-size:36px;
-
+    font-size:clamp(28px,5vw,36px);
     color:#ff9800;
-
     font-weight:bold;
+    line-height:1;
 
+}
+
+@media (max-width: 640px){
+    .coin{
+        margin:20px 0;
+        gap:8px;
+    }
+
+    .card{
+        padding:12px 8px;
+    }
+
+    .card h3{
+        font-size:12px;
+    }
+
+    .card span{
+        font-size:24px;
+    }
 }
 
 .menu{
