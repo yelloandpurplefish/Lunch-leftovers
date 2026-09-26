@@ -1,6 +1,8 @@
 const express = require('express');
 const router = express.Router();
-const { getProfile, updateProfile, updateLastLogin, parentSignIn } = require('../controllers/userController');
+const { getProfile, updateProfile, updateLastLogin } = require('../controllers/userController');
+// 家長簽到已移到 parentController（每日一次 + 發幣給學生）；保留舊路徑相容前端
+const { parentSignIn } = require('../controllers/parentController');
 const { verifyFirebaseToken } = require('../middleware/auth');
 
 router.get('/profile', verifyFirebaseToken, getProfile);

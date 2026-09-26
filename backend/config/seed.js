@@ -1,5 +1,12 @@
 const bcrypt = require('bcryptjs');
 const { admin, db } = require('./firebase');
+// 名冊（班級/菜色/菜單欄位）與示範名冊帳號 —— 見 seedRoster.js
+const {
+  seedClasses,
+  seedDishes,
+  seedTodayMenuSlots,
+  seedDemoRoster,
+} = require('./seedRoster');
 
 // ============================================================
 // 基礎資料（master data）
@@ -114,10 +121,10 @@ const DEFAULT_MENU_ITEMS = [
 // ============================================================
 
 const TEST_ACCOUNTS = [
-  { email: 'dev@lunch-leftovers.local', displayName: '開發人員', role: 'admin', eCoin: 1000, sCoin: 500, gCoin: 200, score: 10000, classId: 'class-3a' },
-  { email: 'qa@lunch-leftovers.local', displayName: '測試人員', role: 'admin', eCoin: 1000, sCoin: 500, gCoin: 200, score: 10000, classId: 'class-3a' },
-  { email: 'teacher@lunch-leftovers.local', displayName: '測試老師', role: 'teacher', eCoin: 500, sCoin: 300, gCoin: 100, score: 5000, classId: 'class-3a' },
-  { email: 'student@lunch-leftovers.local', displayName: '測試學生', role: 'student', eCoin: 100, sCoin: 50, gCoin: 30, score: 1000, classId: 'class-3a' }
+  { email: 'dev@lunch-leftovers.local', displayName: '開發人員', role: 'admin', eCoin: 1000, sCoin: 500, gCoin: 200, score: 10000, classId: 'cls-302' },
+  { email: 'qa@lunch-leftovers.local', displayName: '測試人員', role: 'admin', eCoin: 1000, sCoin: 500, gCoin: 200, score: 10000, classId: 'cls-302' },
+  { email: 'teacher@lunch-leftovers.local', displayName: '測試老師', role: 'teacher', eCoin: 500, sCoin: 300, gCoin: 100, score: 5000, classId: 'cls-302' },
+  { email: 'student@lunch-leftovers.local', displayName: '測試學生', role: 'student', eCoin: 100, sCoin: 50, gCoin: 30, score: 1000, classId: 'cls-302', grade: '3', className: '302', seatNo: '30' }
 ];
 
 // ============================================================
@@ -202,6 +209,10 @@ async function seedTestAccounts(password) {
           gCoin: account.gCoin || 0,
           score: account.score,
           classId: account.classId || null,
+          grade: account.grade || null,
+          className: account.className || null,
+          seatNo: account.seatNo || null,
+          account: account.email,
           role: account.role,
           isActive: true,
           isTestAccount: true,
@@ -313,6 +324,10 @@ async function initializeDatabase() {
     await seedRewardItems();
     await seedSystemConfig();
     await seedTodayMenu();
+    // 名冊為必要基礎資料：沒有班級就無法註冊學生、也算不出班級幣
+    await seedClasses();
+    await seedDishes();
+    await seedTodayMenuSlots();
   } catch (error) {
     console.error('❌ 基礎資料初始化失敗:', error.message);
     // 不中斷伺服器啟動，基礎資料可稍後手動補
@@ -353,6 +368,7 @@ async function initializeDatabase() {
 
   try {
     await seedTestAccounts(password);
+    await seedDemoRoster(password);
   } catch (error) {
     console.error('❌ 測試帳號建立失敗:', error.message);
   }

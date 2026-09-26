@@ -1,0 +1,12 @@
+rules_version = '2';
+
+// 用戶端（瀏覽器）一律不得直接讀寫 Firestore。
+// 所有存取都走後端 Admin SDK（Admin SDK 會繞過規則），前端只有 REST API 一條路。
+// 這樣幣餘額、勾選紀錄、名冊都無法被前端偽造。
+service cloud.firestore {
+  match /databases/{database}/documents {
+    match /{document=**} {
+      allow read, write: if false;
+    }
+  }
+}

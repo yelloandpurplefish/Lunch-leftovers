@@ -1211,3 +1211,412 @@ td{
     }
 
 }
+
+/* ============================================================
+   新增頁面樣式（教師檢查清單 / 午餐長四桶紀錄 / 家長專區 /
+   跨班菜品）—— 沿用原本的綠色系與白色圓角卡片風格
+   ============================================================ */
+
+.field-hint{
+
+    font-size:14px;
+
+    color:#666;
+
+    line-height:1.6;
+
+    margin:8px 0;
+
+}
+
+.verify-btn{
+
+    background:#ff9800;
+
+    font-size:16px;
+
+    padding:12px 24px;
+
+}
+
+.verify-btn:hover{
+
+    background:#f57c00;
+
+}
+
+.verify-result{
+
+    font-size:15px;
+
+    margin:10px 0 0;
+
+    min-height:22px;
+
+}
+
+.verify-result.ok{
+
+    color:#2e7d32;
+
+    font-weight:bold;
+
+}
+
+.verify-result.error{
+
+    color:#f44336;
+
+}
+
+.secondary-btn{
+
+    background:#fff;
+
+    color:#2e7d32;
+
+    border:2px solid #43a047;
+
+}
+
+.secondary-btn:hover{
+
+    background:#e8f5e9;
+
+    color:#2e7d32;
+
+}
+
+.status-ok{ color:#2e7d32; font-weight:bold; }
+
+.status-warn{ color:#f57c00; font-weight:bold; }
+
+.status-pending{ color:#666; }
+
+/* ── 老師：逐生檢查清單 ── */
+
+.check-summary{
+
+    background:#e8f5e9;
+
+    border-radius:12px;
+
+    padding:12px 16px;
+
+    margin:12px auto;
+
+    max-width:700px;
+
+    font-size:16px;
+
+}
+
+.check-actions{
+
+    display:flex;
+
+    gap:10px;
+
+    justify-content:center;
+
+    flex-wrap:wrap;
+
+    margin-bottom:16px;
+
+}
+
+.check-row{
+
+    display:flex;
+
+    align-items:center;
+
+    gap:12px;
+
+    max-width:700px;
+
+    margin:8px auto;
+
+    padding:10px 16px;
+
+    background:#f7fbf7;
+
+    border:2px solid #e8f5e9;
+
+    border-radius:14px;
+
+}
+
+.check-row.done{
+
+    background:#e8f5e9;
+
+    border-color:#43a047;
+
+}
+
+.check-seat{
+
+    width:40px;
+
+    font-weight:bold;
+
+    color:#2e7d32;
+
+}
+
+.check-name{
+
+    flex:1;
+
+    text-align:left;
+
+    font-size:17px;
+
+}
+
+.check-btn{
+
+    padding:8px 18px;
+
+    font-size:15px;
+
+    border-radius:10px;
+
+}
+
+.check-btn.done{
+
+    background:#2e7d32;
+
+}
+
+/* ── 午餐長：四桶紀錄 ── */
+
+.bucket-card{
+
+    max-width:700px;
+
+    margin:16px auto;
+
+    padding:16px;
+
+    background:#f7fbf7;
+
+    border:2px solid #e8f5e9;
+
+    border-radius:16px;
+
+    text-align:left;
+
+}
+
+.bucket-card.measured{
+
+    border-color:#43a047;
+
+}
+
+.bucket-card h3{
+
+    margin:0 0 8px;
+
+    color:#2e7d32;
+
+    font-size:19px;
+
+}
+
+.bucket-actions{
+
+    display:flex;
+
+    gap:10px;
+
+    flex-wrap:wrap;
+
+    margin:10px 0;
+
+}
+
+.bucket-actions button{
+
+    padding:10px 18px;
+
+    font-size:15px;
+
+}
+
+.bucket-warning{
+
+    font-size:14px;
+
+    color:#f57c00;
+
+    margin:4px 0;
+
+}
+
+.dish-row{
+
+    display:flex;
+
+    align-items:center;
+
+    gap:10px;
+
+    padding:8px 10px;
+
+    background:#fff;
+
+    border-radius:10px;
+
+    margin:6px 0;
+
+    flex-wrap:wrap;
+
+}
+
+.dish-row.needs-review{
+
+    background:#fff8e1;
+
+    border:1px solid #ff9800;
+
+}
+
+.dish-name{
+
+    flex:1;
+
+    min-width:120px;
+
+    font-size:16px;
+
+}
+
+.dish-name small{
+
+    color:#f57c00;
+
+    font-weight:bold;
+
+}
+
+.dish-value{
+
+    font-size:15px;
+
+    color:#2e7d32;
+
+    font-weight:bold;
+
+    min-width:130px;
+
+    text-align:right;
+
+}
+
+.ratio-slider{
+
+    flex:1;
+
+    min-width:140px;
+
+    accent-color:#43a047;
+
+}
+
+.record-summary{
+
+    max-width:700px;
+
+    margin:16px auto;
+
+    padding:14px 18px;
+
+    background:#e8f5e9;
+
+    border-radius:14px;
+
+    font-size:16px;
+
+}
+
+/* ── 跨班菜品剩餘量 ── */
+
+.dish-status{
+
+    max-width:700px;
+
+    margin:10px auto;
+
+    padding:12px 16px;
+
+    background:#f7fbf7;
+
+    border-radius:14px;
+
+    text-align:left;
+
+}
+
+.dish-status.shortage{
+
+    background:#fff8e1;
+
+    border:1px solid #ff9800;
+
+}
+
+.dish-status-head{
+
+    display:flex;
+
+    justify-content:space-between;
+
+    font-size:16px;
+
+    font-weight:bold;
+
+    color:#2e7d32;
+
+    margin-bottom:6px;
+
+}
+
+.dish-bar{
+
+    height:10px;
+
+    background:#e0e0e0;
+
+    border-radius:6px;
+
+    overflow:hidden;
+
+}
+
+.dish-bar-fill{
+
+    height:100%;
+
+    background:#43a047;
+
+}
+
+.dish-status.shortage .dish-bar-fill{
+
+    background:#ff9800;
+
+}
+
+.dish-help{
+
+    font-size:15px;
+
+    color:#f57c00;
+
+    margin:8px 0 0;
+
+}
