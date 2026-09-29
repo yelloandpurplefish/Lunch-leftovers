@@ -1,4 +1,5 @@
 const { db, admin } = require('../config/firebase');
+const { spendUser } = require('../lib/coins');
 
 // 進行抽獎
 const spinLottery = async (req, res) => {
@@ -16,19 +17,23 @@ const spinLottery = async (req, res) => {
 
     const userData = userDoc.data();
 
-    if (userData.eCoin < lotteryCost) {
-      return res.status(400).json({
+    // 扣幣一律走記帳層：會檢查角色（午餐長不可消耗）、餘額，並寫入總帳
+    try {
+      await spendUser({
+        userId,
+        coin: 'E',
+        amount: lotteryCost,
+        reason: '幸運抽獎',
+        refType: 'lottery'
+      });
+    } catch (err) {
+      return res.status(err.status || 400).json({
         success: false,
-        message: 'E幣不足',
+        message: err.message || '扣款失敗',
         required: lotteryCost,
-        current: userData.eCoin
+        current: Number(userData.eCoin || 0)
       });
     }
-
-    // 扣除 E幣
-    await db.collection('users').doc(userId).update({
-      eCoin: admin.firestore.FieldValue.increment(-lotteryCost)
-    });
 
     // 抽獎邏輯：大獎 2%、稀有 18%、小獎 80%
     const rand = Math.random() * 100;

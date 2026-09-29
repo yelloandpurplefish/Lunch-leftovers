@@ -1,5 +1,14 @@
 const bcrypt = require('bcryptjs');
 const { admin, db } = require('./firebase');
+// 名冊（班級/菜色/菜單欄位）與示範名冊帳號 —— 見 seedRoster.js
+const {
+  seedClasses,
+  seedDishes,
+  seedTodayMenuSlots,
+  seedDemoRoster,
+} = require('./seedRoster');
+// 測試帳號密碼的來源（開發環境可自動產生並存檔）
+const { resolveTestPassword, shouldSeedTestAccounts, PASSWORD_FILE, isProduction } = require('./devCredentials');
 
 // ============================================================
 // 基礎資料（master data）
@@ -114,10 +123,10 @@ const DEFAULT_MENU_ITEMS = [
 // ============================================================
 
 const TEST_ACCOUNTS = [
-  { email: 'dev@lunch-leftovers.local', displayName: '開發人員', role: 'admin', eCoin: 1000, sCoin: 500, gCoin: 200, score: 10000, classId: 'class-3a' },
-  { email: 'qa@lunch-leftovers.local', displayName: '測試人員', role: 'admin', eCoin: 1000, sCoin: 500, gCoin: 200, score: 10000, classId: 'class-3a' },
-  { email: 'teacher@lunch-leftovers.local', displayName: '測試老師', role: 'teacher', eCoin: 500, sCoin: 300, gCoin: 100, score: 5000, classId: 'class-3a' },
-  { email: 'student@lunch-leftovers.local', displayName: '測試學生', role: 'student', eCoin: 100, sCoin: 50, gCoin: 30, score: 1000, classId: 'class-3a' }
+  { email: 'dev@lunch-leftovers.local', displayName: '開發人員', role: 'admin', eCoin: 1000, sCoin: 500, gCoin: 200, score: 10000, classId: 'cls-302' },
+  { email: 'qa@lunch-leftovers.local', displayName: '測試人員', role: 'admin', eCoin: 1000, sCoin: 500, gCoin: 200, score: 10000, classId: 'cls-302' },
+  { email: 'teacher@lunch-leftovers.local', displayName: '測試老師', role: 'teacher', eCoin: 500, sCoin: 300, gCoin: 100, score: 5000, classId: 'cls-302' },
+  { email: 'student@lunch-leftovers.local', displayName: '測試學生', role: 'student', eCoin: 100, sCoin: 50, gCoin: 30, score: 1000, classId: 'cls-302', grade: '3', className: '302', seatNo: '30' }
 ];
 
 // ============================================================
@@ -202,6 +211,10 @@ async function seedTestAccounts(password) {
           gCoin: account.gCoin || 0,
           score: account.score,
           classId: account.classId || null,
+          grade: account.grade || null,
+          className: account.className || null,
+          seatNo: account.seatNo || null,
+          account: account.email,
           role: account.role,
           isActive: true,
           isTestAccount: true,
@@ -313,49 +326,62 @@ async function initializeDatabase() {
     await seedRewardItems();
     await seedSystemConfig();
     await seedTodayMenu();
+    // 名冊為必要基礎資料：沒有班級就無法註冊學生、也算不出班級幣
+    await seedClasses();
+    await seedDishes();
+    await seedTodayMenuSlots();
   } catch (error) {
     console.error('❌ 基礎資料初始化失敗:', error.message);
     // 不中斷伺服器啟動，基礎資料可稍後手動補
   }
 
-  // ---- 測試帳號：需明確開啟 ----
-  if (process.env.SEED_TEST_ACCOUNTS !== 'true') {
-    console.log('  ⏭️  測試帳號未啟用（設定 SEED_TEST_ACCOUNTS=true 以建立）');
+  // ---- 測試帳號 ----
+  // 開發環境預設建立（不必先設環境變數）；正式環境仍需明確開啟。
+  if (!shouldSeedTestAccounts()) {
+    console.log('  ⏭️  測試帳號未啟用（如需建立：SEED_TEST_ACCOUNTS=true）');
     console.log('✅ 資料庫初始化完成\n');
     return;
   }
 
-  const password = process.env.TEST_USER_PASSWORD;
+  const resolved = resolveTestPassword();
+  const password = resolved.password;
 
   if (!password) {
-    console.error('  ✗ 已設定 SEED_TEST_ACCOUNTS=true 但缺少 TEST_USER_PASSWORD，跳過建立');
+    console.error('  ✗ 無法取得測試帳號密碼：' + (resolved.reason || '未知原因') + '，跳過建立');
     console.log('✅ 資料庫初始化完成\n');
     return;
   }
 
-  if (password.length < 12) {
-    console.error('  ✗ TEST_USER_PASSWORD 長度需至少 12 字元，跳過建立');
-    console.log('✅ 資料庫初始化完成\n');
-    return;
+  if (resolved.source === 'generated') {
+    console.log('  🔑 已自動產生測試帳號密碼，並存放於 ' + PASSWORD_FILE);
+    console.log('     （此檔已被 .gitignore 忽略；刪掉它會在下次啟動產生新密碼，');
+    console.log('       但既有帳號的密碼不會跟著變，屆時請用 admin 重設或清空 emulator）');
+  } else if (resolved.source === 'file') {
+    console.log('  🔑 沿用 .dev-test-password 內的測試密碼');
+  } else if (resolved.reason) {
+    console.warn('  ⚠️  ' + resolved.reason);
   }
 
   // 生產環境需額外確認，避免正式站意外存在共用測試帳號
-  if (process.env.NODE_ENV === 'production' && process.env.ALLOW_PRODUCTION_TEST_ACCOUNTS !== 'true') {
+  if (isProduction() && process.env.ALLOW_PRODUCTION_TEST_ACCOUNTS !== 'true') {
     console.warn('  ⚠️  生產環境已阻擋建立測試帳號');
     console.warn('     如確實需要，請設定 ALLOW_PRODUCTION_TEST_ACCOUNTS=true');
     console.log('✅ 資料庫初始化完成\n');
     return;
   }
 
-  if (process.env.NODE_ENV === 'production') {
+  if (isProduction()) {
     console.warn('  ⚠️  正在生產環境建立測試帳號，請於驗證完成後停用並刪除');
   }
 
   try {
     await seedTestAccounts(password);
+    await seedDemoRoster(password);
   } catch (error) {
     console.error('❌ 測試帳號建立失敗:', error.message);
   }
+
+  printCredentialTable(password);
 
   // 額外批次建立測試帳號
   const extraCount = parseInt(process.env.EXTRA_TEST_ACCOUNTS, 10);
@@ -371,4 +397,35 @@ async function initializeDatabase() {
   console.log('✅ 資料庫初始化完成\n');
 }
 
-module.exports = { initializeDatabase, TEST_ACCOUNTS };
+/**
+ * 啟動時把「可以直接登入的帳密」整理成一張表印出來。
+ * 每個角色都列一組，省去翻文件或猜帳號。
+ */
+function printCredentialTable(password) {
+  const rows = [
+    ['管理員/開發者', 'dev@lunch-leftovers.local', '建班級、建帳號、指定午餐長'],
+    ['管理員/開發者', 'qa@lunch-leftovers.local', '同上（測試用）'],
+    ['老師', 'teacher302', '每日逐生檢查「吃完他的部分」'],
+    ['午餐長', 'leader302', '四桶剩食紀錄（不可兌換抽獎）'],
+    ['學生', 'stu302-02', '觀看、兌換、抽獎'],
+    ['學生', 'stu302-03', '同上（已綁定家長）'],
+    ['學生', 'stu301-01', '301 班，用來測跨班支援'],
+    ['家長', 'parent302@example.com', '簽到（孩子 +1 S幣）、看孩子狀況'],
+    ['技術員', 'tech01', '稱重模組：註冊、綁班級桶別、扣重與校正'],
+  ];
+
+  console.log('\n  ' + '='.repeat(74));
+  console.log('  📋 可直接登入的測試帳號（共用密碼：' + password + '）');
+  console.log('  ' + '-'.repeat(74));
+  console.log('  ' + '角色'.padEnd(14) + '帳號'.padEnd(30) + '用途');
+  console.log('  ' + '-'.repeat(74));
+  rows.forEach(([role, account, note]) => {
+    console.log('  ' + role.padEnd(14) + account.padEnd(30) + note);
+  });
+  console.log('  ' + '-'.repeat(74));
+  console.log('  學生用「帳號」登入、家長與管理員用 Email 登入。');
+  console.log('  管理員專區：登入後於頁面下方「🛠 管理員專區」新增班級或帳號。');
+  console.log('  ' + '='.repeat(74) + '\n');
+}
+
+module.exports = { initializeDatabase, TEST_ACCOUNTS, printCredentialTable };

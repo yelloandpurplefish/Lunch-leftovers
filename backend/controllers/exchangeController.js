@@ -1,4 +1,5 @@
 const { db, admin } = require('../config/firebase');
+const { COL, ROLES, COIN_SPENDER_ROLES } = require('../config/schema');
 
 // 兌換物品
 // 使用 Firestore transaction 確保「檢查餘額 → 扣款 → 扣庫存」為原子操作，
@@ -35,6 +36,18 @@ const redeemItem = async (req, res) => {
       const item = itemDoc.data();
       const userData = userDoc.data();
 
+      // 午餐長只累積不消耗（家長沒有幣系統）——擋在扣款的同一個 transaction 內
+      if (!COIN_SPENDER_ROLES.includes(userData.role)) {
+        return {
+          error: {
+            status: 403,
+            message: userData.role === ROLES.LUNCH_LEADER
+              ? '午餐長專區不提供兌換與抽獎'
+              : '此身份沒有兌換功能'
+          }
+        };
+      }
+
       if (!item.isActive) {
         return { error: { status: 400, message: '物品已下架' } };
       }
@@ -64,6 +77,19 @@ const redeemItem = async (req, res) => {
 
       transaction.update(userRef, {
         [coinField]: admin.firestore.FieldValue.increment(-item.cost)
+      });
+
+      // 寫入幣別總帳，餘額才有稽核依據（見 lib/coins.js 的記帳規則）
+      transaction.set(db.collection(COL.coinTx).doc(), {
+        ownerType: 'user',
+        ownerId: userId,
+        coin: item.costType,
+        amount: -item.cost,
+        reason: `兌換「${item.name}」`,
+        refType: 'exchange',
+        refId: itemRef.id,
+        date: new Date().toLocaleDateString('sv'),
+        createdAt: admin.firestore.FieldValue.serverTimestamp()
       });
 
       if (item.stock !== null && item.stock !== undefined) {

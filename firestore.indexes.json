@@ -1,0 +1,308 @@
+{
+  "//": "複合索引。Firestore 單一欄位會自動建索引，這裡只列需要手動建立的組合查詢。部署：firebase deploy --only firestore:indexes",
+  "indexes": [
+    {
+      "//": "班級加幣：找出班上所有持幣成員（classId + role in [student, lunch_leader]）",
+      "collectionGroup": "users",
+      "queryScope": "COLLECTION",
+      "fields": [
+        {
+          "fieldPath": "classId",
+          "order": "ASCENDING"
+        },
+        {
+          "fieldPath": "role",
+          "order": "ASCENDING"
+        }
+      ]
+    },
+    {
+      "//": "註冊時檢查座號是否已被使用",
+      "collectionGroup": "users",
+      "queryScope": "COLLECTION",
+      "fields": [
+        {
+          "fieldPath": "classId",
+          "order": "ASCENDING"
+        },
+        {
+          "fieldPath": "seatNo",
+          "order": "ASCENDING"
+        }
+      ]
+    },
+    {
+      "//": "個人排行榜：同校學生依 E幣 / S幣 排序",
+      "collectionGroup": "users",
+      "queryScope": "COLLECTION",
+      "fields": [
+        {
+          "fieldPath": "schoolId",
+          "order": "ASCENDING"
+        },
+        {
+          "fieldPath": "role",
+          "order": "ASCENDING"
+        },
+        {
+          "fieldPath": "eCoin",
+          "order": "DESCENDING"
+        }
+      ]
+    },
+    {
+      "//": "個人排行榜（S幣）",
+      "collectionGroup": "users",
+      "queryScope": "COLLECTION",
+      "fields": [
+        {
+          "fieldPath": "schoolId",
+          "order": "ASCENDING"
+        },
+        {
+          "fieldPath": "role",
+          "order": "ASCENDING"
+        },
+        {
+          "fieldPath": "sCoin",
+          "order": "DESCENDING"
+        }
+      ]
+    },
+    {
+      "//": "依年級 + 班名找班級（學生註冊、家長綁定驗證）",
+      "collectionGroup": "classes",
+      "queryScope": "COLLECTION",
+      "fields": [
+        {
+          "fieldPath": "grade",
+          "order": "ASCENDING"
+        },
+        {
+          "fieldPath": "name",
+          "order": "ASCENDING"
+        }
+      ]
+    },
+    {
+      "//": "我的幣別異動（最近 N 筆）",
+      "collectionGroup": "coin_transactions",
+      "queryScope": "COLLECTION",
+      "fields": [
+        {
+          "fieldPath": "ownerType",
+          "order": "ASCENDING"
+        },
+        {
+          "fieldPath": "ownerId",
+          "order": "ASCENDING"
+        },
+        {
+          "fieldPath": "createdAt",
+          "order": "DESCENDING"
+        }
+      ]
+    },
+    {
+      "//": "排行榜週期彙總：某幣別在日期區間內的所有異動",
+      "collectionGroup": "coin_transactions",
+      "queryScope": "COLLECTION",
+      "fields": [
+        {
+          "fieldPath": "ownerType",
+          "order": "ASCENDING"
+        },
+        {
+          "fieldPath": "coin",
+          "order": "ASCENDING"
+        },
+        {
+          "fieldPath": "date",
+          "order": "ASCENDING"
+        }
+      ]
+    },
+    {
+      "//": "跨班支援：同校同一天、某道菜還有剩的班級（剩最多的排前面）",
+      "collectionGroup": "dish_leftovers",
+      "queryScope": "COLLECTION",
+      "fields": [
+        {
+          "fieldPath": "schoolId",
+          "order": "ASCENDING"
+        },
+        {
+          "fieldPath": "date",
+          "order": "ASCENDING"
+        },
+        {
+          "fieldPath": "dishId",
+          "order": "ASCENDING"
+        },
+        {
+          "fieldPath": "leftoverG",
+          "order": "DESCENDING"
+        }
+      ]
+    },
+    {
+      "//": "本班剩餘量曲線（近 N 天）",
+      "collectionGroup": "dish_leftovers",
+      "queryScope": "COLLECTION",
+      "fields": [
+        {
+          "fieldPath": "classId",
+          "order": "ASCENDING"
+        },
+        {
+          "fieldPath": "date",
+          "order": "DESCENDING"
+        }
+      ]
+    },
+    {
+      "//": "基準線：該班該菜近 N 餐移動平均",
+      "collectionGroup": "dish_leftovers",
+      "queryScope": "COLLECTION",
+      "fields": [
+        {
+          "fieldPath": "classId",
+          "order": "ASCENDING"
+        },
+        {
+          "fieldPath": "dishId",
+          "order": "ASCENDING"
+        },
+        {
+          "fieldPath": "date",
+          "order": "DESCENDING"
+        }
+      ]
+    },
+    {
+      "//": "教師頁：某班某日的逐生勾選清單",
+      "collectionGroup": "meal_checks",
+      "queryScope": "COLLECTION",
+      "fields": [
+        {
+          "fieldPath": "classId",
+          "order": "ASCENDING"
+        },
+        {
+          "fieldPath": "date",
+          "order": "ASCENDING"
+        }
+      ]
+    },
+    {
+      "//": "家長/學生查自己的吃完紀錄",
+      "collectionGroup": "meal_checks",
+      "queryScope": "COLLECTION",
+      "fields": [
+        {
+          "fieldPath": "studentId",
+          "order": "ASCENDING"
+        },
+        {
+          "fieldPath": "date",
+          "order": "DESCENDING"
+        }
+      ]
+    },
+    {
+      "//": "班級量測場次歷史",
+      "collectionGroup": "meal_sessions",
+      "queryScope": "COLLECTION",
+      "fields": [
+        {
+          "fieldPath": "classId",
+          "order": "ASCENDING"
+        },
+        {
+          "fieldPath": "date",
+          "order": "DESCENDING"
+        }
+      ]
+    },
+    {
+      "//": "全校某日各班場次（班際比較）",
+      "collectionGroup": "meal_sessions",
+      "queryScope": "COLLECTION",
+      "fields": [
+        {
+          "fieldPath": "schoolId",
+          "order": "ASCENDING"
+        },
+        {
+          "fieldPath": "date",
+          "order": "ASCENDING"
+        }
+      ]
+    },
+    {
+      "//": "家長簽到紀錄（孩子的簽到歷程）",
+      "collectionGroup": "parent_sign_ins",
+      "queryScope": "COLLECTION",
+      "fields": [
+        {
+          "fieldPath": "studentId",
+          "order": "ASCENDING"
+        },
+        {
+          "fieldPath": "date",
+          "order": "DESCENDING"
+        }
+      ]
+    },
+    {
+      "//": "技術員排查：某台裝置的最近讀數",
+      "collectionGroup": "device_readings",
+      "queryScope": "COLLECTION",
+      "fields": [
+        {
+          "fieldPath": "deviceId",
+          "order": "ASCENDING"
+        },
+        {
+          "fieldPath": "receivedAt",
+          "order": "DESCENDING"
+        }
+      ]
+    },
+    {
+      "//": "把某班某桶當天的讀數撈出來（稱重與四桶紀錄對帳用）",
+      "collectionGroup": "device_readings",
+      "queryScope": "COLLECTION",
+      "fields": [
+        {
+          "fieldPath": "classId",
+          "order": "ASCENDING"
+        },
+        {
+          "fieldPath": "date",
+          "order": "ASCENDING"
+        },
+        {
+          "fieldPath": "bucketId",
+          "order": "ASCENDING"
+        }
+      ]
+    },
+    {
+      "//": "同一班同一桶只能綁一台裝置（更新綁定時的衝突檢查）",
+      "collectionGroup": "devices",
+      "queryScope": "COLLECTION",
+      "fields": [
+        {
+          "fieldPath": "classId",
+          "order": "ASCENDING"
+        },
+        {
+          "fieldPath": "bucketId",
+          "order": "ASCENDING"
+        }
+      ]
+    }
+  ],
+  "fieldOverrides": []
+}

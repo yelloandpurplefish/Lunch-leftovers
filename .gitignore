@@ -35,3 +35,6 @@ temp/
 # Firebase 產生的文件
 .firebase/
 .firebaserc
+
+# 自動產生的開發測試密碼（勿進版控）
+backend/.dev-test-password
