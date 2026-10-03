@@ -23,18 +23,22 @@ const CLASSES = [
   { classId: 'cls-305', grade: '3', name: '305', headcount: 26 },
 ];
 
-/** unitCost 元/kg、emissionFactor kgCO2e/kg、portionG 每人份量。*/
+/**
+ * unitCost 元/kg、emissionFactor kgCO2e/kg、portionG 每人份量。
+ * proteinPerKg / fiberPerKg 為每公斤食物的營養含量（公克），E 幣公式用。
+ * 沒填的菜色會退回 TUNABLE_DEFAULTS.nutrition 的分類預設值。
+ */
 const DISHES = [
-  { dishId: 'dish-rice-brown', name: '糙米飯', category: '主食', portionG: 120, unitCost: 60, emissionFactor: 1.2 },
-  { dishId: 'dish-rice-white', name: '白米飯', category: '主食', portionG: 120, unitCost: 55, emissionFactor: 1.2 },
-  { dishId: 'dish-chicken-leg', name: '紅燒雞腿', category: '主菜', portionG: 90, unitCost: 180, emissionFactor: 6.1 },
-  { dishId: 'dish-pork-cabbage', name: '香菇炒肉', category: '主菜', portionG: 85, unitCost: 160, emissionFactor: 7.2 },
-  { dishId: 'dish-tofu', name: '滷豆腐', category: '副菜', portionG: 70, unitCost: 70, emissionFactor: 2.0 },
-  { dishId: 'dish-egg', name: '滷蛋', category: '副菜', portionG: 60, unitCost: 95, emissionFactor: 4.7 },
-  { dishId: 'dish-cabbage', name: '炒高麗菜', category: '蔬菜', portionG: 80, unitCost: 45, emissionFactor: 0.5 },
-  { dishId: 'dish-bokchoy', name: '炒青江菜', category: '蔬菜', portionG: 80, unitCost: 48, emissionFactor: 0.5 },
-  { dishId: 'dish-corn-soup', name: '玉米濃湯', category: '湯品', portionG: 200, unitCost: 35, emissionFactor: 0.9 },
-  { dishId: 'dish-radish-soup', name: '蘿蔔湯', category: '湯品', portionG: 200, unitCost: 30, emissionFactor: 0.4 },
+  { dishId: 'dish-rice-brown', name: '糙米飯', category: '主食', portionG: 120, unitCost: 60, emissionFactor: 1.2, proteinPerKg: 26, fiberPerKg: 18 },
+  { dishId: 'dish-rice-white', name: '白米飯', category: '主食', portionG: 120, unitCost: 55, emissionFactor: 1.2, proteinPerKg: 26, fiberPerKg: 4 },
+  { dishId: 'dish-chicken-leg', name: '紅燒雞腿', category: '主菜', portionG: 90, unitCost: 180, emissionFactor: 6.1, proteinPerKg: 190, fiberPerKg: 0 },
+  { dishId: 'dish-pork-cabbage', name: '香菇炒肉', category: '主菜', portionG: 85, unitCost: 160, emissionFactor: 7.2, proteinPerKg: 150, fiberPerKg: 15 },
+  { dishId: 'dish-tofu', name: '滷豆腐', category: '副菜', portionG: 70, unitCost: 70, emissionFactor: 2.0, proteinPerKg: 88, fiberPerKg: 4 },
+  { dishId: 'dish-egg', name: '滷蛋', category: '副菜', portionG: 60, unitCost: 95, emissionFactor: 4.7, proteinPerKg: 125, fiberPerKg: 0 },
+  { dishId: 'dish-cabbage', name: '炒高麗菜', category: '蔬菜', portionG: 80, unitCost: 45, emissionFactor: 0.5, proteinPerKg: 13, fiberPerKg: 18 },
+  { dishId: 'dish-bokchoy', name: '炒青江菜', category: '蔬菜', portionG: 80, unitCost: 48, emissionFactor: 0.5, proteinPerKg: 15, fiberPerKg: 22 },
+  { dishId: 'dish-corn-soup', name: '玉米濃湯', category: '湯品', portionG: 200, unitCost: 35, emissionFactor: 0.9, proteinPerKg: 20, fiberPerKg: 8 },
+  { dishId: 'dish-radish-soup', name: '蘿蔔湯', category: '湯品', portionG: 200, unitCost: 30, emissionFactor: 0.4, proteinPerKg: 6, fiberPerKg: 6 },
 ];
 
 /** 今日菜單的 slot → dishId（示範用固定一組）。*/

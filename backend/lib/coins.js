@@ -19,7 +19,7 @@ const serverTime = () => admin.firestore.FieldValue.serverTimestamp();
 /** 對應幣別到 users 文件的欄位名（沿用原有欄位，避免動到他的 UI）。*/
 const FIELD = { E: 'eCoin', S: 'sCoin' };
 
-function txEntry({ ownerType, ownerId, coin, amount, reason, refType, refId, date }) {
+function txEntry({ ownerType, ownerId, coin, amount, reason, refType, refId, date, trees }) {
   return {
     ownerType,           // 'user' | 'class'
     ownerId,
@@ -29,6 +29,14 @@ function txEntry({ ownerType, ownerId, coin, amount, reason, refType, refId, dat
     refType: refType || null,
     refId: refId || null,
     date: date || today(),
+    /**
+     * 這筆 S 幣對應幾棵樹。
+     *
+     * 存在總帳而不是只靠使用者身上的累計欄位，是因為英雄榜要能問
+     * 「**這學期**種了幾棵樹」；而且樹→幣的放大常數(sCoinPerTree)可在面板調整，
+     * 事後用幣數回推樹數會算錯歷史。
+     */
+    trees: Number(trees || 0),
     createdAt: serverTime(),
   };
 }
@@ -70,9 +78,22 @@ async function awardUser({ userId, E = 0, S = 0, reason, refType, refId, date, r
  * 班級加幣：班級池 + **全額**加給班上每位持幣成員（學生與午餐長）。
  * @returns {Promise<{members:number, perMember:{E:number,S:number}}>}
  */
-async function awardClassAndMembers({ classId, E = 0, S = 0, reason, refType, refId, date }) {
+/**
+ * @param {number} treesPerCapita 每位學生記到自己名下的樹（個人貢獻）
+ * @param {number} treesClass     班級池記錄的樹（= 人均 × 供餐份數，真實環境效益）
+ *
+ * 兩個樹數刻意用不同基數：班級數字要反映真實的環境效益（以供餐份數計），
+ * 個人數字是「我這一份的貢獻」。班上已註冊人數可能少於供餐份數，
+ * 所以兩者加總不會相等——這是不同的統計口徑，不是帳不平。
+ */
+async function awardClassAndMembers({
+  classId, E = 0, S = 0, treesPerCapita = 0, treesClass = 0,
+  reason, refType, refId, date,
+}) {
   if (!classId) throw new Error('awardClassAndMembers 缺少 classId');
-  if (E <= 0 && S <= 0) return { members: 0, perMember: { E: 0, S: 0 } };
+  if (E <= 0 && S <= 0 && treesPerCapita <= 0 && treesClass <= 0) {
+    return { members: 0, perMember: { E: 0, S: 0, trees: 0 } };
+  }
 
   const membersSnap = await db.collection(COL.users)
     .where('classId', '==', classId)
@@ -87,12 +108,15 @@ async function awardClassAndMembers({ classId, E = 0, S = 0, reason, refType, re
   const classUpdates = {};
   if (E > 0) classUpdates[FIELD.E] = inc(E);
   if (S > 0) classUpdates[FIELD.S] = inc(S);
+  if (treesClass > 0) classUpdates.treesPlanted = inc(treesClass);
   batch.set(classRef, classUpdates, { merge: true });
-  for (const [coin, amount] of [['E', E], ['S', S]]) {
-    if (amount > 0) {
+  // S 的分錄即使幣數進位成 0 也要留：樹數本身是要展示的成果，
+  // 若因為當餐只省下 0.4 枚幣就整筆不記，累積樹數會一直漏掉小數。
+  for (const [coin, amount, trees] of [['E', E, 0], ['S', S, treesClass]]) {
+    if (amount > 0 || trees > 0) {
       batch.set(
         db.collection(COL.coinTx).doc(),
-        txEntry({ ownerType: 'class', ownerId: classId, coin, amount, reason, refType, refId, date: d })
+        txEntry({ ownerType: 'class', ownerId: classId, coin, amount, reason, refType, refId, date: d, trees })
       );
     }
   }
@@ -102,13 +126,14 @@ async function awardClassAndMembers({ classId, E = 0, S = 0, reason, refType, re
     const updates = {};
     if (E > 0) updates[FIELD.E] = inc(E);
     if (S > 0) updates[FIELD.S] = inc(S);
+    if (treesPerCapita > 0) updates.treesPlanted = inc(treesPerCapita);
     batch.set(doc.ref, updates, { merge: true });
-    for (const [coin, amount] of [['E', E], ['S', S]]) {
-      if (amount > 0) {
+    for (const [coin, amount, trees] of [['E', E, 0], ['S', S, treesPerCapita]]) {
+      if (amount > 0 || trees > 0) {
         batch.set(
           db.collection(COL.coinTx).doc(),
           txEntry({
-            ownerType: 'user', ownerId: doc.id, coin, amount,
+            ownerType: 'user', ownerId: doc.id, coin, amount, trees,
             reason: `${reason}（班級共享）`, refType, refId, date: d,
           })
         );
@@ -117,7 +142,11 @@ async function awardClassAndMembers({ classId, E = 0, S = 0, reason, refType, re
   });
 
   await batch.commit();
-  return { members: membersSnap.size, perMember: { E, S } };
+  return {
+    members: membersSnap.size,
+    perMember: { E, S, trees: treesPerCapita },
+    classTrees: treesClass,
+  };
 }
 
 /**

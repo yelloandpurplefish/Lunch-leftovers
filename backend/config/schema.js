@@ -79,15 +79,84 @@ const COIN_RULES = {
   MEAL_FINISHED: { E: 1, S: 1 },
   /** 家長簽到 → **綁定的學生** +1 S（每位家長每日一次）*/
   PARENT_SIGN_IN: { E: 0, S: 1 },
-  /** 班級當餐減碳 → E幣 = round(減碳量 kgCO2e × k_E)，全額加給班上每位學生 */
+  /**
+   * @deprecated 紀錄結算的 E/S 已改為營養攝取與減碳樹數公式（見 TUNABLE_DEFAULTS）。
+   * 這兩個舊常數保留僅為讀取舊資料時的相容，新的結算不再使用。
+   */
   k_E: 100,
-  /** 完成當日四桶完整辨識 → 班級 +1 S（同樣全額加給每位學生）*/
   FULL_SESSION_CLASS_S: 1,
   /** 基準線移動平均餐數 */
   baselineWindow: 10,
   /** 無歷史時的起步基準：供應量 × 此比例 */
   fallbackBaselineRatio: 0.35,
 };
+
+
+// ── 發幣公式的可調參數 ────────────────────────────────────────────────
+/**
+ * **這裡是預設值，不是實際採用值。**
+ *
+ * 實際採用值存在 Firestore 的 `system_config/coin_rules`，由開發者面板調整，
+ * 讀取時與這份預設值深度合併（見 lib/settings.js）。這樣做的理由：
+ * 營養係數與碳排常數會隨著實測、教材版本、學校政策而變，
+ * 每次都要改程式重新部署並不合理。
+ *
+ * 兩種幣的語意：
+ *   E = Energy —— 學生實際**吃下去**的營養（蛋白質 + 膳食纖維）
+ *   S = SDGs   —— 比全校歷史平均**少浪費**的部分，換算成碳排，再換算成樹
+ *
+ * 兩者都以**人均**計算，再依 CLASS_COIN_TO_MEMBER 全額加給班上每位學生。
+ * 班級人數不同（28/30/26），不人均的話人多的班天生佔優。
+ */
+const TUNABLE_DEFAULTS = {
+  /** E 幣：攝取營養 → 幣 */
+  energy: {
+    /** 每公克蛋白質換算的 E 幣 */
+    kProtein: 0.05,
+    /** 每公克膳食纖維換算的 E 幣（纖維攝取量遠低於蛋白質，係數相應提高） */
+    kFiber: 0.5,
+  },
+
+  /**
+   * 每公斤食物的營養含量（公克/公斤）。
+   * 依菜色分類給預設值；個別菜品可在 dishes 上以 proteinPerKg / fiberPerKg 覆寫。
+   * 使用者特別提到的「每公斤蔬菜的膳食纖維」就是 蔬菜.fiberPerKg。
+   */
+  nutrition: {
+    byCategory: {
+      主食: { proteinPerKg: 26, fiberPerKg: 4 },
+      主菜: { proteinPerKg: 200, fiberPerKg: 0 },
+      副菜: { proteinPerKg: 120, fiberPerKg: 5 },
+      蔬菜: { proteinPerKg: 15, fiberPerKg: 20 },
+      湯品: { proteinPerKg: 10, fiberPerKg: 3 },
+    },
+    /** 分類不在上表時的保底值 */
+    fallback: { proteinPerKg: 30, fiberPerKg: 5 },
+  },
+
+  /** S 幣：少浪費 → 碳排 → 樹 → 幣 */
+  sdg: {
+    /** 每公斤廚餘的碳排放（kgCO2e/kg）*/
+    co2PerKgWaste: 2.06,
+    /** 一棵樹每年吸收的二氧化碳（kg）*/
+    treeAnnualCo2Kg: 21.8,
+    /**
+     * 樹 → S 幣的放大常數。
+     * 人均每餐約省下 0.003 棵樹，直接當幣會全部進位成 0，
+     * 因此樹數負責「展示」、S 幣另外乘上這個常數負責「可用」。
+     */
+    sCoinPerTree: 1000,
+    /** 全校歷史平均取最近幾場已結算的紀錄 */
+    schoolBaselineWindow: 30,
+    /** 全校還沒有足夠歷史時的起步基準（每人每餐廚餘公克）*/
+    fallbackSchoolWastePerCapitaG: 120,
+    /** 少於這麼多場歷史就用上面的起步基準，避免頭幾天被極端值主導 */
+    minSchoolSamples: 3,
+  },
+};
+
+/** 可調參數存放的位置：system_config 集合下的這份文件。*/
+const TUNABLE_DOC_ID = 'coin_rules';
 
 /**
  * 班級幣如何進個人：'full' = 班級增長全額加給每位學生（使用者選定）。
@@ -168,6 +237,8 @@ const ids = {
 };
 
 module.exports = {
+  TUNABLE_DEFAULTS,
+  TUNABLE_DOC_ID,
   COL,
   DEVICE,
   REMOVED_COL,

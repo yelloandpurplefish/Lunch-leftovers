@@ -15,13 +15,22 @@
  */
 const { db, admin } = require('../config/firebase');
 const {
-  COL, ids, BUCKET_LAYOUT, MENU_SLOTS, SLOT_LABEL, SLOT_CATEGORY, COIN_RULES,
+  COL, ids, ROLES, BUCKET_LAYOUT, MENU_SLOTS, SLOT_LABEL, SLOT_CATEGORY, COIN_RULES,
 } = require('../config/schema');
 const { today, isYmd, daysAgo } = require('../lib/dates');
-const { computeLeftover, summarize, computeReduction, computeClassECoins, clamp01, round } = require('../lib/scoring');
+const {
+  computeLeftover, summarize, computeReduction, clamp01, round,
+  computeNutrition, computeEnergyCoins, computeSdg,
+} = require('../lib/scoring');
+const { getSettings } = require('../lib/settings');
 const { recognizeBucket } = require('../lib/recognizer');
 const vision = require('../lib/vision');
 const { awardClassAndMembers } = require('../lib/coins');
+const { latestReading } = require('../lib/scaleReadings');
+const {
+  PROVENANCE, LEVEL, isRejected, needsAttention, usableForCalibration,
+  normalizeLevel, normalizeProvenance,
+} = require('../lib/provenance');
 
 const serverTime = () => admin.firestore.FieldValue.serverTimestamp();
 const bad = (res, status, message, extra = {}) => res.status(status).json({ success: false, message, ...extra });
@@ -289,6 +298,84 @@ const startSession = async (req, res) => {
  *
  * 來源優先序：ratios（人工）→ image + 辨識服務 → 預設估算。
  */
+/**
+ * 決定這筆紀錄的資料來源標記。
+ *
+ * 辨識服務有給就用它的（判斷邏輯在模組裡，後端不重做）；
+ * 沒有給就依實際用到什麼推定，而且**一律取最保守的值**——
+ * 寧可標成不可用於校正，也不要讓亂數估算混進迴歸樣本。
+ */
+function resolveProvenance({ review, image, source, reading }) {
+  if (review && review.provenance) return normalizeProvenance(review.provenance);
+  if (source === 'mock') return PROVENANCE.MANUAL;      // 預設估算不是量測
+  if (image) {
+    return reading && reading.state === 'ok'
+      ? PROVENANCE.AUTO
+      : PROVENANCE.IMAGE_ONLY;
+  }
+  return PROVENANCE.MANUAL;
+}
+
+/**
+ * 這筆是否還有未處理的提示（L1 以上且記錄者尚未確認）。
+ *
+ * provenance 說的是「**如果**這筆被接受，它的來源是什麼」；
+ * 但只要還有沒回應的 confirm/input，這筆就還是暫定的。
+ * 待確認的紀錄**不可進校正資料集**——601% 殘差的那一筆若混進迴歸，
+ * 汙染程度比沒有資料更嚴重。記錄者確認後會帶 confirmed=true 重送，
+ * 屆時 provenance 變成 confirmed，才真正可用。
+ */
+function isPendingReview(review, confirmed) {
+  if (!review) return false;
+  return needsAttention(review.level) && !confirmed;
+}
+
+/** 秤重只在讀數有效時才採用，離線/未穩定一律留 null，不可拿舊值充數。 */
+function pickWeight(review, reading) {
+  if (review && review.weightG != null) return review.weightG;
+  if (reading && reading.state === 'ok' && reading.value_g != null) return reading.value_g;
+  return null;
+}
+
+/**
+ * 取某班某桶最新的秤讀數。
+ *
+ * 用途是**影像模組的 CloudScale 驅動**：校正資料收集階段會在筆電上直接跑
+ * module4 的 CLI / Web UI，那邊沒有 Firestore 憑證，需要一個 HTTP 出口。
+ * 正式紀錄流程不走這支（measureBucket 直接讀 Firestore，少一次往返）。
+ *
+ * 權限：記錄者只能讀自己班；技術員與管理員可指定班級（現場排查需要）。
+ */
+const getLatestScale = async (req, res) => {
+  try {
+    const bucketId = String(req.query.bucketId || '').trim();
+    if (!bucketId) return bad(res, 400, '未指定桶別（bucketId）');
+    if (!BUCKET_LAYOUT.some((b) => b.id === bucketId)) {
+      return bad(res, 400, `未知的桶別：${bucketId}`);
+    }
+
+    const requested = String(req.query.classId || '').trim();
+    const own = req.user.classId || null;
+    const privileged = req.user.role === ROLES.TECHNICIAN || req.user.role === ROLES.ADMIN;
+    if (!privileged && requested && requested !== own) {
+      return bad(res, 403, '只能讀取自己班級的感測器');
+    }
+    const classId = privileged ? (requested || own) : own;
+    if (!classId) return bad(res, 400, '未指定班級');
+
+    const maxAgeSec = Number(req.query.maxAgeSec);
+    const reading = await latestReading({
+      classId,
+      bucketId,
+      ...(Number.isFinite(maxAgeSec) && maxAgeSec > 0 ? { maxAgeSec } : {}),
+    });
+    return res.status(200).json({ success: true, classId, bucketId, reading });
+  } catch (error) {
+    console.error('讀取秤讀數失敗:', error);
+    return bad(res, error.status || 500, error.message || '讀取秤讀數失敗');
+  }
+};
+
 const measureBucket = async (req, res) => {
   try {
     const classId = recorderClassId(req);
@@ -304,12 +391,28 @@ const measureBucket = async (req, res) => {
     const manualRatios = req.body.ratios || null;
     const image = typeof req.body.image === 'string' ? req.body.image : null;
 
+    // 這個桶綁的稱重模組最新讀數。取不到不算錯——會是 offline/disabled，
+    // 由影像模組的分級決定要提示、強制輸入，還是直接降級為純影像。
+    const reading = await latestReading({ classId, bucketId });
+
     let updated;
     const warnings = [];
     let source = 'mock';
+    let review = null;
 
     if (emptied) {
-      updated = { ...bucket, emptied: true, measured: true, source: 'manual', bucketConfidence: 1, warnings: [] };
+      // 「整桶吃完」由記錄者宣告，沒有影像也沒有量測 → manual，不進校正資料集。
+      updated = {
+        ...bucket, emptied: true, measured: true, source: 'manual',
+        bucketConfidence: 1, warnings: [],
+        provenance: PROVENANCE.MANUAL,
+        reviewLevel: LEVEL.AUTO,
+        pendingReview: false,
+        findings: [],
+        weightG: pickWeight(null, reading),
+        scaleState: reading.state,
+        scaleNote: reading.note || null,
+      };
       source = 'manual';
     } else {
       let rec = null;
@@ -322,6 +425,10 @@ const measureBucket = async (req, res) => {
             rectified: Boolean(req.body.rectified),
             pxPerMm: req.body.pxPerMm,
             tiltDeg: req.body.tiltDeg,
+            scale: reading,
+            retryCount: Number(req.body.retryCount || 0),
+            confirmed: Boolean(req.body.confirmed),
+            dishCorrected: Boolean(req.body.dishCorrected),
             expected: bucket.items.map((it) => {
               const dish = it.dishId ? dishMap.get(it.dishId) : null;
               return {
@@ -334,10 +441,25 @@ const measureBucket = async (req, res) => {
             }),
           });
           warnings.push(...(rec.warnings || []));
+          review = rec.review || null;
         } catch (err) {
-          warnings.push(`影像辨識無法使用（${err.message}），已改用預設估算，請確認各菜殘餘比例`);
+          review = err.review || null;
+          if (review && review.provenance === PROVENANCE.WEIGHT_ONLY) {
+            // 秤仍然正常：重量是真值，只是缺了各菜的拆分比例。
+            // 這種情況不可用亂數估算蓋過去，交給記錄者選擇（僅記錄重量／手動指定／重拍）。
+            warnings.push(`影像辨識失敗（${err.message}），但秤讀數正常，請選擇處理方式`);
+          } else {
+            warnings.push(`影像辨識無法使用（${err.message}），已改用預設估算，請確認各菜殘餘比例`);
+          }
           rec = null;
         }
+      }
+
+      // L3 拒絕：依模組設計「不留量測紀錄」，因此在寫入前就中止。
+      if (review && isRejected(review.level)) {
+        return bad(res, 409, '本次量測未通過檢查，未寫入紀錄', {
+          review, scaleState: reading.state, scaleNote: reading.note || null,
+        });
       }
 
       if (!rec) {
@@ -364,6 +486,14 @@ const measureBucket = async (req, res) => {
         photoProvided: Boolean(image),
         visionMs: rec.serverMs || null,
         tiltDeg: rec.tiltDeg == null ? null : rec.tiltDeg,
+        // ── 資料來源與人工介入（決定這筆能否進校正資料集）──
+        provenance: resolveProvenance({ review, image, source: rec.source, reading }),
+        reviewLevel: review ? normalizeLevel(review.level) : LEVEL.AUTO,
+        pendingReview: isPendingReview(review, Boolean(req.body.confirmed)),
+        findings: review ? review.findings : [],
+        weightG: pickWeight(review, reading),
+        scaleState: reading.state,
+        scaleNote: reading.note || null,
         items: bucket.items.map((it) => {
           const r = bySlot.get(it.slot);
           if (!r) return it;
@@ -390,6 +520,10 @@ const measureBucket = async (req, res) => {
       success: true,
       source,
       warnings,
+      review,
+      scale: { state: reading.state, note: reading.note || null, weightG: pickWeight(review, reading) },
+      calibrationUsable: usableForCalibration(updated.provenance) && !updated.pendingReview,
+      pendingReview: Boolean(updated.pendingReview),
       bucket: presentSession({ ...session, buckets }).buckets.find((b) => b.bucketId === bucketId),
     });
   } catch (error) {
@@ -442,6 +576,51 @@ const adjustBucket = async (req, res) => {
 };
 
 /** POST /api/record/finalize — 完成當日紀錄：彙總 + 減碳 + 班級發幣 */
+
+/**
+ * 全校歷史人均廚餘平均（公克/人/餐），S 幣公式的比較基準。
+ *
+ * 取最近 N 場**已結算**的場次。樣本不足時改用起步基準，
+ * 否則開學頭幾天會被一兩場極端值主導整個學校的標準。
+ *
+ * 多撈一些再於記憶體過濾 status，是為了避免為 (schoolId, status, date)
+ * 另開一個複合索引——這個查詢一天只跑幾次，省一個索引比較划算。
+ */
+async function schoolWasteBaseline(schoolId, settings, excludeSessionId) {
+  const s = (settings && settings.sdg) || {};
+  const fallback = Number(s.fallbackSchoolWastePerCapitaG || 0);
+  const window = Math.max(1, Number(s.schoolBaselineWindow || 30));
+  const minSamples = Math.max(0, Number(s.minSchoolSamples || 0));
+  const none = (samples) => ({ perCapitaG: fallback, samples, source: 'fallback' });
+
+  if (!schoolId) return none(0);
+  try {
+    const snap = await db.collection(COL.mealSessions)
+      .where('schoolId', '==', schoolId)
+      .orderBy('date', 'desc')
+      .limit(Math.min(window * 3, 200))
+      .get();
+
+    const values = [];
+    for (const doc of snap.docs) {
+      if (values.length >= window) break;
+      const x = doc.data();
+      if (x.status !== 'done') continue;
+      if (excludeSessionId && x.sessionId === excludeSessionId) continue;
+      const servings = Number(x.servings || 0);
+      const totalG = Number((x.summary || {}).totalG);
+      if (servings > 0 && Number.isFinite(totalG)) values.push(totalG / servings);
+    }
+    if (values.length < minSamples) return none(values.length);
+
+    const avg = values.reduce((a, b) => a + b, 0) / values.length;
+    return { perCapitaG: round(avg, 1), samples: values.length, source: 'history' };
+  } catch (error) {
+    console.error('全校歷史平均計算失敗，改用起步基準:', error.message);
+    return none(0);
+  }
+}
+
 const finalizeSession = async (req, res) => {
   try {
     const classId = recorderClassId(req);
@@ -464,19 +643,41 @@ const finalizeSession = async (req, res) => {
     const summary = summarize(leftovers);
     const dishMap = await getDishMap(leftovers.map((l) => l.dishId));
     const baseline = await baselineByDish(classId, leftovers.map((l) => l.dishId), date);
+    // 減碳量仍然計算並留存：趨勢圖與歷史比較用得到，只是不再決定發幣
     const reduction = computeReduction(leftovers, dishMap, baseline, session.servings);
 
-    const classE = computeClassECoins(reduction.reducedCo2e);
-    const classS = COIN_RULES.FULL_SESSION_CLASS_S;
+    const settings = await getSettings();
+
+    // E = 實際吃下去的營養（供應 − 剩餘），人均
+    const nutrition = computeNutrition(leftovers, dishMap, session.servings, settings);
+    const energy = computeEnergyCoins(nutrition, settings);
+
+    // S = 比全校歷史人均廚餘少浪費的部分 → 碳排 → 樹
+    const schoolBaseline = await schoolWasteBaseline(session.schoolId, settings, session.sessionId);
+    const classWastePerCapitaG = session.servings > 0
+      ? round(Number(summary.totalG || 0) / session.servings, 1)
+      : 0;
+    const sdg = computeSdg({
+      classWastePerCapitaG,
+      schoolAvgPerCapitaG: schoolBaseline.perCapitaG,
+      servings: session.servings,
+      settings,
+    });
+
+    const classE = energy.coins;
+    const classS = sdg.coins;
 
     let awarded = null;
-    if (!session.coinsAwarded && (classE > 0 || classS > 0)) {
-      // 班級增長全額加給班上每位成員（班級池另外記帳）
+    if (!session.coinsAwarded && (classE > 0 || classS > 0 || sdg.treesPerCapita > 0)) {
+      // 人均計算的結果全額加給班上每位成員（班級池另外記帳）
       awarded = await awardClassAndMembers({
         classId,
         E: classE,
         S: classS,
-        reason: `當餐減碳 ${reduction.reducedCo2e} kgCO2e`,
+        treesPerCapita: sdg.treesPerCapita,
+        treesClass: sdg.treesClass,
+        reason: `人均攝取蛋白質 ${nutrition.perCapita.proteinG}g、纖維 ${nutrition.perCapita.fiberG}g；`
+          + `較全校平均少浪費 ${sdg.savedPerCapitaG}g/人（約 ${sdg.treesClass} 棵樹）`,
         refType: 'meal_session',
         refId: session.sessionId,
         date,
@@ -487,6 +688,11 @@ const finalizeSession = async (req, res) => {
       status: 'done',
       summary,
       reduction,
+      nutrition,
+      energy,
+      sdg,
+      schoolBaseline,
+      wastePerCapitaG: classWastePerCapitaG,
       classCoins: { E: classE, S: classS },
       baselineUsed: [...baseline.entries()].map(([dishId, g]) => ({ dishId, baselineG: round(g, 1) })),
       coinsAwarded: true,
@@ -499,7 +705,13 @@ const finalizeSession = async (req, res) => {
       message: session.coinsAwarded ? '已重新計算（本餐先前已發幣，不重複發放）' : '今日紀錄完成！',
       summary,
       reduction,
+      nutrition,
+      energy,
+      sdg,
+      schoolBaseline,
+      wastePerCapitaG: classWastePerCapitaG,
       classCoins: { E: classE, S: classS },
+      trees: { perCapita: sdg.treesPerCapita, class: sdg.treesClass },
       sharedTo: awarded ? awarded.members : 0,
     });
   } catch (error) {
@@ -552,6 +764,7 @@ module.exports = {
   getTodaySession,
   startSession,
   measureBucket,
+  getLatestScale,
   adjustBucket,
   finalizeSession,
   getRecordHistory,

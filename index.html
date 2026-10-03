@@ -333,33 +333,72 @@
 
         </div>
 
-        <div class="task" id="parentSignIn">
-
-            <h2>👨‍👩‍👧 家長專區</h2>
-
-            <p>家長登入後即可直接簽到，不需要額外輸入。</p>
-
-            <button data-action="parentSignIn">家長簽到</button>
-
-        </div>
-
-        <div class="task" id="supportTaskCard">
-
-            <h2>🤝 今日各菜品剩餘量</h2>
-
-            <p class="field-hint">只有本班某道菜剩得不多時，才會顯示其他班是否還有。</p>
-
-            <div id="supportDishList">載入中...</div>
-
-            <button data-action="loadSupportDishes">🔄 重新載入</button>
-
-        </div>
-
 </section>
+
+<!-- 跨班支援：頂層區塊，不巢狀於 #home。
+     由 applyRoleView() 控制可見性、applyRoleOrder() 決定它排在哪裡
+     （午餐長會被排到「紀錄」正下方，因為記錄完最常接著要找別班補菜）。 -->
+<div class="task hidden" id="supportTaskCard">
+
+    <h2>🤝 今日各菜品剩餘量</h2>
+
+    <p class="field-hint">只有本班某道菜剩得不多時，才會顯示其他班是否還有。</p>
+
+    <div id="supportDishList">載入中...</div>
+
+    <p id="supportMeta" class="support-meta"></p>
+
+    <button data-action="loadSupportDishes">🔄 重新載入</button>
+
+</div>
 
 <section id="ranking" class="page ranking hidden">
 
-    <h2>🏆 減碳英雄榜</h2>
+    <h2>🏆 個人英雄榜</h2>
+
+    <p class="field-hint">
+        E幣＝吃下去的營養（蛋白質＋膳食纖維）；S幣＝比全校平均少浪費的部分換算成的樹。
+    </p>
+
+    <div class="hero-controls">
+        <label>期間
+            <select id="heroPeriod" data-action="loadHeroBoard">
+                <option value="week">本週</option>
+                <option value="month">本月</option>
+                <option value="term">本學期</option>
+            </select>
+        </label>
+        <label>範圍
+            <select id="heroWithin" data-action="loadHeroBoard">
+                <option value="school">全校</option>
+                <option value="class">本班</option>
+            </select>
+        </label>
+        <label>排序
+            <select id="heroSort" data-action="loadHeroBoard">
+                <option value="trees">種樹數</option>
+                <option value="E">E幣</option>
+                <option value="S">S幣</option>
+            </select>
+        </label>
+    </div>
+
+    <div id="heroMine" class="hero-mine"></div>
+
+    <table class="hero-table">
+        <thead>
+            <tr>
+                <th>名次</th>
+                <th>姓名</th>
+                <th>E幣</th>
+                <th>S幣</th>
+                <th>🌳 種樹</th>
+            </tr>
+        </thead>
+        <tbody id="heroBoardList">
+            <tr><td colspan="5">載入中...</td></tr>
+        </tbody>
+    </table>
 
 <h2>🏆 班級排行榜</h2>
 
@@ -516,6 +555,24 @@
         <p class="field-hint">學生自助註冊前，班級必須先存在；老師、午餐長、管理員帳號一律由這裡建立。</p>
 
         <div id="adminOverview" class="check-summary"></div>
+
+        <!-- 發幣公式的可調常數。這裡改的值會影響全校發幣，因此附上試算預覽。 -->
+        <div class="admin-card coin-rules-card">
+            <h3>⚙️ 發幣公式參數</h3>
+            <p class="field-hint">
+                E＝人均蛋白質×kProtein＋人均膳食纖維×kFiber；
+                S＝round(樹×放大常數)，樹＝人均少浪費(kg)×每公斤廚餘碳排÷每棵樹每年吸碳量。
+                兩者皆人均計算後全額加給班上每位學生。
+            </p>
+            <div id="coinRulesForm">載入中...</div>
+            <div id="coinRulesPreview" class="rules-preview"></div>
+            <div class="rules-actions">
+                <button data-action="previewCoinRules">🧮 試算</button>
+                <button data-action="saveCoinRules">💾 儲存</button>
+                <button data-action="resetCoinRules" class="danger-btn">↺ 還原出廠預設</button>
+            </div>
+            <p id="coinRulesResult" class="verify-result"></p>
+        </div>
 
         <div class="admin-grid">
 

@@ -25,6 +25,27 @@ function ratioOf(row) {
 }
 
 /**
+ * 把別班的剩餘量列轉成回應格式。
+ *
+ * `shortage` 是**該班自己**是否也低於門檻。仍然列出它（有 300g 就是有 300g，
+ * 對想加菜的班級是真的可取用），但必須讓使用者看得到對方也快沒了——
+ * 不然會發生「跑去別班才發現人家也只剩一點」的白跑。
+ */
+function toOffer(o) {
+  const ratio = ratioOf(o);
+  return {
+    classId: o.classId,
+    className: o.className,
+    grade: o.grade,
+    leftoverG: Math.round(Number(o.leftoverG || 0)),
+    remainingPct: Math.round(ratio * 100),
+    shortage: ratio < SUPPORT.shortageRatio,
+    updatedAt: o.updatedAt && typeof o.updatedAt.toMillis === 'function'
+      ? o.updatedAt.toMillis() : null,
+  };
+}
+
+/**
  * GET /api/support/dishes?date=
  * 本班今天各菜品剩餘量；不足的菜品附上「其他班還有嗎」。
  */
@@ -46,6 +67,7 @@ const getDishStatus = async (req, res) => {
         classId,
         threshold: SUPPORT,
         dishes: [],
+        generatedAt: Date.now(),
         message: '今天還沒有紀錄，午餐長完成辨識後才會顯示各菜品剩餘量',
       });
     }
@@ -83,13 +105,7 @@ const getDishStatus = async (req, res) => {
         entry.otherClasses = othersSnap.docs
           .map((d) => d.data())
           .filter((o) => o.classId !== classId && Number(o.leftoverG || 0) >= SUPPORT.minOfferGrams)
-          .map((o) => ({
-            classId: o.classId,
-            className: o.className,
-            grade: o.grade,
-            leftoverG: Math.round(Number(o.leftoverG || 0)),
-            remainingPct: Math.round(ratioOf(o) * 100),
-          }));
+          .map(toOffer);
       }
       dishes.push(entry);
     }
@@ -104,10 +120,15 @@ const getDishStatus = async (req, res) => {
         minOfferGrams: SUPPORT.minOfferGrams,
       },
       dishes,
+      // 前端據此顯示「資料截至幾點幾分」。跨班資料會隨其他班陸續記錄而變動，
+      // 使用者必須知道手上這份是什麼時候的，否則容易誤判別班還有沒有。
+      generatedAt: Date.now(),
       summary: {
         total: dishes.length,
         shortages: shortages.length,
         withHelp: shortages.filter((d) => (d.otherClasses || []).length > 0).length,
+        // 有缺貨但目前沒人能支援 → 前端會繼續輪詢等別班記錄
+        awaitingHelp: shortages.filter((d) => !(d.otherClasses || []).length).length,
       },
     });
   } catch (error) {
@@ -162,13 +183,7 @@ const getDishAcrossClasses = async (req, res) => {
     const otherClasses = othersSnap.docs
       .map((d) => d.data())
       .filter((o) => o.classId !== classId && Number(o.leftoverG || 0) >= SUPPORT.minOfferGrams)
-      .map((o) => ({
-        classId: o.classId,
-        className: o.className,
-        grade: o.grade,
-        leftoverG: Math.round(Number(o.leftoverG || 0)),
-        remainingPct: Math.round(ratioOf(o) * 100),
-      }));
+      .map(toOffer);
 
     return res.status(200).json({
       success: true,
@@ -178,6 +193,7 @@ const getDishAcrossClasses = async (req, res) => {
       remainingPct: Math.round(ratio * 100),
       shortage: true,
       otherClasses,
+      generatedAt: Date.now(),
       message: otherClasses.length
         ? `${otherClasses.length} 個班級還有${mine.dishName}`
         : `目前沒有其他班級還有${mine.dishName}`,

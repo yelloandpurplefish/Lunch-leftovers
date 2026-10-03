@@ -363,15 +363,11 @@ function updateUI() {
   updateLoggedInStats();
 }
 
+// 舊版在 #home 裡放了一張家長簽到卡片，但 #home 對家長是隱藏的，那張卡片
+// 永遠顯示不出來，已移除。家長的簽到入口統一在 #parentZone，
+// 可見性由 applyRoleView() 一處決定，這裡不再需要另外同步。
 function syncRolePanels() {
-    const parentCard = document.getElementById('parentSignIn');
-    if (!parentCard) return;
-
-    if (currentUser && currentUser.role === 'parent') {
-        parentCard.classList.remove('hidden');
-    } else {
-        parentCard.classList.add('hidden');
-    }
+    applyRoleView();
 }
 
 // 獲取錯誤訊息
@@ -429,6 +425,234 @@ async function apiRequest(endpoint, method = 'GET', body = null) {
 // 原本綁在 scroll 事件上、只有滑到距底部 150px 才滑出，
 // 使用者平常根本看不到導覽列，改掉。
 
+
+
+// ============================================================
+// 個人英雄榜
+// ============================================================
+//
+// 一列就看得到 E幣、S幣與種樹數。分成三張榜輪流切換的話，
+// 學生很難建立「我吃得好 → 營養夠 → 少浪費 → 種了樹」這條因果，
+// 而那正是這個榜要傳達的事。
+
+/** 樹的數字很小（每人每餐約 0.008 棵），固定顯示到小數第 3 位才看得出變化。 */
+function formatTrees(v) {
+    const n = Number(v || 0);
+    if (n === 0) return '0';
+    return n >= 1 ? n.toFixed(2) : n.toFixed(3);
+}
+
+async function loadHeroBoard() {
+    const tbody = document.getElementById('heroBoardList');
+    if (!tbody) return;
+    const period = (document.getElementById('heroPeriod') || {}).value || 'week';
+    const within = (document.getElementById('heroWithin') || {}).value || 'school';
+    const sort = (document.getElementById('heroSort') || {}).value || 'trees';
+    const mineBox = document.getElementById('heroMine');
+
+    try {
+        const data = await apiRequest(
+            `/leaderboard/heroes?period=${period}&within=${within}&sort=${sort}`, 'GET');
+        if (!data.success) {
+            tbody.innerHTML = '<tr><td colspan="5">載入失敗</td></tr>';
+            return;
+        }
+        if (!data.rows.length) {
+            tbody.innerHTML = '<tr><td colspan="5">這段期間還沒有人獲得幣</td></tr>';
+            if (mineBox) mineBox.innerHTML = '';
+            return;
+        }
+
+        const medal = (r) => (r === 1 ? '🥇' : r === 2 ? '🥈' : r === 3 ? '🥉' : r);
+        tbody.innerHTML = data.rows.map((r) => `
+            <tr class="${r.me ? 'my-rank-row' : ''}">
+                <td>${medal(r.rank)}</td>
+                <td>${r.displayName}${r.className ? `<small>　${r.className}</small>` : ''}</td>
+                <td>${r.E}</td>
+                <td>${r.S}</td>
+                <td>${formatTrees(r.trees)}</td>
+            </tr>
+        `).join('');
+
+        if (mineBox) {
+            mineBox.innerHTML = data.me
+                ? `<p>你目前第 <strong>${data.me.rank}</strong> 名／共 ${data.total} 人　·　`
+                  + `這段期間 E幣 ${data.me.E}、S幣 ${data.me.S}　·　`
+                  + `🌳 累計種下 <strong>${formatTrees(data.me.treesLifetime)}</strong> 棵樹</p>`
+                : '<p class="field-hint">你這段期間還沒有獲得幣，先把自己那份吃完吧。</p>';
+        }
+    } catch (error) {
+        tbody.innerHTML = '<tr><td colspan="5">載入失敗</td></tr>';
+    }
+}
+
+// ============================================================
+// 開發者面板：發幣公式參數
+// ============================================================
+
+let coinRulesState = { values: null, defaults: null };
+
+/** 參數說明：光看 kProtein 這種鍵名沒人知道要填什麼，一律附中文與單位。 */
+const RULE_LABELS = {
+    'energy.kProtein': ['每公克蛋白質 → E幣', '幣/g'],
+    'energy.kFiber': ['每公克膳食纖維 → E幣', '幣/g'],
+    'sdg.co2PerKgWaste': ['每公斤廚餘的碳排', 'kgCO2e/kg'],
+    'sdg.treeAnnualCo2Kg': ['每棵樹每年吸收的 CO2', 'kg/年'],
+    'sdg.sCoinPerTree': ['每棵樹 → S幣（放大常數）', '幣/棵'],
+    'sdg.schoolBaselineWindow': ['全校歷史平均取最近幾場', '場'],
+    'sdg.fallbackSchoolWastePerCapitaG': ['歷史不足時的起步基準', 'g/人/餐'],
+    'sdg.minSchoolSamples': ['低於幾場就用起步基準', '場'],
+};
+
+function ruleInput(path, value, def) {
+    const [label, unit] = RULE_LABELS[path] || [path, ''];
+    const changed = Number(value) !== Number(def);
+    return `
+        <label class="rule-row ${changed ? 'changed' : ''}">
+            <span class="rule-label">${label}</span>
+            <input type="number" step="any" data-rule="${path}" value="${value}">
+            <span class="rule-unit">${unit}</span>
+            <span class="rule-default">預設 ${def}</span>
+        </label>`;
+}
+
+function renderCoinRules() {
+    const box = document.getElementById('coinRulesForm');
+    if (!box || !coinRulesState.values) return;
+    const v = coinRulesState.values;
+    const d = coinRulesState.defaults;
+
+    const scalar = Object.keys(RULE_LABELS).map((path) => {
+        const [g, k] = path.split('.');
+        return ruleInput(path, v[g][k], d[g][k]);
+    }).join('');
+
+    const cats = Object.keys(d.nutrition.byCategory);
+    const nutrition = cats.map((cat) => {
+        const cur = v.nutrition.byCategory[cat] || {};
+        const def = d.nutrition.byCategory[cat] || {};
+        return `
+            <tr>
+                <td>${cat}</td>
+                <td><input type="number" step="any" data-nutrition="${cat}.proteinPerKg"
+                           value="${cur.proteinPerKg}"><small>預設 ${def.proteinPerKg}</small></td>
+                <td><input type="number" step="any" data-nutrition="${cat}.fiberPerKg"
+                           value="${cur.fiberPerKg}"><small>預設 ${def.fiberPerKg}</small></td>
+            </tr>`;
+    }).join('');
+
+    box.innerHTML = `
+        <div class="rule-group">${scalar}</div>
+        <h4>每公斤食物的營養含量（菜品可個別覆寫，沒填才用這裡的分類預設）</h4>
+        <table class="rule-table">
+            <thead><tr><th>分類</th><th>蛋白質 g/kg</th><th>膳食纖維 g/kg</th></tr></thead>
+            <tbody>${nutrition}</tbody>
+        </table>`;
+}
+
+function renderRulesPreview(preview) {
+    const box = document.getElementById('coinRulesPreview');
+    if (!box || !preview) return;
+    box.innerHTML = `
+        <p class="field-hint">以 ${preview.servings} 人份示範菜單試算：${(preview.menu || []).join('、')}</p>
+        <table class="rule-table">
+            <thead><tr><th>情境</th><th>人均攝取</th><th>E幣</th><th>S幣</th><th>全班種樹</th></tr></thead>
+            <tbody>${(preview.scenarios || []).map((s) => `
+                <tr>
+                    <td>${s.label}</td>
+                    <td>${s.perCapita.eatenG} g<small>　蛋白 ${s.perCapita.proteinG}／纖維 ${s.perCapita.fiberG}</small></td>
+                    <td>${s.E}</td>
+                    <td>${s.S}</td>
+                    <td>${formatTrees(s.treesClass)} 棵</td>
+                </tr>`).join('')}
+            </tbody>
+        </table>`;
+}
+
+/** 從表單讀回使用者填的值，組成後端要的巢狀結構。 */
+function collectCoinRules() {
+    const values = { energy: {}, sdg: {}, nutrition: { byCategory: {} } };
+    document.querySelectorAll('#coinRulesForm input[data-rule]').forEach((el) => {
+        const [g, k] = el.dataset.rule.split('.');
+        values[g][k] = Number(el.value);
+    });
+    document.querySelectorAll('#coinRulesForm input[data-nutrition]').forEach((el) => {
+        const [cat, field] = el.dataset.nutrition.split('.');
+        values.nutrition.byCategory[cat] = values.nutrition.byCategory[cat] || {};
+        values.nutrition.byCategory[cat][field] = Number(el.value);
+    });
+    return values;
+}
+
+async function loadCoinRules() {
+    const box = document.getElementById('coinRulesForm');
+    if (!box) return;
+    try {
+        const data = await apiRequest('/admin/coin-rules', 'GET');
+        if (!data.success) {
+            box.innerHTML = `<p>${data.message || '載入失敗'}</p>`;
+            return;
+        }
+        coinRulesState = { values: data.values, defaults: data.defaults };
+        renderCoinRules();
+        renderRulesPreview(data.preview);
+    } catch (error) {
+        box.innerHTML = '<p>載入失敗</p>';
+    }
+}
+
+async function previewCoinRules() {
+    const result = document.getElementById('coinRulesResult');
+    try {
+        const data = await apiRequest('/admin/coin-rules/preview', 'POST',
+            { values: collectCoinRules() });
+        if (!data.success) {
+            if (result) result.textContent = data.message || '試算失敗';
+            return;
+        }
+        renderRulesPreview(data.preview);
+        if (result) result.textContent = '這是試算結果，尚未儲存。';
+    } catch (error) {
+        if (result) result.textContent = '試算失敗：' + (error.message || '請稍後再試');
+    }
+}
+
+async function saveCoinRules() {
+    const result = document.getElementById('coinRulesResult');
+    if (!confirm('確定儲存？這會影響之後每一次結算的發幣量（已結算的紀錄不會重算）。')) return;
+    try {
+        const data = await apiRequest('/admin/coin-rules', 'PUT',
+            { values: collectCoinRules() });
+        if (!data.success) {
+            if (result) result.textContent = data.message || '儲存失敗';
+            return;
+        }
+        coinRulesState = { values: data.values, defaults: data.defaults };
+        renderCoinRules();
+        renderRulesPreview(data.preview);
+        if (result) result.textContent = data.message;
+    } catch (error) {
+        if (result) result.textContent = '儲存失敗：' + (error.message || '請稍後再試');
+    }
+}
+
+async function resetCoinRules() {
+    if (!confirm('還原成出廠預設值？目前的自訂參數會被清除。')) return;
+    const result = document.getElementById('coinRulesResult');
+    try {
+        const data = await apiRequest('/admin/coin-rules', 'PUT', { values: {} });
+        if (!data.success) {
+            if (result) result.textContent = data.message || '還原失敗';
+            return;
+        }
+        coinRulesState = { values: data.values, defaults: data.defaults };
+        renderCoinRules();
+        renderRulesPreview(data.preview);
+        if (result) result.textContent = '已還原為出廠預設值。';
+    } catch (error) {
+        if (result) result.textContent = '還原失敗：' + (error.message || '請稍後再試');
+    }
+}
 
 // 載入班級排行榜
 async function loadClassRanking() {
@@ -824,8 +1048,7 @@ function applyRoleView() {
         ['adminZone', ['admin']],
         ['parentZone', ['parent']],
         ['techZone', ['technician', 'admin']],
-        ['supportTaskCard', ['student', 'lunch_leader', 'teacher', 'admin']],
-        ['parentSignIn', ['parent']]
+        ['supportTaskCard', ['student', 'lunch_leader', 'teacher', 'admin']]
     ];
     const signedIn = Boolean(currentUser);
     panels.forEach(([id, allowed]) => {
@@ -853,6 +1076,64 @@ function applyRoleView() {
 
     const roleTag = document.getElementById('userRoleTag');
     if (roleTag) roleTag.textContent = ROLE_LABEL[role] || role;
+
+    applyRoleOrder(role);
+    if (!signedIn) stopSupportPolling();     // 登出後不該繼續打 API
+}
+
+// ============================================================
+// 角色化區塊排序
+// ============================================================
+//
+// 原本所有角色看到的順序都一樣（首頁→排行→趨勢→兌換→問卷→紀錄→…），
+// 但不同身分的高頻操作差很多：
+//   · 午餐長幾乎只做「紀錄」，卻要捲過四個區塊才看得到
+//   · 家長只做「簽到」
+//   · 學生才是真的以首頁與兌換為主
+// 把最常用的排在最前面，少一次捲動就少一次摩擦。
+//
+// 這裡直接搬 DOM 節點而不是用 CSS order：
+// 一來 #app 不是 flex 容器，二來搬節點連鍵盤 Tab 順序與螢幕閱讀器
+// 的閱讀順序一起修正，純視覺的 order 做不到這件事。
+
+const ROLE_PANEL_ORDER = {
+    // 午餐長：紀錄 →（紀錄完最常接著找別班補菜）支援 → 其餘
+    lunch_leader: ['leader', 'supportTaskCard', 'home', 'ranking', 'trend', 'survey'],
+    // 老師：逐生檢查是每天的固定動作
+    teacher: ['teacher', 'home', 'supportTaskCard', 'ranking', 'trend'],
+    // 學生：看自己的幣與午餐狀況，然後才是兌換
+    student: ['home', 'supportTaskCard', 'shop', 'ranking', 'trend', 'survey'],
+    parent: ['parentZone'],
+    technician: ['techZone'],
+    admin: ['adminZone', 'leader', 'teacher', 'supportTaskCard', 'techZone',
+            'home', 'ranking', 'trend', 'shop', 'survey'],
+};
+
+/** 底部導覽也跟著同一套優先順序，避免畫面順序與導覽順序不一致。 */
+function applyNavOrder(order) {
+    const nav = document.getElementById('bottomNav');
+    if (!nav) return;
+    const rank = new Map(order.map((id, i) => [id, i]));
+    Array.from(nav.querySelectorAll('button[data-arg]'))
+        .sort((a, b) => (rank.has(a.dataset.arg) ? rank.get(a.dataset.arg) : 99)
+                      - (rank.has(b.dataset.arg) ? rank.get(b.dataset.arg) : 99))
+        .forEach((btn) => nav.appendChild(btn));
+}
+
+function applyRoleOrder(role) {
+    const order = ROLE_PANEL_ORDER[role];
+    if (!order) return;
+    const app = document.getElementById('app');
+    const anchor = document.getElementById('globalAnnouncement');
+    if (!app || !anchor) return;
+
+    // 依序插到公告區塊之前：公告與抽獎彈窗是 fixed/modal，位置無所謂，
+    // 但保持它們在最後可以避免每次重排都動到它們。
+    order.forEach((id) => {
+        const el = document.getElementById(id);
+        if (el && el.parentElement === app) app.insertBefore(el, anchor);
+    });
+    applyNavOrder(order);
 }
 
 /** 依角色載入該看的資料。 */
@@ -871,6 +1152,7 @@ async function loadRoleData() {
         await loadAdminOverview();
         await loadAdminClasses();
         await loadDevices();
+        await loadCoinRules();
     }
     if (role === 'teacher' || role === 'admin') {
         await loadCheckRoster();
@@ -882,7 +1164,10 @@ async function loadRoleData() {
         await loadMyMealStatus();
     }
     await loadSupportDishes();
-    if (role !== 'parent') await loadTrend();
+    if (role !== 'parent') {
+        await loadHeroBoard();
+        await loadTrend();
+    }
 }
 
 // ============================================================
@@ -1141,6 +1426,7 @@ function captureBucket(el) {
             }
             if ((data.warnings || []).length) alert(data.warnings.join('\n'));
             await loadRecordToday();
+            await refreshSupportAfterRecord();
         } catch (error) {
             alert('辨識失敗：' + (error.message || '請稍後再試'));
         } finally {
@@ -1159,9 +1445,33 @@ async function markEmptied(el) {
             return;
         }
         await loadRecordToday();
+        await refreshSupportAfterRecord();
     } catch (error) {
         alert('操作失敗：' + (error.message || '請稍後再試'));
     }
+}
+
+
+/**
+ * 紀錄動作之後刷新跨班支援。
+ *
+ * 午餐長剛把某道菜改成「剩 5%」的當下，最可能的下一個念頭就是
+ * 「別班還有嗎、去哪裡補」。原本要等到「完成今日紀錄」才會重查，
+ * 中間所有量測與微調都不會更新這張卡片，等於看的是舊資料。
+ *
+ * 若這次刷新**新出現**了缺貨，就把卡片帶到眼前並高亮一次；
+ * 已經知道缺貨的則只靜默更新，不反覆打斷操作。
+ */
+async function refreshSupportAfterRecord() {
+    const before = supportState.hasShortage;
+    await loadSupportDishes({ silent: true });
+    if (!supportState.hasShortage || before) return;
+
+    const card = document.getElementById('supportTaskCard');
+    if (!card || card.classList.contains('hidden')) return;
+    card.scrollIntoView({ behavior: 'smooth', block: 'center' });
+    card.classList.add('just-updated');
+    setTimeout(() => card.classList.remove('just-updated'), 2400);
 }
 
 /** 滑桿微調殘餘比例（放手才送出，避免每動一格就打一次 API）。 */
@@ -1173,6 +1483,7 @@ async function submitRatio(bucketId, slot, pct) {
         if (data.success) {
             recordSession = null;
             await loadRecordToday();
+            await refreshSupportAfterRecord();
         }
     } catch (error) {
         console.error('微調失敗:', error);
@@ -1187,32 +1498,126 @@ async function finalizeRecord() {
             alert(data.message || '結算失敗');
             return;
         }
-        alert(`${data.message}\n廚餘 ${Math.round(data.summary.totalG)}g\n減碳 ${data.reduction.reducedCo2e} kgCO₂e\n班級 E幣 +${data.classCoins.E}、S幣 +${data.classCoins.S}（已分給 ${data.sharedTo} 位同學）`);
+        // 只丟兩個幣數看不出所以然，把「吃了多少」與「少浪費多少」攤開講
+        const n = (data.nutrition && data.nutrition.perCapita) || {};
+        const sdg = data.sdg || {};
+        const sb = data.schoolBaseline || {};
+        const baseNote = sb.source === 'history'
+            ? `近 ${sb.samples} 場平均`
+            : '起步基準（全校樣本還不夠）';
+        alert(
+            `${data.message}\n\n`
+            + `【吃了什麼】人均吃下 ${n.eatenG || 0} g\n`
+            + `  蛋白質 ${n.proteinG || 0} g、膳食纖維 ${n.fiberG || 0} g\n`
+            + `  → E幣 +${data.classCoins.E}\n\n`
+            + `【少浪費多少】本班人均廚餘 ${data.wastePerCapitaG || 0} g\n`
+            + `  全校基準 ${sb.perCapitaG || 0} g（${baseNote}）\n`
+            + `  少浪費 ${sdg.savedPerCapitaG || 0} g/人，減碳 ${sdg.co2ClassKg || 0} kgCO₂e\n`
+            + `  → 相當於 ${formatTrees(sdg.treesClass)} 棵樹，S幣 +${data.classCoins.S}\n\n`
+            + `已分給 ${data.sharedTo} 位同學`
+        );
         await loadRecordToday();
         await loadUserData();
         await loadSupportDishes();
+        await loadHeroBoard();
     } catch (error) {
         alert('結算失敗：' + (error.message || '請稍後再試'));
     }
+}
+
+
+// ============================================================
+// 跨班支援：資料新鮮度與條件式輪詢
+// ============================================================
+//
+// 跨班資料的本質是「別班此刻還剩多少」，而別班是**陸續**記錄的——
+// 本班 12:10 記錄完時別班可能還沒開始。因此一次性載入必然會過期，
+// 使用者卻看不出手上這份是什麼時候的，容易誤判「大家都沒了」。
+//
+// 但也不該無條件輪詢：本班沒有任何一道菜缺貨時，別班剩多少與我無關，
+// 後端根本不會去查（見 supportController 的門檻設計）。
+// 所以只在**真的有缺貨**時才輪詢，並且分頁切走就停。
+
+const SUPPORT_POLL_MS = 30000;        // 午餐時段 30 秒一次，足夠即時又不擾民
+let supportPollTimer = null;
+let supportState = { hasShortage: false, awaitingHelp: 0, generatedAt: 0, loading: false };
+
+function startSupportPolling() {
+    if (supportPollTimer || document.hidden) return;
+    supportPollTimer = setInterval(() => {
+        if (document.hidden) return;      // 保險：分頁隱藏時不打 API
+        loadSupportDishes({ silent: true });
+    }, SUPPORT_POLL_MS);
+}
+
+function stopSupportPolling() {
+    if (!supportPollTimer) return;
+    clearInterval(supportPollTimer);
+    supportPollTimer = null;
+}
+
+/** 依目前是否缺貨決定要不要繼續輪詢。 */
+function syncSupportPolling() {
+    if (supportState.hasShortage && currentUser) startSupportPolling();
+    else stopSupportPolling();
+}
+
+// 分頁切回來時立刻補一次：使用者離開這段期間別班可能已經記錄了，
+// 等下一次 30 秒週期才更新會讓他看到明顯過期的數字。
+document.addEventListener('visibilitychange', () => {
+    if (document.hidden) {
+        stopSupportPolling();
+    } else if (supportState.hasShortage && currentUser) {
+        loadSupportDishes({ silent: true });
+        startSupportPolling();
+    }
+});
+
+/** 把「幾分鐘前」講成人話；資料新鮮度要一眼看得懂。 */
+function freshnessText(ts) {
+    if (!ts) return '';
+    const sec = Math.max(0, Math.round((Date.now() - ts) / 1000));
+    if (sec < 45) return '剛剛更新';
+    if (sec < 3600) return `${Math.round(sec / 60)} 分鐘前更新`;
+    return `${Math.round(sec / 3600)} 小時前更新`;
 }
 
 // ============================================================
 // 跨班菜品剩餘量（本班某道菜不足時才顯示其他班）
 // ============================================================
 
-async function loadSupportDishes() {
+/**
+ * 載入本班各菜品剩餘量（缺貨的會附上其他班狀況）。
+ * @param {{silent?:boolean}} opts silent = 輪詢觸發，不要顯示「載入中」閃爍
+ */
+async function loadSupportDishes(opts) {
     const box = document.getElementById('supportDishList');
     if (!box) return;
+    const silent = Boolean(opts && opts.silent === true);
+    if (supportState.loading) return;          // 避免輪詢與手動點擊疊在一起
+    supportState.loading = true;
+    if (!silent) box.setAttribute('aria-busy', 'true');
     try {
         const data = await apiRequest('/support/dishes', 'GET');
         if (!data.success) {
             box.innerHTML = `<p>${data.message || '載入失敗'}</p>`;
+            supportState.hasShortage = false;
+            syncSupportPolling();
             return;
         }
+
+        supportState.generatedAt = data.generatedAt || Date.now();
+        const summary = data.summary || {};
+        supportState.hasShortage = Number(summary.shortages || 0) > 0;
+        supportState.awaitingHelp = Number(summary.awaitingHelp || 0);
+
         if (!data.dishes.length) {
             box.innerHTML = `<p>${data.message || '今天還沒有紀錄'}</p>`;
+            renderSupportMeta();
+            syncSupportPolling();
             return;
         }
+
         box.innerHTML = data.dishes.map((d) => `
             <div class="dish-status ${d.shortage ? 'shortage' : ''}">
                 <div class="dish-status-head">
@@ -1222,14 +1627,35 @@ async function loadSupportDishes() {
                 <div class="dish-bar"><div class="dish-bar-fill" style="width:${Math.min(100, d.remainingPct)}%"></div></div>
                 ${d.shortage ? (
                     (d.otherClasses && d.otherClasses.length)
-                        ? `<p class="dish-help">🤝 這些班還有：${d.otherClasses.map((o) => `${o.className} 班（${o.leftoverG}g）`).join('、')}</p>`
-                        : '<p class="field-hint">本班快吃完了，目前其他班也沒有剩。</p>'
+                        ? `<p class="dish-help">🤝 這些班還有：${d.otherClasses.map((o) =>
+                              // 對方也低於門檻時要講明，免得白跑一趟
+                              `${o.className} 班 ${o.leftoverG}g${o.shortage ? '<span class="offer-warn">（他們也快沒了）</span>' : ''}`
+                          ).join('、')}</p>`
+                        : '<p class="field-hint">本班快吃完了，目前其他班也沒有剩——其他班陸續記錄後這裡會自動更新。</p>'
                 ) : ''}
             </div>
         `).join('');
+        renderSupportMeta();
+        syncSupportPolling();
     } catch (error) {
         box.innerHTML = '<p>載入失敗</p>';
+    } finally {
+        supportState.loading = false;
+        box.removeAttribute('aria-busy');
     }
+}
+
+/** 在卡片上顯示資料截至時間與輪詢狀態。 */
+function renderSupportMeta() {
+    const meta = document.getElementById('supportMeta');
+    if (!meta) return;
+    const parts = [freshnessText(supportState.generatedAt)];
+    if (supportState.hasShortage) {
+        parts.push(supportState.awaitingHelp > 0
+            ? '正在等其他班記錄，每 30 秒自動更新'
+            : '每 30 秒自動更新');
+    }
+    meta.textContent = parts.filter(Boolean).join('　·　');
 }
 
 // ============================================================
@@ -1719,8 +2145,9 @@ const ACTION_HANDLERS = {
     captureBucket: (el) => captureBucket(el),
     markEmptied: (el) => markEmptied(el),
     finalizeRecord,
-    // 跨班菜品
-    loadSupportDishes,
+    // 跨班菜品（包一層：data-action 會把按鈕元素當第一個參數傳進來，
+    //           會被誤當成 opts，導致 silent 判斷讀到 HTMLElement）
+    loadSupportDishes: () => loadSupportDishes(),
     togglePassword: (el) => togglePassword(el),
     // 技術員：稱重模組
     loadDevices,
@@ -1730,6 +2157,13 @@ const ACTION_HANDLERS = {
     setTareLatest: (el) => setTareLatest(el),
     showReadings: (el) => showReadings(el),
     loadTrend: (el) => loadTrend(el),
+    // 個人英雄榜
+    loadHeroBoard: () => loadHeroBoard(),
+    // 管理員：發幣公式參數
+    loadCoinRules: () => loadCoinRules(),
+    previewCoinRules: () => previewCoinRules(),
+    saveCoinRules: () => saveCoinRules(),
+    resetCoinRules: () => resetCoinRules(),
     // 管理員：手動維護班級與帳號
     createClass,
     createUserByAdmin,
@@ -1756,6 +2190,20 @@ document.addEventListener('click', (event) => {
 });
 
 document.addEventListener('change', (event) => {
+    // 下拉選單上的 data-action 必須走 change 而不是 click：
+    // 點開選單就會觸發 click，那時值還沒改，拿到的是改之前的選項。
+    const sel = event.target && event.target.closest
+        ? event.target.closest('select[data-action]')
+        : null;
+    if (sel) {
+        const handler = ACTION_HANDLERS[sel.dataset.action];
+        if (handler) {
+            Promise.resolve(handler(sel)).catch((error) => {
+                console.error(`執行 ${sel.dataset.action} 失敗:`, error);
+            });
+        }
+    }
+
     if (event.target && event.target.name === 'registerRole') {
         syncRegisterFields();
     }

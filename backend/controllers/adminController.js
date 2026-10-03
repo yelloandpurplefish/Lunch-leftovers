@@ -19,6 +19,9 @@ const {
 } = require('../config/schema');
 const { createUserWithAccount, findClass, findUserByIdentifier } = require('./authController');
 const { today } = require('../lib/dates');
+const { getSettings, saveSettings, validateTunables, deepMerge } = require('../lib/settings');
+const { TUNABLE_DEFAULTS } = require('../config/schema');
+const { computeNutrition, computeEnergyCoins, computeSdg } = require('../lib/scoring');
 
 const serverTime = () => admin.firestore.FieldValue.serverTimestamp();
 const norm = (v) => String(v == null ? '' : v).trim();
@@ -531,8 +534,131 @@ const updateUser = async (req, res) => {
   }
 };
 
+
+// ── 發幣公式的可調常數 ──────────────────────────────────────────────
+
+/**
+ * GET /api/admin/coin-rules
+ * 回傳目前採用值、出廠預設值，以及一組試算範例。
+ *
+ * 同時回傳預設值是刻意的：調參數的人需要知道「原廠是多少」才敢動，
+ * 也才有辦法還原。試算範例則讓人在存檔前就看得出這次調整會發出多少幣，
+ * 不必真的去結算一餐才知道改壞了。
+ */
+const getCoinRules = async (req, res) => {
+  try {
+    const current = await getSettings({ force: true });
+    return res.status(200).json({
+      success: true,
+      values: current,
+      defaults: TUNABLE_DEFAULTS,
+      preview: previewWith(current),
+      explain: {
+        E: 'E = 人均蛋白質(g) × kProtein + 人均膳食纖維(g) × kFiber',
+        S: 'S = round(樹 × sCoinPerTree)，樹 = 人均少浪費(kg) × co2PerKgWaste ÷ treeAnnualCo2Kg',
+        note: '兩者皆以人均計算，再全額加給班上每位學生。',
+      },
+    });
+  } catch (error) {
+    console.error('讀取發幣參數失敗:', error);
+    return bad(res, 500, error.message || '讀取發幣參數失敗');
+  }
+};
+
+/**
+ * PUT /api/admin/coin-rules
+ * 只存與預設不同的欄位，讀取時再與預設合併（見 lib/settings.js）。
+ */
+const updateCoinRules = async (req, res) => {
+  try {
+    const result = await saveSettings(req.body && req.body.values, { uid: req.user.uid });
+    return res.status(200).json({
+      success: true,
+      message: '已更新，下一次結算即生效（已結算的紀錄不會重算）',
+      values: result.current,
+      defaults: TUNABLE_DEFAULTS,
+      preview: previewWith(result.current),
+    });
+  } catch (error) {
+    if (error.status === 400) return bad(res, 400, error.message);
+    console.error('更新發幣參數失敗:', error);
+    return bad(res, 500, error.message || '更新發幣參數失敗');
+  }
+};
+
+/**
+ * POST /api/admin/coin-rules/preview
+ * 不存檔，只用送來的參數試算一次，供面板即時預覽。
+ */
+const previewCoinRules = async (req, res) => {
+  try {
+    const { values, errors } = validateTunables((req.body && req.body.values) || {});
+    if (errors.length) return bad(res, 400, errors.join('；'));
+    const merged = deepMerge(await getSettings(), values);
+    return res.status(200).json({ success: true, preview: previewWith(merged) });
+  } catch (error) {
+    console.error('試算失敗:', error);
+    return bad(res, 500, error.message || '試算失敗');
+  }
+};
+
+/**
+ * 以一份固定的示範菜單試算，讓面板上的數字有比較基準。
+ * 用固定範例而不是當天真實資料，是為了讓「改參數前後」的差異只來自參數本身。
+ */
+const SAMPLE_SERVINGS = 30;
+const SAMPLE_DISHES = [
+  { dishId: 's1', name: '糙米飯', category: '主食', portionG: 120 },
+  { dishId: 's2', name: '紅燒雞腿', category: '主菜', portionG: 90 },
+  { dishId: 's3', name: '滷豆腐', category: '副菜', portionG: 70 },
+  { dishId: 's4', name: '炒高麗菜', category: '蔬菜', portionG: 80 },
+  { dishId: 's5', name: '玉米濃湯', category: '湯品', portionG: 200 },
+];
+
+function previewWith(settings) {
+  const dishMap = new Map(SAMPLE_DISHES.map((d) => [d.dishId, d]));
+  const build = (remainRatio) => SAMPLE_DISHES.map((d) => ({
+    dishId: d.dishId,
+    dishName: d.name,
+    category: d.category,
+    suppliedG: d.portionG * SAMPLE_SERVINGS,
+    leftoverG: d.portionG * SAMPLE_SERVINGS * remainRatio,
+  }));
+
+  const scenario = (label, remainRatio, classWastePerCapitaG, schoolAvgPerCapitaG) => {
+    const nutrition = computeNutrition(build(remainRatio), dishMap, SAMPLE_SERVINGS, settings);
+    const energy = computeEnergyCoins(nutrition, settings);
+    const sdg = computeSdg({
+      classWastePerCapitaG, schoolAvgPerCapitaG,
+      servings: SAMPLE_SERVINGS, settings,
+    });
+    return {
+      label,
+      perCapita: nutrition.perCapita,
+      E: energy.coins,
+      S: sdg.coins,
+      treesPerCapita: sdg.treesPerCapita,
+      treesClass: sdg.treesClass,
+      savedPerCapitaG: sdg.savedPerCapitaG,
+    };
+  };
+
+  return {
+    servings: SAMPLE_SERVINGS,
+    menu: SAMPLE_DISHES.map((d) => `${d.name}(${d.category} ${d.portionG}g)`),
+    scenarios: [
+      scenario('吃光光（殘餘 0%）', 0, 0, 120),
+      scenario('一般（殘餘 20%）', 0.2, 112, 120),
+      scenario('剩很多（殘餘 50%）', 0.5, 280, 120),
+    ],
+  };
+}
+
 module.exports = {
   getOverview,
+  getCoinRules,
+  updateCoinRules,
+  previewCoinRules,
   listClasses,
   createClass,
   updateClass,

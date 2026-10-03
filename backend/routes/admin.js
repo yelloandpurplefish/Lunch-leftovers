@@ -7,6 +7,7 @@ const router = express.Router();
 const {
   getOverview, listClasses, createClass, updateClass,
   setLunchLeader, setTeacher, listUsers, createUser, updateUser,
+  getCoinRules, updateCoinRules, previewCoinRules,
 } = require('../controllers/adminController');
 const { authenticate, requireRole } = require('../middleware/auth');
 const { ROLES } = require('../config/schema');
@@ -21,6 +22,11 @@ router.post('/classes', authenticate, adminOnly, createClass);
 router.patch('/classes/:classId', authenticate, adminOnly, updateClass);
 router.post('/classes/:classId/lunch-leader', authenticate, adminOnly, setLunchLeader);
 router.post('/classes/:classId/teacher', authenticate, adminOnly, setTeacher);
+
+// 發幣公式的可調常數（營養係數、碳排常數、每棵樹吸碳量…）
+router.get('/coin-rules', authenticate, adminOnly, getCoinRules);
+router.put('/coin-rules', authenticate, adminOnly, updateCoinRules);
+router.post('/coin-rules/preview', authenticate, adminOnly, previewCoinRules);
 
 // 帳號
 router.get('/users', authenticate, adminOnly, listUsers);

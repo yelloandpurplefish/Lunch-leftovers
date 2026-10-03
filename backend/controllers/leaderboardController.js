@@ -129,6 +129,112 @@ async function classBoard({ since, schoolId, myClassId, limit }) {
   return { rows: rows.slice(0, limit), mine, total: rows.length };
 }
 
+
+/**
+ * 個人英雄榜：同一列就看得到 E 幣、S 幣與種樹數，不必在三張榜之間切換。
+ *
+ * 樹數取自總帳的 `trees` 欄位而不是使用者身上的累計值，
+ * 因為榜單是**期間**統計（本週/本月/本學期），累計值只能回答「到目前為止」。
+ *
+ * 刻意分兩次查 E 與 S：現有索引是 (ownerType, coin, date)，
+ * 只用 ownerType + date 範圍查會需要另開一個索引，而這裡多一次查詢就夠了。
+ */
+async function heroBoard({ since, within, classId, schoolId, myUid, limit, sort }) {
+  const agg = new Map();
+  const bump = (id, field, amount) => {
+    const cur = agg.get(id) || { E: 0, S: 0, trees: 0 };
+    cur[field] += amount;
+    agg.set(id, cur);
+  };
+
+  for (const coin of ['E', 'S']) {
+    const snap = await db.collection(COL.coinTx)
+      .where('ownerType', '==', 'user')
+      .where('coin', '==', coin)
+      .where('date', '>=', since)
+      .get();
+    snap.docs.forEach((d) => {
+      const t = d.data();
+      const amount = Number(t.amount || 0);
+      if (amount > 0) bump(t.ownerId, coin, amount);        // 只算獲得，不扣兌換
+      const trees = Number(t.trees || 0);
+      if (coin === 'S' && trees > 0) bump(t.ownerId, 'trees', trees);
+    });
+  }
+
+  const ids = [...agg.keys()];
+  const users = new Map();
+  for (let i = 0; i < ids.length; i += 30) {
+    const chunk = ids.slice(i, i + 30);
+    const snaps = await db.getAll(...chunk.map((id) => db.collection(COL.users).doc(id)));
+    snaps.forEach((s) => {
+      if (s.exists) users.set(s.id, s.data());
+    });
+  }
+
+  const key = ['E', 'S', 'trees'].includes(sort) ? sort : 'trees';
+  const rows = ids
+    .map((id) => ({ id, ...agg.get(id), u: users.get(id) }))
+    .filter(({ u }) => {
+      if (!u || u.isActive === false) return false;
+      if (!COIN_HOLDER_ROLES.includes(u.role)) return false;      // 家長/教師不入榜
+      if (within === 'class') return classId && u.classId === classId;
+      return !schoolId || u.schoolId === schoolId;
+    })
+    .map(({ id, E, S, trees, u }) => ({
+      id,
+      displayName: u.displayName || '匿名',
+      className: u.className || null,
+      role: u.role,
+      E: Math.round(E),
+      S: Math.round(S),
+      trees: round(trees, 4),
+      // 累計值另外給：英雄榜下方會顯示「你到目前為止一共種了幾棵樹」
+      treesLifetime: round(Number(u.treesPlanted || 0), 4),
+      value: key === 'trees' ? round(trees, 4) : Math.round(key === 'E' ? E : S),
+      me: id === myUid,
+    }))
+    .sort((a, b) => b.value - a.value || b.trees - a.trees);
+
+  rows.forEach((r, i) => { r.rank = i + 1; });
+  const mine = rows.find((r) => r.me) || null;
+  return { rows: rows.slice(0, limit), mine, total: rows.length, sort: key };
+}
+
+/**
+ * GET /api/leaderboard/heroes?period=&within=&sort=&limit=
+ */
+const getHeroBoard = async (req, res) => {
+  try {
+    const period = PERIOD_DAYS[req.query.period] ? req.query.period : 'week';
+    const within = req.query.within === 'class' ? 'class' : 'school';
+    const sort = req.query.sort;
+    const limit = Math.min(Math.max(parseInt(req.query.limit, 10) || 20, 1), 100);
+    const since = daysAgo(periodDays(period) - 1);
+
+    const result = await heroBoard({
+      since, within, sort, limit,
+      classId: req.user.classId,
+      schoolId: req.user.schoolId,
+      myUid: req.user.uid,
+    });
+
+    return res.status(200).json({
+      success: true,
+      period,
+      within,
+      since,
+      sort: result.sort,
+      total: result.total,
+      rows: result.rows,
+      me: result.mine,
+    });
+  } catch (error) {
+    console.error('取得個人英雄榜失敗:', error);
+    return bad(res, 500, error.message || '取得個人英雄榜失敗');
+  }
+};
+
 const getLeaderboard = async (req, res) => {
   try {
     const scope = req.query.scope === 'class' ? 'class' : 'personal';
@@ -177,4 +283,4 @@ const getLeaderboard = async (req, res) => {
   }
 };
 
-module.exports = { getLeaderboard };
+module.exports = { getLeaderboard, getHeroBoard };
