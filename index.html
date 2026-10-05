@@ -342,7 +342,8 @@
 
     <h2>🤝 今日各菜品剩餘量</h2>
 
-    <p class="field-hint">只有本班某道菜剩得不多時，才會顯示其他班是否還有。</p>
+    <p class="field-hint">每道菜都會顯示其他班的狀況：本班快沒了就告訴你去哪一班拿，
+        本班還有而別班缺就提醒可以提供。午餐長在紀錄畫面也看得到同一份資訊。</p>
 
     <div id="supportDishList">載入中...</div>
 
@@ -385,6 +386,7 @@
 
     <div id="heroMine" class="hero-mine"></div>
 
+    <div class="table-scroll">
     <table class="hero-table">
         <thead>
             <tr>
@@ -399,10 +401,13 @@
             <tr><td colspan="5">載入中...</td></tr>
         </tbody>
     </table>
+    </div>
 
 <h2>🏆 班級排行榜</h2>
 
-    <table>
+    <div class="table-scroll">
+
+    <table class="class-rank-table">
 
         <thead>
 
@@ -423,6 +428,8 @@
         </tbody>
 
     </table>
+
+    </div>
 
 </section>
 

@@ -1,13 +1,20 @@
 /**
  * 跨班支援：細到「每班每個菜品」的剩餘量。
  *
- * 規則（使用者指定）：
- *   **只有在本班此菜品剩餘量低於門檻時**，才顯示其他班是否還有這道菜。
- *   剩餘充足的菜品不會洩漏別班資料 —— 沒有需求就不顯示。
+ * 規則（使用者指定，已於此版改變）：
+ *   **每道菜一律附上其他班的狀況**，不再等本班低於門檻才顯示。
+ *   原本的設計是「沒有需求就不顯示」，改為常態顯示的理由是：
+ *   午餐長在記錄當下就需要知道「這道菜別班還有沒有」才能決定去拿或提供，
+ *   等到跌破門檻才出現已經來不及——那時菜多半也被其他班拿走了。
  *
- * 門檻在 config/schema.js 的 SUPPORT：
- *   shortageRatio  本班剩餘克數 ÷ 當餐供應克數 < 0.15 視為不足
- *   minOfferGrams  其他班至少要剩 300g 才算「還有」，避免顯示幾乎見底的班級
+ * 門檻仍在 config/schema.js 的 SUPPORT，但**只用於標示，不再過濾資料**：
+ *   shortageRatio  本班剩餘比低於此值 → 標為 shortage（UI 強調「本班快沒了」）
+ *   minOfferGrams  別班剩餘低於此值 → canOffer=false（UI 標為「只剩一點」）
+ *
+ * 查詢方式：**整間學校當日只查一次**，再於記憶體依 dishId 分組。
+ * 常態顯示若沿用「每道菜查一次」會變成每次請求 6 次查詢；
+ * 單次查詢反而比舊版（只查缺貨的菜）更省，而且用的是同一個既有索引
+ * （schoolId + date 是 dish_leftovers 索引的前綴）。
  *
  * 資料來源是 dish_leftovers（午餐長每次辨識/微調就即時更新），所以是當餐即時狀況。
  * 本功能只提供資訊，不發幣（個人發幣只有「吃完一餐」與「家長簽到」兩項）。
@@ -27,27 +34,49 @@ function ratioOf(row) {
 /**
  * 把別班的剩餘量列轉成回應格式。
  *
- * `shortage` 是**該班自己**是否也低於門檻。仍然列出它（有 300g 就是有 300g，
- * 對想加菜的班級是真的可取用），但必須讓使用者看得到對方也快沒了——
- * 不然會發生「跑去別班才發現人家也只剩一點」的白跑。
+ * `shortage` 是**該班自己**是否也低於門檻；`canOffer` 是剩餘量是否值得跑一趟。
+ * 兩者都不過濾資料，只是讓 UI 能區分「可以去拿」與「他們也快沒了」——
+ * 不然會發生「跑去別班才發現人家只剩一點」的白跑。
  */
 function toOffer(o) {
   const ratio = ratioOf(o);
+  const leftoverG = Math.round(Number(o.leftoverG || 0));
   return {
     classId: o.classId,
     className: o.className,
     grade: o.grade,
-    leftoverG: Math.round(Number(o.leftoverG || 0)),
+    leftoverG,
     remainingPct: Math.round(ratio * 100),
     shortage: ratio < SUPPORT.shortageRatio,
+    canOffer: leftoverG >= SUPPORT.minOfferGrams,
     updatedAt: o.updatedAt && typeof o.updatedAt.toMillis === 'function'
       ? o.updatedAt.toMillis() : null,
   };
 }
 
 /**
+ * 整間學校當日的剩餘量，依 dishId 分組。
+ * 一次查完再分組，避免「每道菜查一次」。
+ */
+async function schoolDishesByDish(schoolId, date) {
+  const byDish = new Map();
+  if (!schoolId) return byDish;
+  const snap = await db.collection(COL.dishLeftovers)
+    .where('schoolId', '==', schoolId)
+    .where('date', '==', date)
+    .get();
+  snap.docs.forEach((d) => {
+    const row = d.data();
+    if (!row.dishId) return;
+    if (!byDish.has(row.dishId)) byDish.set(row.dishId, []);
+    byDish.get(row.dishId).push(row);
+  });
+  return byDish;
+}
+
+/**
  * GET /api/support/dishes?date=
- * 本班今天各菜品剩餘量；不足的菜品附上「其他班還有嗎」。
+ * 本班今天各菜品剩餘量，**每道菜都附上其他班的狀況**。
  */
 const getDishStatus = async (req, res) => {
   try {
@@ -74,13 +103,18 @@ const getDishStatus = async (req, res) => {
 
     const mine = mineSnap.docs.map((d) => d.data());
     const schoolId = mine[0].schoolId || null;
+    const byDish = await schoolDishesByDish(schoolId, date);
 
-    const dishes = [];
-    for (const row of mine) {
+    const dishes = mine.map((row) => {
       const ratio = ratioOf(row);
-      const shortage = ratio < SUPPORT.shortageRatio;
+      // 剩餘量多的排前面，午餐長一眼就知道該去哪一班
+      const others = (byDish.get(row.dishId) || [])
+        .filter((o) => o.classId !== classId)
+        .map(toOffer)
+        .sort((a, b) => b.leftoverG - a.leftoverG)
+        .slice(0, 10);
 
-      const entry = {
+      return {
         slot: row.slot,
         dishId: row.dishId,
         dishName: row.dishName,
@@ -88,27 +122,12 @@ const getDishStatus = async (req, res) => {
         suppliedG: Math.round(Number(row.suppliedG || 0)),
         leftoverG: Math.round(Number(row.leftoverG || 0)),
         remainingPct: Math.round(ratio * 100),
-        shortage,
-        // 充足的菜品不查別班，也不回傳別班資料
-        otherClasses: null,
+        shortage: ratio < SUPPORT.shortageRatio,
+        otherClasses: others,
+        // 有幾個班真的拿得出來（≥ minOfferGrams），UI 用來決定要不要強調
+        offerCount: others.filter((o) => o.canOffer).length,
       };
-
-      if (shortage && row.dishId) {
-        const othersSnap = await db.collection(COL.dishLeftovers)
-          .where('schoolId', '==', schoolId)
-          .where('date', '==', date)
-          .where('dishId', '==', row.dishId)
-          .orderBy('leftoverG', 'desc')
-          .limit(10)
-          .get();
-
-        entry.otherClasses = othersSnap.docs
-          .map((d) => d.data())
-          .filter((o) => o.classId !== classId && Number(o.leftoverG || 0) >= SUPPORT.minOfferGrams)
-          .map(toOffer);
-      }
-      dishes.push(entry);
-    }
+    });
 
     const shortages = dishes.filter((d) => d.shortage);
     return res.status(200).json({
@@ -126,9 +145,13 @@ const getDishStatus = async (req, res) => {
       summary: {
         total: dishes.length,
         shortages: shortages.length,
-        withHelp: shortages.filter((d) => (d.otherClasses || []).length > 0).length,
-        // 有缺貨但目前沒人能支援 → 前端會繼續輪詢等別班記錄
-        awaitingHelp: shortages.filter((d) => !(d.otherClasses || []).length).length,
+        // 本班缺貨且真的有班級拿得出來
+        withHelp: shortages.filter((d) => d.offerCount > 0).length,
+        // 本班缺貨但目前沒人能支援 → 前端會繼續輪詢等別班記錄
+        awaitingHelp: shortages.filter((d) => d.offerCount === 0).length,
+        // 本班有剩、而別班缺這道菜 → 可以主動提供
+        canShare: dishes.filter((d) => !d.shortage
+          && (d.otherClasses || []).some((o) => o.shortage)).length,
       },
     });
   } catch (error) {
@@ -139,7 +162,7 @@ const getDishStatus = async (req, res) => {
 
 /**
  * GET /api/support/dish/:dishId?date=
- * 單一菜品的跨班分布（僅在本班該菜品不足時才允許查看，避免繞過門檻）。
+ * 單一菜品的跨班分布。改為常態顯示後不再有「本班不缺就不給看」的限制。
  */
 const getDishAcrossClasses = async (req, res) => {
   try {
@@ -159,19 +182,6 @@ const getDishAcrossClasses = async (req, res) => {
     const mine = mineSnap.docs[0].data();
     const ratio = ratioOf(mine);
 
-    if (ratio >= SUPPORT.shortageRatio) {
-      return res.status(200).json({
-        success: true,
-        date,
-        dishId,
-        dishName: mine.dishName,
-        remainingPct: Math.round(ratio * 100),
-        shortage: false,
-        otherClasses: null,
-        message: `本班的${mine.dishName}還有 ${Math.round(ratio * 100)}%，不需要跨班支援`,
-      });
-    }
-
     const othersSnap = await db.collection(COL.dishLeftovers)
       .where('schoolId', '==', mine.schoolId || null)
       .where('date', '==', date)
@@ -182,7 +192,7 @@ const getDishAcrossClasses = async (req, res) => {
 
     const otherClasses = othersSnap.docs
       .map((d) => d.data())
-      .filter((o) => o.classId !== classId && Number(o.leftoverG || 0) >= SUPPORT.minOfferGrams)
+      .filter((o) => o.classId !== classId)
       .map(toOffer);
 
     return res.status(200).json({
@@ -191,12 +201,13 @@ const getDishAcrossClasses = async (req, res) => {
       dishId,
       dishName: mine.dishName,
       remainingPct: Math.round(ratio * 100),
-      shortage: true,
+      shortage: ratio < SUPPORT.shortageRatio,
       otherClasses,
+      offerCount: otherClasses.filter((o) => o.canOffer).length,
       generatedAt: Date.now(),
-      message: otherClasses.length
-        ? `${otherClasses.length} 個班級還有${mine.dishName}`
-        : `目前沒有其他班級還有${mine.dishName}`,
+      message: otherClasses.some((o) => o.canOffer)
+        ? `${otherClasses.filter((o) => o.canOffer).length} 個班級還有${mine.dishName}`
+        : `目前沒有其他班級拿得出${mine.dishName}`,
     });
   } catch (error) {
     console.error('取得跨班菜品分布失敗:', error);

@@ -48,8 +48,8 @@ header p{
     position:fixed;
     top:0;
     left:0;
-    width:100vw;
-    height:100vh;
+    width:100%;
+    height:100%;
     z-index:9999;
     background:#000;
     display:flex;
@@ -79,9 +79,7 @@ header p{
 }
 
 .video{
-    width:90%;
-    max-width:900px;
-    margin:30px auto;
+
     text-align:center;
     min-height:70vh;
     display:flex;
@@ -510,8 +508,6 @@ button:hover{
     display:grid;
     grid-template-columns:repeat(3,minmax(0,1fr));
     gap:clamp(8px,2vw,20px);
-    margin:30px;
-    width:100%;
 
 }
 
@@ -548,32 +544,9 @@ button:hover{
 
 }
 
-@media (max-width: 640px){
-    .coin{
-        margin:20px 0;
-        gap:8px;
-    }
-
-    .card{
-        padding:12px 8px;
-    }
-
-    .card h3{
-        font-size:12px;
-    }
-
-    .card span{
-        font-size:24px;
-    }
-}
-
 .menu{
 
     background:white;
-
-    width:90%;
-
-    max-width:900px;
 
     margin:20px auto;
 
@@ -604,13 +577,6 @@ button:hover{
 /* ===== 任務 ===== */
 
 .task{
-
-    width:90%;
-
-    max-width:900px;
-
-    margin:30px auto;
-
     background:white;
 
     padding:20px;
@@ -631,13 +597,6 @@ button:hover{
 /* ===== 排行榜 ===== */
 
 .ranking{
-
-    width:90%;
-
-    max-width:900px;
-
-    margin:30px auto;
-
     background:white;
 
     border-radius:20px;
@@ -756,9 +715,6 @@ td{
 
 .shop{
 
-    width:90%;
-    max-width:900px;
-    margin:30px auto;
     background:white;
     border-radius:20px;
     padding:20px;
@@ -805,11 +761,6 @@ td{
 
 .survey{
 
-    width:90%;
-    max-width:900px;
-
-    margin:30px auto;
-
     background:white;
 
     padding:20px;
@@ -849,11 +800,6 @@ td{
 
 .leader{
 
-    width:90%;
-    max-width:900px;
-
-    margin:30px auto;
-
     background:white;
 
     padding:20px;
@@ -884,11 +830,6 @@ td{
 /* ===== 剩食獎勵 ===== */
 
 .reward{
-
-    width:90%;
-    max-width:900px;
-
-    margin:30px auto;
 
     background:white;
 
@@ -2187,10 +2128,396 @@ body{
     margin-top:12px;
 }
 
+
+
+/* ══════════════════════════════════════════════════════════════════
+   版面參數與 RWD
+   ══════════════════════════════════════════════════════════════════
+
+   這一段是**版面幾何的單一來源**。上面的規則是功能開發時逐步長出來的，
+   各自帶著 width:90%、max-width:900px/700px/420px 等寫死的值，
+   彼此不約束，卡片左右邊界因此對不齊。這裡用一組參數統一收斂，
+   並讓斷點只改參數、不改結構——要調整版面請改 :root 的變數，
+   不要再往各個元件裡塞新的寬度。
+
+   兩種內容寬度，對應兩種使用情境：
+     --card-max       學生面向。手機與平板為主，取閱讀寬度。
+     --card-max-wide  管理員與技術員。桌機為主，是資料工具，需要放表格。
+
+   邊距用**固定值而非百分比**：width:90% 在 375px 手機上會吃掉 37.5px，
+   而手機正是水平空間最稀缺的地方；固定 gutter 讓小螢幕拿回內容寬度，
+   大螢幕則由 max-width 接手，兩者不互相干擾。
+   ────────────────────────────────────────────────────────────────── */
+
+:root{
+    /* 內容與螢幕邊緣的距離 */
+    --gutter:16px;
+
+    /* 內容寬度上限 */
+    --card-max:880px;
+    --card-max-wide:1320px;
+
+    /* 卡片內距與圓角 */
+    --card-pad:20px;
+    --radius:20px;
+    --radius-sm:14px;
+
+    /* 卡片之間的垂直間距 */
+    --stack:24px;
+
+    /* 固定底部導覽佔用的高度（body 下緣留白要跟它一致） */
+    --nav-h:72px;
+}
+
+/* 任何可能比容器寬的內容都先夾住，避免整頁出現橫向捲動 */
+img, iframe, video, canvas, svg{
+    max-width:100%;
+}
+
+/* 全站盒模型統一，否則 padding 會把上面那些寬度計算全部撐開 */
+*, *::before, *::after{
+    box-sizing:border-box;
+}
+
+/* ── 第一層：版面幾何 ─────────────────────────────────────────
+   凡是「直接決定左右邊界」的頂層區塊都套這一組，邊界才會連成一條線。
+   這裡只管寬度與置中，不碰外觀——因為 .coin 是**一排卡片的容器**
+   而不是卡片本身，它要跟著對齊，但不該有自己的背景與內距。
+
+   用 `#app > section.page` 結構選取而不是逐一列出 .ranking/.shop/…，
+   因為用列舉的話每新增一個區塊就得記得回來補——#trend（.food-chart）
+   當初就是這樣被漏掉，整段變成沒有寬度上限的全幅元素。
+
+   **#home 必須排除**：它是透明容器，真正的卡片是它裡面的 .menu/.task。
+   若連它也套上寬度，內層卡片會在它的基礎上再縮一個 gutter，
+   反而與其他區塊錯開一條邊。
+
+   涵蓋三種情況：本身就是卡片的 section、放在 #home 裡的卡片、卡片列（coin）。
+   彈窗（.lottery-content）不在此列，它有自己的定位邏輯。 */
+.video,
+.coin,
+.menu,
+.task,
+#app > section.page:not(#home),
+.teacher-panel{
+    width:min(100% - var(--gutter) * 2, var(--card-max));
+    max-width:none;
+    margin-inline:auto;
+    margin-block:var(--stack);
+}
+
+/* ── 第二層：卡片外觀 ─────────────────────────────────────────
+   只有真正是卡片的才有內距與圓角。.coin 刻意不在此列。 */
+.video,
+.menu,
+.task,
+#app > section.page:not(#home),
+.teacher-panel{
+    padding:var(--card-pad);
+    border-radius:var(--radius);
+}
+
+/* 管理員與技術員是桌機上的資料工具，給更寬的版面放表格 */
+#adminZone,
+#techZone{
+    width:min(100% - var(--gutter) * 2, var(--card-max-wide));
+}
+
+/* 四個角色專區原本完全沒有樣式（沒有背景、沒有內距、沒有寬度上限），
+   內容會直接貼到螢幕邊緣。補上與其他卡片一致的外觀。 */
+.teacher-panel{
+    background:#fff;
+    box-shadow:0 4px 14px rgba(0,0,0,.08);
+    text-align:left;
+}
+
+.teacher-panel > h2{
+    margin:0 0 10px;
+    font-size:22px;
+    color:#2e7d32;
+}
+
+/* ── 內層卡片：填滿父層，不要自己再縮一次 ─────────────────────
+   這些原本各有 max-width:700px / 760px / 420px，放在 880px 的面板裡
+   會留下兩側不等寬的空白，看起來像沒對齊。改為填滿父層內距邊界。 */
+.check-summary,
+.check-row,
+.bucket-card,
+.record-summary,
+.dish-status,
+.admin-row,
+.tech-register-row,
+.reward{
+    width:auto;
+    max-width:100%;
+    margin-inline:0;
+}
+
+/* 參數面板有表格，不能套用 .admin-card 的 420px 上限 */
+.coin-rules-card{
+    max-width:100%;
+}
+
+/* 長字串（帳號、Email、裝置 ID）不該把格子撐開 */
+.admin-row,
+.check-row,
+table td,
+table th{
+    overflow-wrap:anywhere;
+}
+
+/* ── 表格：窄螢幕改為橫向滑動，而不是把版面撐破 ───────────────
+   欄數多的表格在手機上硬要塞進螢幕只會讓每欄都不可讀。
+   給一個最小寬度並允許容器橫向捲動，讓使用者自己滑。 */
+.table-scroll{
+    overflow-x:auto;
+    -webkit-overflow-scrolling:touch;
+    margin-block:10px;
+}
+
+.table-scroll > table{
+    width:100%;
+    margin:0;
+}
+
+.hero-table{ min-width:420px; }       /* 名次/姓名/E/S/樹 共 5 欄 */
+.rule-table{ min-width:360px; }
+.reading-table{ min-width:420px; }
+/* 用明確的 class 而不是 `.ranking .table-scroll > table`：後者的特異度
+   （0,2,1）會連同一個 .ranking 裡的 .hero-table 一起蓋掉，
+   英雄榜的 420px 最小寬度就失效了。 */
+.class-rank-table{ min-width:320px; }
+
+/* ── 手機與平板直立：學生的主力環境 ───────────────────────── */
+@media (max-width:768px){
+    :root{
+        --gutter:14px;
+        --card-pad:16px;
+        --radius:16px;
+        --stack:18px;
+    }
+
+    header{ padding:14px 16px; }
+    header h1{ font-size:24px; }
+    header p{ font-size:14px; }
+
+    .teacher-panel > h2{ font-size:19px; }
+
+    /* 三個幣別卡片在窄螢幕要讓數字優先：標題縮小、數字維持可讀 */
+    /* 只改垂直邊距：寫成 margin 簡寫會蓋掉上面的 margin-inline:auto，
+       .coin 就會變成左對齊，與其他卡片錯開一個 gutter。 */
+    .coin{
+        margin-block:20px;
+        gap:8px;
+    }
+    .card{ padding:12px 8px; }
+    .card h3{ font-size:12px; }
+    .card span{ font-size:24px; }
+
+    /* 單欄堆疊：並排在手機上每欄都太窄 */
+    .admin-grid{ gap:12px; }
+    .admin-card{
+        flex:1 1 100%;
+        max-width:100%;
+    }
+
+    /* 操作列改為換行，避免按鈕被壓成兩個字寬 */
+    .admin-row,
+    .tech-register-row,
+    .rules-actions,
+    .check-actions{
+        flex-wrap:wrap;
+    }
+
+    .hero-controls{ gap:8px; }
+    .hero-controls label{ flex:1 1 calc(50% - 8px); }
+}
+
+/* ── 小尺寸手機 ─────────────────────────────────────────────── */
+@media (max-width:420px){
+    :root{
+        --gutter:10px;
+        --card-pad:13px;
+        --stack:14px;
+    }
+
+    header h1{ font-size:21px; }
+
+    /* 幣別卡片這時才真的需要縮排版，再窄就讀不到數字了 */
+    .coin{ gap:6px; }
+
+    .hero-controls label{ flex:1 1 100%; }
+}
+
+/* ── 平板橫放 ───────────────────────────────────────────────── */
+@media (min-width:769px) and (max-width:1024px){
+    :root{
+        --gutter:20px;
+        --card-pad:20px;
+    }
+
+    /* 這個寬度剛好放得下兩張管理卡片 */
+    .admin-card{ flex:1 1 calc(50% - 16px); }
+}
+
+/* ── 桌機：管理員的主力環境 ─────────────────────────────────── */
+@media (min-width:1280px){
+    :root{
+        --gutter:24px;
+        --card-pad:24px;
+        --stack:28px;
+    }
+
+    /* 資料工具靠左排列。居中會在卡片數量不是整排時留下不對稱的空隙 */
+    .admin-grid,
+    .tech-grid{
+        justify-content:flex-start;
+    }
+
+    /* 寬螢幕下表格已經放得下，不需要橫向捲動的最小寬度 */
+    .hero-table,
+    .rule-table,
+    .reading-table{ min-width:0; }
+}
+
+/* ── 固定底部導覽 ───────────────────────────────────────────── */
+
+/* body 的下緣留白要跟導覽高度綁在一起，否則最後一張卡片會被蓋住。
+   原本寫死 96px，與導覽實際高度無關，改用同一個參數。 */
+body{
+    padding-bottom:calc(var(--nav-h) + 16px + env(safe-area-inset-bottom));
+}
+
+/* 桌機上橫跨 1920px 的手機式導覽條很突兀，收成居中的膠囊。
+   顯示/隱藏同時用到 translate，兩個狀態都要改，否則會錯位。 */
+@media (min-width:1025px){
+    .bottom-nav{
+        width:min(100% - 48px, 720px);
+        left:50%;
+        border-radius:var(--radius) var(--radius) 0 0;
+        transform:translate(-50%, 120%);
+    }
+
+    .bottom-nav.visible{
+        transform:translate(-50%, 0);
+    }
+}
+
+/* ── 橫向短螢幕（手機橫放）────────────────────────────────────
+   高度不足時固定導覽會吃掉大半可視區域，改用較緊湊的尺寸。 */
+@media (max-height:480px) and (orientation:landscape){
+    :root{ --nav-h:56px; --stack:12px; }
+
+    .bottom-nav{ padding:4px 6px calc(4px + env(safe-area-inset-bottom)); }
+    .bottom-nav button{ font-size:11px; padding:4px 8px; }
+    .video{ min-height:auto; }
+}
+
+/* 支援印表（老師可能要印出勾選名單）：收起互動元件與固定導覽 */
+@media print{
+    .bottom-nav,
+    .intro-video,
+    .lottery-modal,
+    button{ display:none !important; }
+
+    body{ padding-bottom:0; background:#fff; }
+
+    .video,
+    .menu,
+    .task,
+    #app > section.page:not(#home),
+    .teacher-panel{
+        width:100%;
+        box-shadow:none;
+        break-inside:avoid;
+    }
+}
+
+
+/* ── 元件級斷點 ─────────────────────────────────────────────────
+   以下斷點**不是**全站版面斷點，而是單一元件自己的換行門檻，
+   取決於該元件內部放得下多少欄，與整體版面無關。
+   刻意與上面的 420/768/1024/1280 分開列出，避免被誤認為全站斷點
+   而在裡面塞不相關的規則。 */
+
+/* 發幣參數的每一列是「說明 + 輸入框 + 單位 + 預設值」四欄。
+   低於約 600px 時四欄會把輸入框壓到不能用，改為說明獨占一行。 */
 @media (max-width:600px){
     .rule-row{
         grid-template-columns:1fr 1fr;
         row-gap:4px;
     }
     .rule-row .rule-label{ grid-column:1 / -1; }
+}
+
+
+/* #trend（.food-chart）與四個角色專區一樣，原本完全沒有 CSS。
+   幾何已由上面的結構選取接管，這裡補上卡片外觀與圖表的尺寸約束。 */
+.food-chart{
+    background:#fff;
+    box-shadow:0 4px 14px rgba(0,0,0,.08);
+    text-align:left;
+}
+
+.food-chart > h2{
+    margin:0 0 10px;
+    font-size:22px;
+    color:#2e7d32;
+}
+
+/* 圖表要跟著容器縮放，否則在手機上會把卡片撐開 */
+.food-chart canvas,
+.food-chart svg{
+    width:100%;
+    height:auto;
+    max-height:320px;
+}
+
+@media (max-width:768px){
+    .food-chart > h2{ font-size:19px; }
+    .food-chart canvas,
+    .food-chart svg{ max-height:220px; }
+}
+
+
+/* ── 跨班支援：常態顯示的四種狀態 ─────────────────────────────
+   舊版只在本班缺貨時才出現，只需要一種樣式。改為常態顯示後要能一眼
+   分辨「該去拿」、「可以提供」與「只是順便知道」，否則整頁都是提示
+   反而等於沒有提示。 */
+
+/* 本班有剩、別班缺 → 可以主動提供（舊版完全看不到這種情況） */
+.dish-share{
+    margin:8px 0 0;
+    font-size:13px;
+    color:#1b5e20;
+    background:#eaf6ea;
+    border-radius:10px;
+    padding:6px 10px;
+}
+
+/* 大家都還有 → 只是資訊，刻意壓低視覺重量 */
+.dish-other{
+    margin:8px 0 0;
+    font-size:12px;
+    color:#8a8f98;
+}
+
+/* 紀錄面板裡接在滑桿下方的那一行 */
+.dish-row-cross{
+    margin:-2px 0 10px;
+    padding-left:4px;
+    border-left:3px solid #e8f5e9;
+}
+
+.dish-row-cross.shortage{
+    border-left-color:#e74c3c;
+}
+
+.dish-row-cross p{
+    margin:4px 0 0;
+}
+
+@media (max-width:420px){
+    .dish-share,
+    .dish-other{ font-size:12px; }
 }

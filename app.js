@@ -544,10 +544,12 @@ function renderCoinRules() {
     box.innerHTML = `
         <div class="rule-group">${scalar}</div>
         <h4>每公斤食物的營養含量（菜品可個別覆寫，沒填才用這裡的分類預設）</h4>
+        <div class="table-scroll">
         <table class="rule-table">
             <thead><tr><th>分類</th><th>蛋白質 g/kg</th><th>膳食纖維 g/kg</th></tr></thead>
             <tbody>${nutrition}</tbody>
-        </table>`;
+        </table>
+        </div>`;
 }
 
 function renderRulesPreview(preview) {
@@ -555,6 +557,7 @@ function renderRulesPreview(preview) {
     if (!box || !preview) return;
     box.innerHTML = `
         <p class="field-hint">以 ${preview.servings} 人份示範菜單試算：${(preview.menu || []).join('、')}</p>
+        <div class="table-scroll">
         <table class="rule-table">
             <thead><tr><th>情境</th><th>人均攝取</th><th>E幣</th><th>S幣</th><th>全班種樹</th></tr></thead>
             <tbody>${(preview.scenarios || []).map((s) => `
@@ -566,7 +569,8 @@ function renderRulesPreview(preview) {
                     <td>${formatTrees(s.treesClass)} 棵</td>
                 </tr>`).join('')}
             </tbody>
-        </table>`;
+        </table>
+        </div>`;
 }
 
 /** 從表單讀回使用者填的值，組成後端要的巢狀結構。 */
@@ -1340,6 +1344,22 @@ async function startRecord() {
     }
 }
 
+/**
+ * 紀錄面板裡單一道菜的跨班狀況。
+ *
+ * 午餐長記錄當下就需要知道「這道菜別班還有沒有」——等結算後再看支援卡片，
+ * 菜多半已經被其他班拿走了。顯示在滑桿正下方，調完比例馬上看到後果。
+ *
+ * 資料還沒載到時回空字串而不是「載入中」：桶卡片每拖一次滑桿就重繪一次，
+ * 閃動的佔位文字比沒有更干擾。
+ */
+function renderDishCrossClass(dishId) {
+    if (!dishId) return '';
+    const d = supportByDish.get(dishId);
+    if (!d) return '';
+    return `<div class="dish-row-cross ${d.shortage ? 'shortage' : ''}">${renderCrossClass(d)}</div>`;
+}
+
 function renderRecordBuckets() {
     const box = document.getElementById('recordBuckets');
     if (!box || !recordSession) return;
@@ -1360,6 +1380,7 @@ function renderRecordBuckets() {
                            data-bucket-id="${b.bucketId}" data-slot="${it.slot}" class="ratio-slider">
                     <span class="dish-value">剩 ${Math.round(it.remainingRatio * 100)}%　${Math.round(it.leftoverG)}g</span>
                 </div>
+                ${renderDishCrossClass(it.dishId)}
             `).join('') : ''}
         </div>
     `).join('');
@@ -1542,6 +1563,15 @@ const SUPPORT_POLL_MS = 30000;        // 午餐時段 30 秒一次，足夠即�
 let supportPollTimer = null;
 let supportState = { hasShortage: false, awaitingHelp: 0, generatedAt: 0, loading: false };
 
+/**
+ * dishId → 該道菜的跨班狀況。
+ *
+ * 紀錄面板與支援卡片是**同一份資料的兩種呈現**，所以存成共用狀態而不是
+ * 各自再打一次 API：午餐長在紀錄時每動一次滑桿都會重新渲染桶卡片，
+ * 若那時才去抓資料，會變成每拖一下就一次請求。
+ */
+let supportByDish = new Map();
+
 function startSupportPolling() {
     if (supportPollTimer || document.hidden) return;
     supportPollTimer = setInterval(() => {
@@ -1556,9 +1586,21 @@ function stopSupportPolling() {
     supportPollTimer = null;
 }
 
-/** 依目前是否缺貨決定要不要繼續輪詢。 */
+/**
+ * 決定要不要繼續輪詢。
+ *
+ * 兩種情況需要持續更新：
+ *   · 本班有菜缺貨 → 在等別班記錄出現
+ *   · 正在紀錄中   → 跨班資訊現在是紀錄畫面的一部分，別班隨時在變
+ * 其餘情況不輪詢，避免沒人在看的時候一直打 API。
+ */
+function isRecordingNow() {
+    return Boolean(recordSession) && recordSession.status !== 'done';
+}
+
 function syncSupportPolling() {
-    if (supportState.hasShortage && currentUser) startSupportPolling();
+    const needed = currentUser && (supportState.hasShortage || isRecordingNow());
+    if (needed) startSupportPolling();
     else stopSupportPolling();
 }
 
@@ -1618,6 +1660,9 @@ async function loadSupportDishes(opts) {
             return;
         }
 
+        // 每道菜都記起來，紀錄面板會用同一份資料
+        supportByDish = new Map(data.dishes.filter((d) => d.dishId).map((d) => [d.dishId, d]));
+
         box.innerHTML = data.dishes.map((d) => `
             <div class="dish-status ${d.shortage ? 'shortage' : ''}">
                 <div class="dish-status-head">
@@ -1625,24 +1670,57 @@ async function loadSupportDishes(opts) {
                     <span>剩 ${d.remainingPct}%（${d.leftoverG}g）</span>
                 </div>
                 <div class="dish-bar"><div class="dish-bar-fill" style="width:${Math.min(100, d.remainingPct)}%"></div></div>
-                ${d.shortage ? (
-                    (d.otherClasses && d.otherClasses.length)
-                        ? `<p class="dish-help">🤝 這些班還有：${d.otherClasses.map((o) =>
-                              // 對方也低於門檻時要講明，免得白跑一趟
-                              `${o.className} 班 ${o.leftoverG}g${o.shortage ? '<span class="offer-warn">（他們也快沒了）</span>' : ''}`
-                          ).join('、')}</p>`
-                        : '<p class="field-hint">本班快吃完了，目前其他班也沒有剩——其他班陸續記錄後這裡會自動更新。</p>'
-                ) : ''}
+                ${renderCrossClass(d)}
             </div>
         `).join('');
         renderSupportMeta();
         syncSupportPolling();
+        // 紀錄面板的每一道菜也要跟著更新
+        renderRecordBuckets();
     } catch (error) {
         box.innerHTML = '<p>載入失敗</p>';
     } finally {
         supportState.loading = false;
         box.removeAttribute('aria-busy');
     }
+}
+
+/**
+ * 一道菜的跨班狀況。支援卡片與紀錄面板共用這一段。
+ *
+ * 常態顯示後要處理四種情況，而不是只有「缺貨且有人能幫」：
+ *   本班缺 + 別班有   → 去哪一班拿（主要用途）
+ *   本班缺 + 別班沒有 → 明說沒有，並告知會自動更新，免得一直重按
+ *   本班有剩 + 別班缺 → 可以主動提供（這是舊版完全看不到的情況）
+ *   都還有            → 只報個數字，不喧賓奪主
+ */
+function renderCrossClass(d) {
+    const others = d.otherClasses || [];
+    if (!others.length) {
+        return d.shortage
+            ? '<p class="field-hint">本班快吃完了，目前沒有其他班的紀錄——別班陸續記錄後會自動更新。</p>'
+            : '<p class="field-hint">其他班今天還沒記錄這道菜。</p>';
+    }
+
+    // 對方也低於門檻時要講明，免得白跑一趟
+    const label = (o) => `${o.className} 班 ${o.leftoverG}g`
+        + (o.shortage ? '<span class="offer-warn">（他們也快沒了）</span>' : '');
+
+    const offers = others.filter((o) => o.canOffer);
+    if (d.shortage) {
+        return offers.length
+            ? `<p class="dish-help">🤝 去這些班拿：${offers.map(label).join('、')}</p>`
+            : `<p class="field-hint">本班快吃完了，其他班也都只剩一點：`
+              + `${others.map(label).join('、')}</p>`;
+    }
+
+    const needy = others.filter((o) => o.shortage);
+    if (needy.length) {
+        return `<p class="dish-share">💪 本班還有，這些班缺：`
+             + `${needy.map((o) => `${o.className} 班只剩 ${o.leftoverG}g`).join('、')}</p>`;
+    }
+    return `<p class="dish-other">其他班：${others.map((o) =>
+        `${o.className} 班 ${o.leftoverG}g`).join('、')}</p>`;
 }
 
 /** 在卡片上顯示資料截至時間與輪詢狀態。 */
@@ -2107,14 +2185,15 @@ async function showReadings(el) {
             box.innerHTML = '<p class="field-hint">這台還沒有讀數</p>';
             return;
         }
-        box.innerHTML = '<table class="reading-table"><tr><th>時間</th><th>原始值</th><th>毛重</th><th>淨重</th></tr>' +
+        box.innerHTML = '<div class="table-scroll"><table class="reading-table">'
+            + '<tr><th>時間</th><th>原始值</th><th>毛重</th><th>淨重</th></tr>' +
             data.readings.map((r) => `
                 <tr class="${r.outOfRange ? 'out-of-range' : ''}">
                     <td>${r.receivedAt ? new Date(r.receivedAt).toLocaleTimeString('zh-TW') : '-'}</td>
                     <td>${r.raw ?? '-'}</td>
                     <td>${r.grossG}g</td>
                     <td>${r.netG}g${r.stable === false ? '（不穩）' : ''}</td>
-                </tr>`).join('') + '</table>';
+                </tr>`).join('') + '</table></div>';
     } catch (error) {
         box.innerHTML = '<p>載入失敗</p>';
     }
