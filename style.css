@@ -506,9 +506,16 @@ button:hover{
 .coin{
 
     display:grid;
-    grid-template-columns:repeat(3,minmax(0,1fr));
+    /* 四張卡（E/S/G/積分）。手機放不下四欄，所以用 auto-fit 讓它自己折行：
+       寫死 repeat(4,...) 在 390px 寬的手機上每張卡只剩 80px，數字會被壓掉。 */
+    grid-template-columns:repeat(auto-fit,minmax(130px,1fr));
     gap:clamp(8px,2vw,20px);
 
+}
+
+@media (min-width:768px){
+    /* 平板以上四張並排，排序才和導覽列的順序一致 */
+    .coin{ grid-template-columns:repeat(4,minmax(0,1fr)); }
 }
 
 .card{
@@ -2542,6 +2549,16 @@ body{
     color:#1b2420;
 }
 
+/* 「為什麼不喜歡？」固定為淺色：使用者指定這個欄位不隨系統深淺模式變。
+   只刪掉深色規則不夠——瀏覽器仍會用深色樣式畫游標、選取色與捲軸，
+   color-scheme 才是關掉那層 UA 行為的開關。 */
+#surveyReason{
+    color-scheme:light;
+    background:#fff;
+    color:#1b2420;
+    border-color:#d4dcd7;
+}
+
 #parentComment:focus,
 #surveyReason:focus{
     outline:2px solid #2e7d32;
@@ -2569,8 +2586,7 @@ body{
 }
 
 @media (prefers-color-scheme: dark){
-    :root:not([data-theme="light"]) #parentComment,
-    :root:not([data-theme="light"]) #surveyReason{
+    :root:not([data-theme="light"]) #parentComment{
         background:#1b211e;
         color:#e6ebe7;
         border-color:#2e3833;
@@ -2585,8 +2601,7 @@ body{
     }
 }
 
-:root[data-theme="dark"] #parentComment,
-:root[data-theme="dark"] #surveyReason{
+:root[data-theme="dark"] #parentComment{
     background:#1b211e;
     color:#e6ebe7;
     border-color:#2e3833;
@@ -2700,4 +2715,142 @@ body{
 .sync-opt .field-hint{
     display:block;
     margin:2px 0 0 22px;
+}
+
+
+/* ── 今日菜單：左欄菜色、右欄建議攝取 ──────────────────────────
+   學生主力是手機，所以預設單欄堆疊；平板以上才並排，
+   並讓右欄窄一些（它只放一個數字與幾行說明，不需要和菜單等寬）。 */
+.menu-grid{
+    display:grid;
+    grid-template-columns:1fr;
+    gap:clamp(12px,2.5vw,24px);
+}
+
+@media (min-width:768px){
+    .menu-grid{ grid-template-columns:minmax(0,1.6fr) minmax(0,1fr); }
+}
+
+.menu-col{ min-width:0; }          /* 格線子項目要能縮，否則長菜名會撐破版面 */
+
+.menu-col h2{ margin-top:0; }
+
+.intake-col{
+    background:var(--intake-bg,#f3f8f4);
+    border:1px solid var(--line,#d4dcd7);
+    border-radius:12px;
+    padding:14px 16px;
+}
+
+.menu-list{
+    list-style:none;
+    margin:0;
+    padding:0;
+}
+
+.menu-list li{
+    display:grid;
+    grid-template-columns:auto 1fr auto;
+    align-items:baseline;
+    gap:10px;
+    padding:7px 0;
+    border-bottom:1px solid var(--line,#e8eeea);
+}
+
+.menu-list li:last-child{ border-bottom:none; }
+
+.menu-slot{
+    font-size:12px;
+    color:#5f6b64;
+    background:#eef3f0;
+    border-radius:999px;
+    padding:2px 9px;
+    white-space:nowrap;
+}
+
+.menu-dish{
+    min-width:0;
+    overflow-wrap:anywhere;        /* 菜名可能很長，不能讓它推出格線 */
+}
+
+.menu-portion{
+    font-size:12px;
+    color:#5f6b64;
+    white-space:nowrap;
+}
+
+.menu-empty{
+    padding:18px 0;
+    color:#5f6b64;
+}
+
+.intake-kcal{
+    margin:4px 0 0;
+    line-height:1;
+}
+
+.intake-n{
+    font-size:clamp(32px,7vw,44px);
+    font-weight:700;
+    color:#2e7d32;
+}
+
+.intake-unit{
+    font-size:14px;
+    color:#5f6b64;
+    margin-left:4px;
+}
+
+.intake-cat{
+    margin:6px 0 10px;
+    font-weight:600;
+}
+
+/* 過輕與過重都是「要留意」，不用紅綠對錯的語意 */
+.intake-cat.ok{ color:#2e7d32; }
+.intake-cat.low{ color:#1565c0; }
+.intake-cat.high{ color:#b26a00; }
+
+/* ── 商城關閉提示 ──────────────────────────────────────────── */
+.shop-closed{
+    margin:0 0 14px;
+    padding:12px 14px;
+    border-radius:10px;
+    background:#fff6e5;
+    border:1px solid #f0d9a8;
+    color:#7a5200;
+}
+
+.shop-toggle-card .admin-row{ margin-top:10px; }
+
+@media (prefers-color-scheme: dark){
+    :root:not([data-theme="light"]) .intake-col{
+        background:#1b211e;
+        border-color:#2e3833;
+    }
+    :root:not([data-theme="light"]) .menu-slot,
+    :root:not([data-theme="light"]) .menu-portion{
+        background:transparent;
+        color:#98a69e;
+    }
+    :root:not([data-theme="light"]) .menu-slot{ background:#222a26; }
+    :root:not([data-theme="light"]) .menu-list li{ border-bottom-color:#2e3833; }
+    :root:not([data-theme="light"]) .shop-closed{
+        background:#2a2318;
+        border-color:#4a3c22;
+        color:#e8cf9a;
+    }
+}
+
+:root[data-theme="dark"] .intake-col{
+    background:#1b211e;
+    border-color:#2e3833;
+}
+:root[data-theme="dark"] .menu-slot{ background:#222a26; color:#98a69e; }
+:root[data-theme="dark"] .menu-portion{ color:#98a69e; }
+:root[data-theme="dark"] .menu-list li{ border-bottom-color:#2e3833; }
+:root[data-theme="dark"] .shop-closed{
+    background:#2a2318;
+    border-color:#4a3c22;
+    color:#e8cf9a;
 }

@@ -24,6 +24,7 @@ const sheet = require('../lib/studentSheet');
 const menu = require('../lib/menuSheet');
 const { TUNABLE_DEFAULTS } = require('../config/schema');
 const { computeNutrition, computeEnergyCoins, computeSdg } = require('../lib/scoring');
+const shop = require('../lib/shop');
 
 const serverTime = () => admin.firestore.FieldValue.serverTimestamp();
 const norm = (v) => String(v == null ? '' : v).trim();
@@ -1010,7 +1011,57 @@ const syncMenus = async (req, res) => {
   }
 };
 
+
+// ── 商城開關 ────────────────────────────────────────────────────
+/**
+ * GET /api/admin/shop
+ * 面板需要分別看到「環境變數允不允許」與「管理員開不開」，
+ * 只回一個 enabled 的話，被環境變數鎖住時面板會看起來像壞了。
+ */
+const getShop = async (req, res) => {
+  try {
+    const state = await shop.getShopState({ force: true });
+    return res.status(200).json({ success: true, shop: state });
+  } catch (error) {
+    console.error('讀取商城開關失敗:', error);
+    return res.status(500).json({ success: false, message: error.message || '讀取商城開關失敗' });
+  }
+};
+
+/**
+ * PUT /api/admin/shop
+ * body: { enabled: boolean, message?: string }
+ * message 是關閉期間給學生看的說明（例如「獎品盤點中，下週一恢復」）。
+ */
+const updateShop = async (req, res) => {
+  try {
+    if (typeof req.body.enabled !== 'boolean') {
+      return res.status(400).json({ success: false, message: 'enabled 需為 true 或 false' });
+    }
+    const state = await shop.setShopEnabled({
+      enabled: req.body.enabled,
+      message: req.body.message,
+      uid: req.user.uid,
+      displayName: req.user.displayName,
+    });
+    return res.status(200).json({
+      success: true,
+      message: state.enabled
+        ? '商城已開張'
+        : (state.lockedByEnv
+          ? '已記錄為開啟，但這個環境的 SHOP_ENABLED 仍鎖著商城'
+          : '商城已暫停'),
+      shop: state,
+    });
+  } catch (error) {
+    console.error('設定商城開關失敗:', error);
+    return res.status(500).json({ success: false, message: error.message || '設定商城開關失敗' });
+  }
+};
+
 module.exports = {
+  getShop,
+  updateShop,
   getOverview,
   syncMenus,
   syncStudents,

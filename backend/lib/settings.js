@@ -81,6 +81,13 @@ const LIMITS = {
   'sdg.schoolBaselineWindow': [1, 365],
   'sdg.fallbackSchoolWastePerCapitaG': [0, 5000],
   'sdg.minSchoolSamples': [0, 100],
+  'gratitude.mealFinishedG': [0, 10000],
+  'intake.normalKcal': [0, 5000],
+  // 調整量不設上限為 normalKcal 的一半，是因為面板可能先改這個再改那個；
+  // 真正不合理的組合（調整量 > 基準）在算出來時夾在 0 以上，見 lib/bmi.js
+  'intake.adjustKcal': [0, 2000],
+  'intake.fallbackUnderweightBmi': [5, 60],
+  'intake.fallbackOverweightBmi': [5, 60],
 };
 const NUTRIENT_RANGE = [0, 1000];      // g/kg，固體食物上限 1000
 
@@ -107,7 +114,7 @@ function validateTunables(input) {
     return v;
   };
 
-  for (const group of ['energy', 'sdg']) {
+  for (const group of ['energy', 'sdg', 'gratitude', 'intake']) {
     if (!isPlainObject(input[group])) continue;
     for (const [key, raw] of Object.entries(input[group])) {
       const path = `${group}.${key}`;

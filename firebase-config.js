@@ -8,4 +8,5 @@ let currentUser = null;
 let idToken = null;
 let eCoin = 0;
 let sCoin = 0;
+let gCoin = 0;   // 感謝幣：教師確認完食時發出
 let score = 0;

@@ -1,5 +1,6 @@
 const { db, admin } = require('../config/firebase');
 const { COL, ROLES, COIN_SPENDER_ROLES } = require('../config/schema');
+const { getShopState, closedReason } = require('../lib/shop');
 
 // 兌換物品
 // 使用 Firestore transaction 確保「檢查餘額 → 扣款 → 扣庫存」為原子操作，
@@ -171,9 +172,14 @@ const getExchangeItems = async (req, res) => {
       .sort((a, b) => (a.costType || '').localeCompare(b.costType || ''))
       .slice(0, limit);
 
+    // 關閉期間仍回商品清單（學生看得到獎品才有動機），
+    // 但要讓前端知道現在換不了，否則按下去才吃 503 體驗很差。
+    const shop = await getShopState();
     res.status(200).json({
       success: true,
-      items
+      items,
+      shopEnabled: shop.enabled,
+      shopClosedReason: shop.enabled ? null : closedReason(shop)
     });
   } catch (error) {
     console.error('獲取物品列表失敗:', error);

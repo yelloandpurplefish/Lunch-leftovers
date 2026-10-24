@@ -9,6 +9,8 @@ const {
   setLunchLeader, setTeacher, listUsers, createUser, updateUser,
   getCoinRules, updateCoinRules, previewCoinRules,
   syncStudents, syncMenus,
+  getShop,
+  updateShop,
 } = require('../controllers/adminController');
 const { authenticate, requireRole } = require('../middleware/auth');
 const { ROLES } = require('../config/schema');
@@ -33,6 +35,10 @@ router.post('/coin-rules/preview', authenticate, adminOnly, previewCoinRules);
 router.post('/sync/students', authenticate, adminOnly, syncStudents);
 // 從 Google 試算表同步每月菜單（一列一天，日期為主鍵）
 router.post('/sync/menus', authenticate, adminOnly, syncMenus);
+
+// 商城開關：讀給面板顯示現況，寫是日常的暫停/開張
+router.get('/shop', authenticate, adminOnly, getShop);
+router.put('/shop', authenticate, adminOnly, updateShop);
 
 // 帳號
 router.get('/users', authenticate, adminOnly, listUsers);

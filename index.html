@@ -297,6 +297,11 @@
             </div>
 
             <div class="card">
+                <h3>G幣 <small>（感謝）</small></h3>
+                <span id="gcoin">0</span>
+            </div>
+
+            <div class="card">
                 <h3>積分</h3>
                 <span id="score">0</span>
             </div>
@@ -305,21 +310,21 @@
 
         <div class="menu">
 
-            <h2>🍱 今日菜單</h2>
+            <div class="menu-grid">
 
-            <ul>
+                <div class="menu-col">
+                    <h2>🍱 今日菜單</h2>
+                    <div id="menuToday">載入中...</div>
+                </div>
 
-                <li>🍗 香酥雞腿</li>
+                <!-- 右欄：建議攝取熱量。體位分類與熱量都由後端算好，
+                     前端不碰年齡、性別與判定界線（見 backend/lib/bmi.js）。 -->
+                <div class="menu-col intake-col">
+                    <h2>🔥 建議攝取</h2>
+                    <div id="intakePanel">載入中...</div>
+                </div>
 
-                <li>🥬 高麗菜</li>
-
-                <li>🥚 蒸蛋</li>
-
-                <li>🍎 蘋果</li>
-
-                <li>🥣 玉米濃湯</li>
-
-            </ul>
+            </div>
 
         </div>
 
@@ -458,6 +463,8 @@
         <button class="lottery-btn" data-action="openLottery">🎰 幸運抽獎</button>
     </div>
 
+    <div id="shopClosed" class="shop-closed hidden"></div>
+
     <div id="shopList">
         <p>載入中...</p>
     </div>
@@ -468,31 +475,18 @@
 
 <h2>📝 今日菜色問卷</h2>
 
-    <label>😊 今天最喜歡哪一道菜？</label>
+    <p id="surveyMenuHint" class="field-hint">載入中...</p>
 
-    <select id="favoriteFood">
+    <label for="favoriteFood">😊 今天最喜歡哪一道菜？</label>
 
-        <option>香酥雞腿</option>
-        <option>高麗菜</option>
-        <option>蒸蛋</option>
-        <option>蘋果</option>
-        <option>玉米濃湯</option>
-
-    </select>
+    <!-- 選項由當日菜單產生（app.js fillSurveyDishes），不再寫死 -->
+    <select id="favoriteFood"></select>
 
     <br><br>
 
-    <label>😖 今天最不喜歡哪一道菜？</label>
+    <label for="hateFood">😖 今天最不喜歡哪一道菜？</label>
 
-    <select id="hateFood">
-
-        <option>香酥雞腿</option>
-        <option>高麗菜</option>
-        <option>蒸蛋</option>
-        <option>蘋果</option>
-        <option>玉米濃湯</option>
-
-    </select>
+    <select id="hateFood"></select>
 
     <br><br>
 
@@ -641,6 +635,35 @@
 
             <p id="syncMenusResult" class="verify-result"></p>
             <div id="syncMenusReport"></div>
+        </div>
+
+        <!-- 商城開關：面板是日常開關，SHOP_ENABLED 是營運層硬開關。
+             兩層都開才開張，所以被環境變數鎖住時要明講，不能只顯示已開啟。 -->
+        <div class="admin-card shop-toggle-card">
+            <h3>🎁 商城開關</h3>
+            <p class="field-hint">
+                暫停期間學生仍看得到獎品清單，但換不了，
+                兌換端點也會一併擋下（不是只把按鈕藏起來）。
+            </p>
+
+            <label class="sync-opt">
+                <input type="checkbox" id="shopToggle">
+                開放兌換商城
+            </label>
+
+            <div class="admin-row">
+                <label for="shopMessage">暫停說明</label>
+                <input type="text" id="shopMessage" maxlength="200"
+                       placeholder="例如：獎品盤點中，下週一恢復">
+            </div>
+            <p class="field-hint">留空會用預設說法。這段字會直接顯示給學生看。</p>
+
+            <div class="sync-actions">
+                <button data-action="saveShopState">💾 儲存</button>
+            </div>
+
+            <p id="shopToggleResult" class="verify-result"></p>
+            <p id="shopToggleMeta" class="field-hint"></p>
         </div>
 
         <div class="admin-grid">

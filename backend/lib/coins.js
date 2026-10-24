@@ -1,5 +1,5 @@
 /**
- * 幣別記帳：**所有** E/S 幣的增減都要走這裡，不要在 controller 直接 increment。
+ * 幣別記帳：**所有** E/S/G 幣的增減都要走這裡，不要在 controller 直接 increment。
  *
  * 規則（config/schema.js 為準）：
  *  - 家長沒有幣系統：任何試圖給家長記幣的呼叫都會被擋下。
@@ -16,14 +16,20 @@ const { today } = require('./dates');
 const inc = (n) => admin.firestore.FieldValue.increment(n);
 const serverTime = () => admin.firestore.FieldValue.serverTimestamp();
 
-/** 對應幣別到 users 文件的欄位名（沿用原有欄位，避免動到他的 UI）。*/
-const FIELD = { E: 'eCoin', S: 'sCoin' };
+/**
+ * 對應幣別到 users 文件的欄位名（沿用原有欄位，避免動到他的 UI）。
+ * G = 感謝幣，由教師確認完食時發出。
+ */
+const FIELD = { E: 'eCoin', S: 'sCoin', G: 'gCoin' };
+
+/** 迭代順序固定，總帳的分錄順序才穩定、測試才好比對。 */
+const COINS = ['E', 'S', 'G'];
 
 function txEntry({ ownerType, ownerId, coin, amount, reason, refType, refId, date, trees }) {
   return {
     ownerType,           // 'user' | 'class'
     ownerId,
-    coin,                // 'E' | 'S'
+    coin,                // 'E' | 'S' | 'G'
     amount,              // 正=獲得、負=消耗
     reason,
     refType: refType || null,
@@ -42,12 +48,13 @@ function txEntry({ ownerType, ownerId, coin, amount, reason, refType, refId, dat
 }
 
 /**
- * 個人加幣。E/S 皆為 0 時直接回傳，不留空帳。
- * @returns {Promise<{E:number,S:number}>} 實際發出的量
+ * 個人加幣。各幣別皆為 0 時直接回傳，不留空帳。
+ * @returns {Promise<{E:number,S:number,G:number}>} 實際發出的量
  */
-async function awardUser({ userId, E = 0, S = 0, reason, refType, refId, date, role }) {
+async function awardUser({ userId, E = 0, S = 0, G = 0, reason, refType, refId, date, role }) {
   if (!userId) throw new Error('awardUser 缺少 userId');
-  if (E <= 0 && S <= 0) return { E: 0, S: 0 };
+  const want = { E, S, G };
+  if (COINS.every((c) => want[c] <= 0)) return { E: 0, S: 0, G: 0 };
 
   // 家長不持幣：擋在記帳層，避免任何呼叫端漏判
   const holderRole = role || (await getRole(userId));
@@ -58,11 +65,12 @@ async function awardUser({ userId, E = 0, S = 0, reason, refType, refId, date, r
   const batch = db.batch();
   const userRef = db.collection(COL.users).doc(userId);
   const updates = {};
-  if (E > 0) updates[FIELD.E] = inc(E);
-  if (S > 0) updates[FIELD.S] = inc(S);
+  for (const coin of COINS) {
+    if (want[coin] > 0) updates[FIELD[coin]] = inc(want[coin]);
+  }
   batch.set(userRef, updates, { merge: true });
 
-  for (const [coin, amount] of [['E', E], ['S', S]]) {
+  for (const [coin, amount] of COINS.map((c) => [c, want[c]])) {
     if (amount > 0) {
       batch.set(
         db.collection(COL.coinTx).doc(),
@@ -71,7 +79,7 @@ async function awardUser({ userId, E = 0, S = 0, reason, refType, refId, date, r
     }
   }
   await batch.commit();
-  return { E: Math.max(0, E), S: Math.max(0, S) };
+  return { E: Math.max(0, E), S: Math.max(0, S), G: Math.max(0, G) };
 }
 
 /**
@@ -199,17 +207,18 @@ async function spendUser({ userId, coin, amount, reason, refType, refId, date })
  * 以 transaction 讀餘額再扣，並在 0 處夾住 —— 學生可能已經把幣花掉，
  * 不可讓餘額變成負數；實際沖銷多少會寫在總帳裡，帳目仍可追。
  */
-async function reverseAward({ userId, E = 0, S = 0, reason, refType, refId, date }) {
-  if (E <= 0 && S <= 0) return { E: 0, S: 0 };
+async function reverseAward({ userId, E = 0, S = 0, G = 0, reason, refType, refId, date }) {
+  const wanted = { E, S, G };
+  if (COINS.every((c) => wanted[c] <= 0)) return { E: 0, S: 0, G: 0 };
   const userRef = db.collection(COL.users).doc(userId);
 
   return db.runTransaction(async (tx) => {
     const snap = await tx.get(userRef);
-    if (!snap.exists) return { E: 0, S: 0 };
+    if (!snap.exists) return { E: 0, S: 0, G: 0 };
     const data = snap.data();
 
     const applied = {};
-    for (const [coin, want] of [['E', E], ['S', S]]) {
+    for (const [coin, want] of COINS.map((c) => [c, wanted[c]])) {
       if (want <= 0) continue;
       const field = FIELD[coin];
       const current = Number(data[field] || 0);
@@ -223,7 +232,7 @@ async function reverseAward({ userId, E = 0, S = 0, reason, refType, refId, date
         );
       }
     }
-    return { E: applied.E || 0, S: applied.S || 0 };
+    return { E: applied.E || 0, S: applied.S || 0, G: applied.G || 0 };
   });
 }
 
@@ -256,13 +265,18 @@ async function userCoinSummary(userId, { recentLimit = 15 } = {}) {
   });
 
   return {
-    balance: { E: Number(u.eCoin || 0), S: Number(u.sCoin || 0) },
+    balance: {
+      E: Number(u.eCoin || 0),
+      S: Number(u.sCoin || 0),
+      G: Number(u.gCoin || 0),
+    },
     recent,
   };
 }
 
 module.exports = {
   FIELD,
+  COINS,
   awardUser,
   awardClassAndMembers,
   spendUser,

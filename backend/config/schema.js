@@ -75,7 +75,11 @@ const RECORDER_ROLES = [ROLES.LUNCH_LEADER, ROLES.TEACHER, ROLES.ADMIN];
 
 // ── 發幣規則（使用者指定，勿擅自加項）──────────────────────────────
 const COIN_RULES = {
-  /** 教師勾選「吃完他的部分」→ 個人 +1 E、+1 S（每人每日一次）*/
+  /**
+   * 教師勾選「吃完他的部分」→ 個人 +1 E、+1 S（每人每日一次）。
+   * G 幣（感謝）的額度不在這裡，而在 TUNABLE_DEFAULTS.gratitude.mealFinishedG，
+   * 因為那是學校會想調的政策數字，不該要改程式重新部署。
+   */
   MEAL_FINISHED: { E: 1, S: 1 },
   /** 家長簽到 → **綁定的學生** +1 S（每位家長每日一次）*/
   PARENT_SIGN_IN: { E: 0, S: 1 },
@@ -132,6 +136,32 @@ const TUNABLE_DEFAULTS = {
     },
     /** 分類不在上表時的保底值 */
     fallback: { proteinPerKg: 30, fiberPerKg: 5 },
+  },
+
+  /**
+   * G 幣：感謝 —— 教師確認「吃完他的部分」時發給該學生。
+   *
+   * 與 E/S 的語意差別：E 衡量吃進多少營養、S 衡量少浪費多少碳，
+   * 兩者都是算出來的；G 是**老師的人工確認**，數字大是刻意的——
+   * 它要讓學生明顯感覺到「有人看見我吃完了」。
+   */
+  gratitude: {
+    /** 教師確認完食 → 該學生 +G（每人每日一次，取消勾選會沖銷）*/
+    mealFinishedG: 86,
+  },
+
+  /**
+   * 建議攝取熱量（**一餐**午餐，不是一整天）與體位判定。
+   *
+   * 正常 = normalKcal；過重 = normalKcal − adjustKcal；過輕 = normalKcal + adjustKcal。
+   * 體位分類優先查衛福部兒童青少年建議值（依年齡與性別，見 lib/bmi.js），
+   * 查不到年齡或性別時才退回下面這組全校共用的界線。
+   */
+  intake: {
+    normalKcal: 774,
+    adjustKcal: 50,
+    fallbackUnderweightBmi: 18.5,
+    fallbackOverweightBmi: 24,
   },
 
   /** S 幣：少浪費 → 碳排 → 樹 → 幣 */

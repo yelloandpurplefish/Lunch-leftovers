@@ -12,6 +12,7 @@ const userRoutes = require('./routes/user');
 const taskRoutes = require('./routes/task');
 const lotteryRoutes = require('./routes/lottery');
 const exchangeRoutes = require('./routes/exchange');
+const menuRoutes = require('./routes/menu');
 const leaderboardRoutes = require('./routes/leaderboard');
 const debugRoutes = require('./routes/debug');
 // 新：剩食紀錄（四桶影像辨識）與教師逐生檢查
@@ -105,6 +106,7 @@ app.use('/api/user', userRoutes);
 app.use('/api/task', taskRoutes);
 app.use('/api/lottery', lotteryRoutes);
 app.use('/api/exchange', exchangeRoutes);
+app.use('/api/menu', menuRoutes);
 app.use('/api/leaderboard', leaderboardRoutes);
 app.use('/api/record', recordRoutes);
 app.use('/api/meal-check', mealCheckRoutes);

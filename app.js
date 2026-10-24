@@ -282,6 +282,7 @@ async function handleLogout() {
     idToken = null;
     eCoin = 0;
     sCoin = 0;
+    gCoin = 0;
     score = 0;
     localStorage.removeItem('token');
     localStorage.removeItem('user');
@@ -299,6 +300,7 @@ async function loadUserData() {
     if (data.success) {
       eCoin = data.userData.eCoin || 0;
       sCoin = data.userData.sCoin || 0;
+      gCoin = data.userData.gCoin || 0;
       score = data.userData.score || 0;
 
       // 同步前端 currentUser
@@ -359,8 +361,153 @@ function updateLoggedInStats() {
 function updateUI() {
   document.getElementById('ecoin').textContent = eCoin;
   document.getElementById('scoin').textContent = sCoin;
+  const g = document.getElementById('gcoin');
+  if (g) g.textContent = gCoin;
   document.getElementById('score').textContent = score;
   updateLoggedInStats();
+}
+
+// ── 今日菜單（兩欄）────────────────────────────────────────────
+/**
+ * 左欄是真正的 daily_menu（由每月菜單同步寫入），右欄是依個人體位的建議攝取。
+ * 體位分類與建議熱量都由後端算好，前端只負責呈現——判定界線是會被
+ * 主管機關更新的數據，不該散落在瀏覽器裡。
+ */
+async function loadTodayMenu() {
+    const list = document.getElementById('menuToday');
+    const panel = document.getElementById('intakePanel');
+    if (!list || !panel) return;
+
+    try {
+        const data = await apiRequest('/menu/today', 'GET');
+        if (!data.success) {
+            list.innerHTML = '<p class="field-hint">菜單載入失敗</p>';
+            panel.innerHTML = '';
+            return;
+        }
+        renderTodayMenu(data);
+        renderIntake(data.intake || {});
+        fillSurveyDishes(data);
+    } catch (error) {
+        list.innerHTML = '<p class="field-hint">菜單載入失敗：'
+            + escapeText(error.message || '請稍後再試') + '</p>';
+        panel.innerHTML = '';
+    }
+}
+
+/**
+ * 問卷的菜色下拉由當日菜單產生。
+ *
+ * 原本是寫死的五道菜，和資料庫裡的菜單無關——學生只能評分根本沒吃到的菜，
+ * 廚房收到的回饋也對不上。後端會再驗一次菜名是否屬於當天的菜單
+ * （見 taskController.submitSurvey），前端這裡只負責讓人選得對。
+ */
+function fillSurveyDishes(data) {
+    const selects = ['favoriteFood', 'hateFood']
+        .map((id) => document.getElementById(id))
+        .filter(Boolean);
+    if (!selects.length) return;
+
+    const submit = document.querySelector('[data-action="submitSurvey"]');
+    const reason = document.getElementById('surveyReason');
+    const hint = document.getElementById('surveyMenuHint');
+    const dishes = (data && data.dishes) || [];
+    const open = Boolean(data && data.served) && dishes.length > 0;
+
+    selects.forEach((sel) => {
+        const keep = sel.value;                 // 重新載入時盡量保住使用者已選的
+        sel.innerHTML = open
+            ? dishes.map((d) =>
+                `<option value="${escapeAttr(d.name)}">`
+                + `${escapeText(d.label)}　${escapeText(d.name)}</option>`).join('')
+            : '<option value="">今天沒有菜色</option>';
+        sel.disabled = !open;
+        if (open && keep && dishes.some((d) => d.name === keep)) sel.value = keep;
+    });
+
+    // 不供餐就不該讓人送出：後端也會擋，但先在這裡講清楚原因
+    if (submit) submit.disabled = !open;
+    if (reason) reason.disabled = !open;
+    if (hint) {
+        hint.textContent = open
+            ? `選項來自 ${data.date} 的菜單，共 ${dishes.length} 道`
+            : `${(data && data.date) || '今天'} 沒有供餐`
+                + ((data && data.note) ? `（${data.note}）` : '')
+                + '，今天不需要填問卷。';
+    }
+}
+
+const SLOT_ICON = {
+    staple: '🍚', main: '🍗', side1: '🥘', side2: '🍳', veg: '🥬', soup: '🥣',
+};
+
+function renderTodayMenu(data) {
+    const box = document.getElementById('menuToday');
+    if (!box) return;
+
+    if (!data.served) {
+        // 不供餐不是錯誤：段考、校外教學本來就沒有午餐
+        box.innerHTML = '<p class="menu-empty">🚫 今天不供餐'
+            + (data.note ? '<br><span class="field-hint">' + escapeText(data.note) + '</span>' : '')
+            + '</p>';
+        return;
+    }
+
+    box.innerHTML = '<ul class="menu-list">'
+        + (data.dishes || []).map((d) => `
+            <li>
+                <span class="menu-slot">${escapeText(d.label)}</span>
+                <span class="menu-dish">${SLOT_ICON[d.slot] || '🍽️'} ${escapeText(d.name)}</span>
+                ${d.portionG ? `<span class="menu-portion">${d.portionG} g</span>` : ''}
+            </li>`).join('')
+        + '</ul>'
+        + (data.note ? '<p class="field-hint">' + escapeText(data.note) + '</p>' : '');
+}
+
+/** 體位 → 顏色語意。過輕與過重都是「要注意」，不分好壞。 */
+const INTAKE_CLASS = { 過輕: 'low', 正常: 'ok', 過重: 'high' };
+
+function renderIntake(intake) {
+    const box = document.getElementById('intakePanel');
+    if (!box) return;
+
+    // 沒有個人體位時仍顯示基準值，但要說清楚這不是個人化的建議
+    if (!intake.category || intake.kcal == null) {
+        const why = {
+            no_data: '還沒有身高體重資料，請老師或管理員同步名冊',
+            no_binding: '這個家長帳號還沒綁定學生',
+            not_applicable: '這個身份沒有個人建議值',
+        }[intake.source] || '還沒有體位資料';
+
+        box.innerHTML = (intake.normalKcal != null
+            ? `<p class="intake-kcal"><span class="intake-n">${intake.normalKcal}</span>
+                 <span class="intake-unit">kcal</span></p>
+               <p class="intake-cat">全校基準</p>`
+            : '')
+            + '<p class="field-hint">' + escapeText(why) + '</p>';
+        return;
+    }
+
+    const cls = INTAKE_CLASS[intake.category] || 'ok';
+    const who = intake.forName ? escapeText(intake.forName) + ' 的' : '你的';
+    const diff = intake.normalKcal != null ? intake.kcal - intake.normalKcal : 0;
+
+    box.innerHTML = `
+        <p class="intake-kcal">
+            <span class="intake-n">${intake.kcal}</span>
+            <span class="intake-unit">kcal</span>
+        </p>
+        <p class="intake-cat ${cls}">體位：${escapeText(intake.category)}</p>
+        ${diff !== 0 ? `<p class="field-hint">
+            比基準 ${intake.normalKcal} kcal ${diff > 0 ? '多' : '少'} ${Math.abs(diff)}
+        </p>` : ''}
+        <p class="field-hint">
+            ${who} BMI ${intake.bmi}
+            ${intake.source === 'table'
+                ? `（依 ${intake.age} 歲${intake.gender === 'female' ? '女' : '男'}生的建議值判定）`
+                : '（查無年齡或性別，使用全校共用界線估算）'}
+        </p>
+        <p class="field-hint">這是**一餐**的建議量，不是一整天。</p>`;
 }
 
 // 舊版在 #home 裡放了一張家長簽到卡片，但 #home 對家長是隱藏的，那張卡片
@@ -652,6 +799,19 @@ function renderSyncReport(data) {
 }
 
 /** 名冊內容來自試算表，當成純文字處理，不讓它變成 HTML。 */
+/**
+ * 放進 HTML 屬性值的字串。escapeText 是給節點內容用的，
+ * 屬性還得處理引號，否則菜名裡一個雙引號就能跳出 value="..."。
+ */
+function escapeAttr(s) {
+    return String(s == null ? '' : s)
+        .replace(/&/g, '&amp;')
+        .replace(/"/g, '&quot;')
+        .replace(/'/g, '&#39;')
+        .replace(/</g, '&lt;')
+        .replace(/>/g, '&gt;');
+}
+
 function escapeText(v) {
     return String(v == null ? '' : v)
         .replace(/&/g, '&amp;').replace(/</g, '&lt;').replace(/>/g, '&gt;');
@@ -714,6 +874,84 @@ async function runMenuSync(dryRun) {
 
 function syncMenus() { return runMenuSync(false); }
 function syncMenusDryRun() { return runMenuSync(true); }
+
+/** 商城關閉時要讓學生看得到原因，並且不要留著一顆按了會失敗的按鈕。 */
+function applyShopState(enabled, reason) {
+    const notice = document.getElementById('shopClosed');
+    if (notice) {
+        notice.classList.toggle('hidden', enabled !== false);
+        if (enabled === false) {
+            notice.innerHTML = '🚧 ' + escapeText(reason || '商城暫停開放中');
+        }
+    }
+    document.querySelectorAll('[data-action="buyItem"]').forEach((b) => {
+        b.disabled = enabled === false;
+        if (enabled === false) b.title = reason || '商城暫停開放中';
+    });
+}
+
+// ── 管理員：商城開關 ──────────────────────────────────────────
+async function loadShopState() {
+    const toggle = document.getElementById('shopToggle');
+    if (!toggle) return;
+    try {
+        const data = await apiRequest('/admin/shop', 'GET');
+        if (!data.success) return;
+        renderShopAdmin(data.shop || {});
+    } catch (error) {
+        const meta = document.getElementById('shopToggleMeta');
+        if (meta) meta.textContent = '讀取失敗：' + (error.message || '請稍後再試');
+    }
+}
+
+function renderShopAdmin(shop) {
+    const toggle = document.getElementById('shopToggle');
+    const msg = document.getElementById('shopMessage');
+    const meta = document.getElementById('shopToggleMeta');
+    if (!toggle) return;
+
+    toggle.checked = shop.adminEnabled !== false;
+    if (msg && shop.message) msg.value = shop.message;
+
+    if (meta) {
+        const bits = [];
+        bits.push(shop.enabled ? '目前狀態：開張中' : '目前狀態：已關閉');
+        // 環境變數鎖住時要明講，否則面板上勾了卻沒反應會像是壞了
+        if (shop.lockedByEnv) {
+            bits.push('⚠️ 這個環境的 SHOP_ENABLED=false，面板打開也不會生效');
+        }
+        if (shop.updatedBy) bits.push('最後變更：' + shop.updatedBy);
+        meta.textContent = bits.join('　·　');
+    }
+}
+
+async function saveShopState() {
+    const toggle = document.getElementById('shopToggle');
+    const msg = document.getElementById('shopMessage');
+    const result = document.getElementById('shopToggleResult');
+    if (!toggle) return;
+
+    if (result) {
+        result.className = 'verify-result';
+        result.textContent = '儲存中…';
+    }
+    try {
+        const data = await apiRequest('/admin/shop', 'PUT', {
+            enabled: toggle.checked,
+            message: msg ? msg.value : '',
+        });
+        if (result) {
+            result.className = 'verify-result ' + (data.success ? 'ok' : 'error');
+            result.textContent = (data.success ? '✅ ' : '⚠️ ') + (data.message || '');
+        }
+        if (data.shop) renderShopAdmin(data.shop);
+    } catch (error) {
+        if (result) {
+            result.className = 'verify-result error';
+            result.textContent = '儲存失敗：' + (error.message || '請稍後再試');
+        }
+    }
+}
 
 function renderMenuReport(data) {
     const box = document.getElementById('syncMenusReport');
@@ -829,6 +1067,11 @@ const RULE_LABELS = {
     'sdg.schoolBaselineWindow': ['全校歷史平均取最近幾場', '場'],
     'sdg.fallbackSchoolWastePerCapitaG': ['歷史不足時的起步基準', 'g/人/餐'],
     'sdg.minSchoolSamples': ['低於幾場就用起步基準', '場'],
+    'gratitude.mealFinishedG': ['老師確認完食 → G幣（感謝）', '幣/人/餐'],
+    'intake.normalKcal': ['體位正常的建議熱量（一餐）', 'kcal'],
+    'intake.adjustKcal': ['過重往下／過輕往上調整', 'kcal'],
+    'intake.fallbackUnderweightBmi': ['查無年齡性別時的過輕界線', 'BMI'],
+    'intake.fallbackOverweightBmi': ['查無年齡性別時的過重界線', 'BMI'],
 };
 
 function ruleInput(path, value, def) {
@@ -851,7 +1094,11 @@ function renderCoinRules() {
 
     const scalar = Object.keys(RULE_LABELS).map((path) => {
         const [g, k] = path.split('.');
-        return ruleInput(path, v[g][k], d[g][k]);
+        // 新增的群組在舊的 system_config 文件裡不存在，取不到就退回預設值，
+        // 否則面板會整塊炸掉（深度合併是在後端做的，但 defaults 仍可能先到）
+        const cur = (v[g] || {})[k];
+        const def = (d[g] || {})[k];
+        return ruleInput(path, cur === undefined ? def : cur, def);
     }).join('');
 
     const cats = Object.keys(d.nutrition.byCategory);
@@ -902,7 +1149,10 @@ function renderRulesPreview(preview) {
 
 /** 從表單讀回使用者填的值，組成後端要的巢狀結構。 */
 function collectCoinRules() {
-    const values = { energy: {}, sdg: {}, nutrition: { byCategory: {} } };
+    const values = {
+        energy: {}, sdg: {}, gratitude: {}, intake: {},
+        nutrition: { byCategory: {} },
+    };
     document.querySelectorAll('#coinRulesForm input[data-rule]').forEach((el) => {
         const [g, k] = el.dataset.rule.split('.');
         values[g][k] = Number(el.value);
@@ -1062,6 +1312,7 @@ async function startApp(){
 
     // 依角色載入該看的資料（教師檢查清單 / 午餐長紀錄 / 家長孩子狀況…）
     applyRoleView();
+    await loadTodayMenu();
     await loadRoleData();
 }
 
@@ -1073,13 +1324,14 @@ async function loadShopItems() {
 
         if (!data.success || !data.items || data.items.length === 0) {
             container.innerHTML = '<p>目前沒有可兌換的商品</p>';
+            applyShopState(data.shopEnabled, data.shopClosedReason);
             return;
         }
 
-        const visibleItems = data.items.filter(item => item.costType !== 'G');
-
-        container.innerHTML = visibleItems.map(item => {
-            const coinName = { E: 'E幣', S: 'S幣' }[item.costType] || item.costType;
+        // G 幣商品原本被整批隱藏，因為當時沒有任何地方發 G 幣；
+        // 現在教師確認完食會發 G，就該讓它們出現。
+        container.innerHTML = data.items.map(item => {
+            const coinName = { E: 'E幣', S: 'S幣', G: 'G幣' }[item.costType] || item.costType;
             const stockText = item.stock === null || item.stock === undefined
                 ? '剩餘：無限'
                 : `剩餘：${item.stock}`;
@@ -1094,6 +1346,8 @@ async function loadShopItems() {
                 </div>
             `;
         }).join('');
+
+        applyShopState(data.shopEnabled, data.shopClosedReason);
     } catch (error) {
         console.error('載入商城失敗:', error);
         const container = document.getElementById('shopList');
@@ -1115,6 +1369,8 @@ async function buyItem(el){
                     eCoin = data.remainingCoin;
                 } else if (costType === 'S') {
                     sCoin = data.remainingCoin;
+                } else if (costType === 'G') {
+                    gCoin = data.remainingCoin;
                 }
             }
             updateUI();
@@ -1122,10 +1378,13 @@ async function buyItem(el){
             alert("🎉 成功兌換：" + name);
         } else {
             alert(data.message || '兌換失敗');
+            // 可能是剛剛被管理員關了商城：重抓一次就會顯示關閉提示並禁用按鈕
+            if (data.shopClosed) await loadShopItems();
         }
     } catch (error) {
         console.error('兌換失敗:', error);
-        alert('兌換失敗，請稍後再試');
+        alert('兌換失敗：' + (error.message || '請稍後再試'));
+        await loadShopItems();
     }
 }
 
@@ -1518,6 +1777,7 @@ async function loadRoleData() {
         await loadAdminClasses();
         await loadDevices();
         await loadCoinRules();
+        await loadShopState();
     }
     if (role === 'teacher' || role === 'admin') {
         await loadCheckRoster();
@@ -2602,6 +2862,7 @@ const ACTION_HANDLERS = {
     // 管理員：從 Google 試算表同步名冊
     syncStudents: () => syncStudents(),
     syncStudentsDryRun: () => syncStudentsDryRun(),
+    saveShopState: () => saveShopState(),
     syncMenus: () => syncMenus(),
     syncMenusDryRun: () => syncMenusDryRun(),
     // 管理員：發幣公式參數

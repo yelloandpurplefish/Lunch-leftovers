@@ -1,4 +1,6 @@
 const { db, admin } = require('../config/firebase');
+const { today } = require('../lib/dates');
+const { dishNameSet } = require('../lib/dailyMenu');
 
 /**
  * 註：原本的「光盤行動自行領獎」與「剩食獎勵（自填剩食克數）」已移除。
@@ -69,6 +71,31 @@ const submitSurvey = async (req, res) => {
         message: '請填寫所有欄位'
       });
     }
+
+    /**
+     * 菜名必須是今天真的供應過的菜。
+     *
+     * 下拉選單已經由當日菜單產生，但驗證不能只靠前端——
+     * 問卷的用途是告訴廚房「哪一道菜被討厭、為什麼」，
+     * 如果存進了今天沒出現的菜名，那筆回饋就無從對應，等於髒資料。
+     */
+    const { served, names } = await dishNameSet(today());
+    if (!served) {
+      return res.status(400).json({
+        success: false,
+        message: '今天沒有供餐，沒有菜色可以評分'
+      });
+    }
+    const pickFavorite = String(favoriteFood).trim();
+    const pickHate = String(hateFood).trim();
+    const unknown = [pickFavorite, pickHate].filter((n) => !names.has(n));
+    if (unknown.length) {
+      return res.status(400).json({
+        success: false,
+        message: `今天的菜單沒有「${unknown[0]}」，請重新整理後再填`,
+        menuDishes: [...names]
+      });
+    }
     if (!reason) {
       return res.status(400).json({
         success: false,
@@ -109,9 +136,12 @@ const submitSurvey = async (req, res) => {
       completedAt: now,
       rewards: {},
       metadata: {
-        favoriteFood,
-        hateFood,
-        reason
+        favoriteFood: pickFavorite,
+        hateFood: pickHate,
+        reason,
+        // 存下日期：task_records 只有 completedAt（伺服器時間），
+        // 跨午夜或時區換算時不該用它回推「這是哪一天的菜」
+        date: today()
       }
     });
 

@@ -1,7 +1,9 @@
 /**
  * 教師每日逐生檢查「是否吃完他的部分」。
  *
- * 這個動作就是規則裡的「吃完一餐」：勾選 → 該學生 +1 E幣、+1 S幣（每人每日一次）。
+ * 這個動作就是規則裡的「吃完一餐」：勾選 → 該學生 +1 E幣、+1 S幣、+G幣（每人每日一次）。
+ * G 幣（感謝）的額度由開發者面板調整（gratitude.mealFinishedG，預設 86），
+ * 因為它不是算出來的，而是「老師看見你吃完了」這件事的份量，屬於學校政策。
  * 以 `meal_checks/{日期_學生id}` 為決定性 doc id，重複勾選不會重複發幣；
  * 取消勾選會沖銷當日這筆（在餘額 0 處夾住，見 lib/coins.js reverseAward）。
  *
@@ -12,6 +14,21 @@ const { db, admin } = require('../config/firebase');
 const { COL, ids, ROLES, COIN_RULES, COIN_HOLDER_ROLES } = require('../config/schema');
 const { today, isYmd, daysAgo } = require('../lib/dates');
 const { awardUser, reverseAward } = require('../lib/coins');
+const { getSettings } = require('../lib/settings');
+
+/**
+ * 這一餐的發幣額度：E/S 來自 COIN_RULES（固定），G 來自可調參數。
+ * 每次請求都讀一次；settings 自己有 60 秒快取，不會每次都打資料庫。
+ */
+async function finishedReward() {
+  const s = await getSettings();
+  const g = Number((s.gratitude || {}).mealFinishedG || 0);
+  return {
+    E: COIN_RULES.MEAL_FINISHED.E,
+    S: COIN_RULES.MEAL_FINISHED.S,
+    G: Number.isFinite(g) && g > 0 ? g : 0,
+  };
+}
 
 const serverTime = () => admin.firestore.FieldValue.serverTimestamp();
 const bad = (res, status, message, extra = {}) => res.status(status).json({ success: false, message, ...extra });
@@ -95,7 +112,7 @@ const getRoster_ = async (req, res) => {
       date,
       classId,
       className: classSnap.exists ? classSnap.data().name : null,
-      rewardPerStudent: COIN_RULES.MEAL_FINISHED,
+      rewardPerStudent: await finishedReward(),
       rows,
       summary: buildSummary(rows),
     });
@@ -133,15 +150,17 @@ const toggleCheck = async (req, res) => {
     const existing = await ref.get();
     const prev = existing.exists ? existing.data() : null;
 
-    let coinDelta = { E: 0, S: 0 };
+    let coinDelta = { E: 0, S: 0, G: 0 };
     let coinsAwarded = prev ? Boolean(prev.coinsAwarded) : false;
+    const reward = await finishedReward();
 
     if (finished && !coinsAwarded) {
-      // 吃完一餐 → 個人 +1 E、+1 S
+      // 吃完一餐 → 個人 +1 E、+1 S、+G（感謝）
       coinDelta = await awardUser({
         userId: studentId,
-        E: COIN_RULES.MEAL_FINISHED.E,
-        S: COIN_RULES.MEAL_FINISHED.S,
+        E: reward.E,
+        S: reward.S,
+        G: reward.G,
         reason: '吃完一餐（老師確認）',
         refType: 'meal_check',
         refId: ids.mealCheck(date, studentId),
@@ -150,16 +169,22 @@ const toggleCheck = async (req, res) => {
       });
       coinsAwarded = true;
     } else if (!finished && coinsAwarded) {
+      // 沖銷用「當初發出的額度」而不是當下的設定值：
+      // 面板若在中途把 G 從 86 調成 50，沖銷 50 會讓學生白拿 36。
+      // 當初的額度記在 meal_checks 上（舊資料沒有這個欄位，退回當下設定）。
+      const awardedG = prev && prev.awardedG !== undefined
+        ? Number(prev.awardedG) : reward.G;
       const reversed = await reverseAward({
         userId: studentId,
         E: COIN_RULES.MEAL_FINISHED.E,
         S: COIN_RULES.MEAL_FINISHED.S,
+        G: Number.isFinite(awardedG) && awardedG > 0 ? awardedG : 0,
         reason: '取消「吃完一餐」勾選',
         refType: 'meal_check',
         refId: ids.mealCheck(date, studentId),
         date,
       });
-      coinDelta = { E: -reversed.E, S: -reversed.S };
+      coinDelta = { E: -reversed.E, S: -reversed.S, G: -reversed.G };
       coinsAwarded = false;
     }
 
@@ -172,6 +197,8 @@ const toggleCheck = async (req, res) => {
       schoolId: student.schoolId || null,
       finished,
       coinsAwarded,
+      // 發出多少 G 要留存，取消勾選時才沖銷得準（見上面的說明）
+      awardedG: coinsAwarded ? reward.G : 0,
       checkedBy: req.user.uid,
       checkedByName: req.user.displayName,
       checkedAt: serverTime(),
@@ -219,13 +246,15 @@ const finishAll = async (req, res) => {
     const checks = await getChecks(classId, date);
 
     let awardedCount = 0;
+    const reward = await finishedReward();
     for (const r of targets) {
       const prev = checks.get(r.studentId);
       if (prev && prev.coinsAwarded) continue; // 已發過就跳過，不重複
       await awardUser({
         userId: r.studentId,
-        E: COIN_RULES.MEAL_FINISHED.E,
-        S: COIN_RULES.MEAL_FINISHED.S,
+        E: reward.E,
+        S: reward.S,
+        G: reward.G,
         reason: '吃完一餐（老師確認）',
         refType: 'meal_check',
         refId: ids.mealCheck(date, r.studentId),
@@ -240,6 +269,7 @@ const finishAll = async (req, res) => {
         classId,
         finished: true,
         coinsAwarded: true,
+        awardedG: reward.G,
         checkedBy: req.user.uid,
         checkedByName: req.user.displayName,
         checkedAt: serverTime(),
@@ -254,6 +284,7 @@ const finishAll = async (req, res) => {
       success: true,
       message: `已標記 ${awardedCount} 位學生吃完一餐`,
       awarded: awardedCount,
+      rewardPerStudent: reward,
       summary: buildSummary(rows),
     });
   } catch (error) {

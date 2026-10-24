@@ -1,0 +1,10 @@
+# 不要把這些送進 build context
+node_modules
+backend/node_modules
+.git
+.env
+backend/.env
+backend/service-account-key.json
+*-debug.log
+firebase-debug.log
+firestore-debug.log
