@@ -29,6 +29,7 @@ const technicianRoutes = require('./routes/technician');
 
 // 資料庫初始化
 const { initializeDatabase } = require('./config/seed');
+const { checkIndexesOnStartup } = require('./lib/indexCheck');
 
 const app = express();
 const PORT = process.env.PORT || 3000;
@@ -224,6 +225,11 @@ app.listen(PORT, async () => {
       : '';
     console.error('❌ 資料庫初始化發生未預期錯誤:', error.message || error, hint);
   });
+
+  // 複合索引檢查。缺索引時 Firestore 回的錯誤裡就帶著建立連結，
+  // 這裡把那個連結原樣印出來（見 lib/indexCheck.js）。
+  // 不會丟例外、也不會擋住伺服器；INDEX_CHECK=off 可關閉。
+  await checkIndexesOnStartup(require('./config/firebase').db);
 });
 
 module.exports = app;
