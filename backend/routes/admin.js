@@ -8,6 +8,7 @@ const {
   getOverview, listClasses, createClass, updateClass,
   setLunchLeader, setTeacher, listUsers, createUser, updateUser,
   getCoinRules, updateCoinRules, previewCoinRules,
+  syncStudents, syncMenus,
 } = require('../controllers/adminController');
 const { authenticate, requireRole } = require('../middleware/auth');
 const { ROLES } = require('../config/schema');
@@ -27,6 +28,11 @@ router.post('/classes/:classId/teacher', authenticate, adminOnly, setTeacher);
 router.get('/coin-rules', authenticate, adminOnly, getCoinRules);
 router.put('/coin-rules', authenticate, adminOnly, updateCoinRules);
 router.post('/coin-rules/preview', authenticate, adminOnly, previewCoinRules);
+
+// 從 Google 試算表同步學生名冊（含 BMI 計算）
+router.post('/sync/students', authenticate, adminOnly, syncStudents);
+// 從 Google 試算表同步每月菜單（一列一天，日期為主鍵）
+router.post('/sync/menus', authenticate, adminOnly, syncMenus);
 
 // 帳號
 router.get('/users', authenticate, adminOnly, listUsers);

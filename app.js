@@ -486,6 +486,333 @@ async function loadHeroBoard() {
     }
 }
 
+
+// ============================================================
+// 從 Google 試算表同步學生名冊
+// ============================================================
+//
+// 真正的抓取在後端做，不在瀏覽器：試算表的存取密鑰只存在後端的環境變數裡，
+// 放到前端等於公開它。這裡只負責按按鈕與呈現報告。
+
+let syncRunning = false;
+
+async function runStudentSync(dryRun) {
+    if (syncRunning) return;
+    const result = document.getElementById('syncStudentsResult');
+    const report = document.getElementById('syncStudentsReport');
+    const buttons = document.querySelectorAll('[data-action="syncStudents"], [data-action="syncStudentsDryRun"]');
+
+    if (!dryRun && !confirm('確定要寫入嗎？建議先按「試算」確認欄位與班級都對得上。')) return;
+
+    syncRunning = true;
+    buttons.forEach((b) => { b.disabled = true; });
+    if (result) {
+        result.className = 'verify-result';
+        result.textContent = dryRun ? '試算中…' : '同步中…（名冊較大時需要數十秒）';
+    }
+    if (report) report.innerHTML = '';
+
+    try {
+        const data = await apiRequest('/admin/sync/students', 'POST', { dryRun });
+        if (!data.success) {
+            if (result) {
+                result.className = 'verify-result error';
+                result.textContent = '⚠️ ' + (data.message || '同步失敗');
+            }
+            return;
+        }
+        if (result) {
+            result.className = 'verify-result ok';
+            result.textContent = (dryRun ? '🧪 ' : '✅ ') + data.message;
+        }
+        renderSyncReport(data);
+        if (!dryRun) {
+            await loadAdminOverview();
+            await loadAdminUsers();
+        }
+    } catch (error) {
+        if (result) {
+            result.className = 'verify-result error';
+            result.textContent = '同步失敗：' + (error.message || '請稍後再試');
+        }
+    } finally {
+        syncRunning = false;
+        buttons.forEach((b) => { b.disabled = false; });
+    }
+}
+
+// 用 function 宣告而不是 const：檔案裡其餘的動作處理函式都是這個形式，
+// 而且 const 宣告的只存在於詞法作用域，從 window 取不到。
+function syncStudents() { return runStudentSync(false); }
+function syncStudentsDryRun() { return runStudentSync(true); }
+
+/**
+ * 同步報告。
+ *
+ * 錯誤列放最前面且永遠展開：那是管理員唯一需要動手處理的部分，
+ * 成功的幾十筆反而只要知道數量就好。
+ */
+function renderSyncReport(data) {
+    const box = document.getElementById('syncStudentsReport');
+    if (!box) return;
+    const s = data.summary || {};
+    const src = data.source || {};
+
+    const tile = (label, n, cls) =>
+        `<div class="sync-tile ${cls || ''}"><span class="sync-n">${n}</span><span>${label}</span></div>`;
+
+    const errorRows = (data.errors || []).map((e) => `
+        <tr>
+            <td class="num">${e.row}</td>
+            <td>${escapeText(e.name || '')}</td>
+            <td>${escapeText(e.reason)}</td>
+        </tr>`).join('');
+
+    const createdRows = (data.created || []).map((c) => `
+        <tr>
+            <td class="num">${c.row}</td>
+            <td>${escapeText(c.name)}</td>
+            <td>${escapeText(c.account)}</td>
+            <td class="num">${c.bmi == null ? '—' : c.bmi}</td>
+        </tr>`).join('');
+
+    const updatedRows = (data.updated || []).map((u) => `
+        <tr>
+            <td class="num">${u.row}</td>
+            <td>${escapeText(u.name)}</td>
+            <td>${escapeText((u.changed || []).join('、'))}</td>
+            <td class="num">${u.bmi == null ? '—' : u.bmi}</td>
+        </tr>`).join('');
+
+    const missingRows = (data.notInSheet || []).map((m) => `
+        <tr>
+            <td>${escapeText(m.name)}</td>
+            <td>${escapeText(m.className || '')}</td>
+            <td>${escapeText(m.account || '')}</td>
+        </tr>`).join('');
+
+    box.innerHTML = `
+        <p class="field-hint">
+            來源：${escapeText(src.sheet || '—')}　共 ${src.rows || 0} 列
+            匯出於 ${src.exportedAt ? new Date(src.exportedAt).toLocaleString('zh-TW') : '—'}
+            ${data.dryRun ? '　<strong>（試算，未寫入）</strong>' : ''}
+        </p>
+
+        <div class="sync-tiles">
+            ${tile('新增', s.created || 0, 'ok')}
+            ${tile('更新', s.updated || 0, 'ok')}
+            ${tile('未變', s.unchanged || 0)}
+            ${tile('待處理', s.errors || 0, (s.errors || 0) > 0 ? 'bad' : '')}
+            ${tile('表中沒有', s.notInSheet || 0)}
+        </div>
+
+        ${errorRows ? `
+        <details open class="sync-details bad">
+            <summary>需要處理的 ${s.errors} 列</summary>
+            <div class="table-scroll">
+            <table><thead><tr><th>列</th><th>姓名</th><th>原因</th></tr></thead>
+            <tbody>${errorRows}</tbody></table>
+            </div>
+        </details>` : ''}
+
+        ${createdRows ? `
+        <details class="sync-details">
+            <summary>新增的 ${s.created} 人</summary>
+            <div class="table-scroll">
+            <table><thead><tr><th>列</th><th>姓名</th><th>帳號（學號）</th><th>BMI</th></tr></thead>
+            <tbody>${createdRows}</tbody></table>
+            </div>
+            <p class="field-hint">
+                這些帳號沒有密碼，目前無法用帳密登入——之後改用 Google 登入後才會啟用。
+            </p>
+        </details>` : ''}
+
+        ${updatedRows ? `
+        <details class="sync-details">
+            <summary>更新的 ${s.updated} 人</summary>
+            <div class="table-scroll">
+            <table><thead><tr><th>列</th><th>姓名</th><th>變動欄位</th><th>BMI</th></tr></thead>
+            <tbody>${updatedRows}</tbody></table>
+            </div>
+        </details>` : ''}
+
+        ${missingRows ? `
+        <details class="sync-details">
+            <summary>資料庫有、試算表沒有的 ${s.notInSheet} 人（未變動）</summary>
+            <div class="table-scroll">
+            <table><thead><tr><th>姓名</th><th>班級</th><th>帳號</th></tr></thead>
+            <tbody>${missingRows}</tbody></table>
+            </div>
+            <p class="field-hint">
+                可能是轉學、畢業，也可能只是這次匯出不完整。同步不會自動停用他們，
+                確認後請到下方的帳號管理處理。
+            </p>
+        </details>` : ''}
+    `;
+}
+
+/** 名冊內容來自試算表，當成純文字處理，不讓它變成 HTML。 */
+function escapeText(v) {
+    return String(v == null ? '' : v)
+        .replace(/&/g, '&amp;').replace(/</g, '&lt;').replace(/>/g, '&gt;');
+}
+
+
+// ============================================================
+// 從 Google 試算表同步每月菜單
+// ============================================================
+
+let menuSyncRunning = false;
+
+async function runMenuSync(dryRun) {
+    if (menuSyncRunning) return;
+    const result = document.getElementById('syncMenusResult');
+    const report = document.getElementById('syncMenusReport');
+    const buttons = document.querySelectorAll('[data-action="syncMenus"], [data-action="syncMenusDryRun"]');
+    const month = (document.getElementById('menuSyncMonth') || {}).value || '';
+    const createMissingDishes = Boolean((document.getElementById('menuCreateDishes') || {}).checked);
+
+    if (!dryRun && !confirm(
+        '確定要寫入嗎？建議先按「試算」確認日期、星期與菜名都對得上。'
+        + (createMissingDishes ? '\n\n注意：勾選了「一併建立菜色」，查不到的菜名會被建立成新菜色。' : ''))) {
+        return;
+    }
+
+    menuSyncRunning = true;
+    buttons.forEach((b) => { b.disabled = true; });
+    if (result) {
+        result.className = 'verify-result';
+        result.textContent = dryRun ? '試算中…' : '同步中…';
+    }
+    if (report) report.innerHTML = '';
+
+    try {
+        const data = await apiRequest('/admin/sync/menus', 'POST',
+            { month, dryRun, createMissingDishes });
+        if (!data.success) {
+            if (result) {
+                result.className = 'verify-result error';
+                result.textContent = '⚠️ ' + (data.message || '同步失敗');
+            }
+            return;
+        }
+        if (result) {
+            result.className = 'verify-result ok';
+            result.textContent = (dryRun ? '🧪 ' : '✅ ') + data.message;
+        }
+        renderMenuReport(data);
+    } catch (error) {
+        if (result) {
+            result.className = 'verify-result error';
+            result.textContent = '同步失敗：' + (error.message || '請稍後再試');
+        }
+    } finally {
+        menuSyncRunning = false;
+        buttons.forEach((b) => { b.disabled = false; });
+    }
+}
+
+function syncMenus() { return runMenuSync(false); }
+function syncMenusDryRun() { return runMenuSync(true); }
+
+function renderMenuReport(data) {
+    const box = document.getElementById('syncMenusReport');
+    if (!box) return;
+    const s = data.summary || {};
+    const src = data.source || {};
+
+    const tile = (label, n, cls) =>
+        `<div class="sync-tile ${cls || ''}"><span class="sync-n">${n}</span><span>${label}</span></div>`;
+
+    const dayRows = (list) => list.map((d) => `
+        <tr>
+            <td>${escapeText(d.date)}</td>
+            <td>${escapeText((d.dishes || []).join('、'))}</td>
+        </tr>`).join('');
+
+    const errorRows = (data.errors || []).map((e) => `
+        <tr>
+            <td class="num">${e.row}</td>
+            <td>${escapeText(e.date || '')}</td>
+            <td>${escapeText(e.reason)}</td>
+        </tr>`).join('');
+
+    const closedRows = (data.closed || []).map((c) => `
+        <tr><td>${escapeText(c.date)}</td><td>${escapeText(c.note || '')}</td></tr>`).join('');
+
+    const dishRows = (data.newDishes || []).map((d) => `
+        <tr>
+            <td>${escapeText(d.name)}</td>
+            <td>${escapeText(d.category)}</td>
+            <td class="num">${d.portionG} g</td>
+        </tr>`).join('');
+
+    box.innerHTML = `
+        <p class="field-hint">
+            來源：${escapeText(src.sheet || '—')}　共 ${src.rows || 0} 列
+            ${src.month ? `　月份 ${escapeText(src.month)}` : '　（整張表）'}
+            ${src.timeZone ? `　時區 ${escapeText(src.timeZone)}` : ''}
+            ${data.dryRun ? '　<strong>（試算，未寫入）</strong>' : ''}
+        </p>
+
+        <div class="sync-tiles">
+            ${tile('新增', s.created || 0, 'ok')}
+            ${tile('更新', s.updated || 0, 'ok')}
+            ${tile('未變', s.unchanged || 0)}
+            ${tile('不供餐', s.closed || 0)}
+            ${tile('待處理', s.errors || 0, (s.errors || 0) > 0 ? 'bad' : '')}
+        </div>
+
+        ${errorRows ? `
+        <details open class="sync-details bad">
+            <summary>需要處理的 ${s.errors} 列</summary>
+            <div class="table-scroll">
+            <table><thead><tr><th>列</th><th>日期</th><th>原因</th></tr></thead>
+            <tbody>${errorRows}</tbody></table>
+            </div>
+        </details>` : ''}
+
+        ${dishRows ? `
+        <details open class="sync-details">
+            <summary>新建立的 ${s.newDishes} 道菜色</summary>
+            <div class="table-scroll">
+            <table><thead><tr><th>菜名</th><th>分類</th><th>每人份量</th></tr></thead>
+            <tbody>${dishRows}</tbody></table>
+            </div>
+            <p class="field-hint">
+                份量與營養值是分類預設，會直接影響供應量與發幣——請到菜色管理複核。
+            </p>
+        </details>` : ''}
+
+        ${(data.created || []).length ? `
+        <details class="sync-details">
+            <summary>新增的 ${s.created} 天</summary>
+            <div class="table-scroll">
+            <table><thead><tr><th>日期</th><th>菜色</th></tr></thead>
+            <tbody>${dayRows(data.created)}</tbody></table>
+            </div>
+        </details>` : ''}
+
+        ${(data.updated || []).length ? `
+        <details class="sync-details">
+            <summary>更新的 ${s.updated} 天</summary>
+            <div class="table-scroll">
+            <table><thead><tr><th>日期</th><th>菜色</th></tr></thead>
+            <tbody>${dayRows(data.updated)}</tbody></table>
+            </div>
+        </details>` : ''}
+
+        ${closedRows ? `
+        <details class="sync-details">
+            <summary>不供餐的 ${s.closed} 天</summary>
+            <div class="table-scroll">
+            <table><thead><tr><th>日期</th><th>備註</th></tr></thead>
+            <tbody>${closedRows}</tbody></table>
+            </div>
+        </details>` : ''}
+    `;
+}
+
 // ============================================================
 // 開發者面板：發幣公式參數
 // ============================================================
@@ -818,15 +1145,31 @@ async function submitSurvey(){
     try {
         let favorite = document.getElementById("favoriteFood").value;
         let hate = document.getElementById("hateFood").value;
+        const reasonBox = document.getElementById("surveyReason");
+        const reason = reasonBox ? reasonBox.value.replace(/\s+/g, ' ').trim() : '';
 
-        const data = await apiRequest('/task/submit-survey', 'POST', { favoriteFood: favorite, hateFood: hate });
+        // 同樣只是省一趟往返，後端仍會再驗一次
+        if (reason.length < 5) {
+            alert('請填寫不喜歡的原因（至少 5 個字）');
+            if (reasonBox) reasonBox.focus();
+            return;
+        }
+
+        const data = await apiRequest('/task/submit-survey', 'POST',
+            { favoriteFood: favorite, hateFood: hate, reason });
 
         if (data.success) {
             displaySurveyResult(favorite, hate);
+            if (reasonBox) {
+                reasonBox.value = '';
+                const c = document.getElementById('surveyReasonCount');
+                if (c) c.textContent = '0';
+            }
             alert(
                 "✅ 問卷已送出！\n\n" +
                 "最喜歡：" + favorite + "\n" +
-                "最不喜歡：" + hate + "\n\n" +
+                "最不喜歡：" + hate + "\n" +
+                "原因：" + reason + "\n\n" +
                 "⏰ 24小時後可再次送出"
             );
         } else {
@@ -848,9 +1191,22 @@ async function submitSurvey(){
 async function parentSignIn() {
     const result = document.getElementById('parentSignInResult');
     const btn = document.getElementById('parentSignInBtn');
+    const box = document.getElementById('parentComment');
+    const comment = box ? box.value.replace(/\s+/g, ' ').trim() : '';
+
+    // 前端先擋一次只是為了少跑一趟；真正的規則在後端，改掉這段也沒用
+    if (comment.length < 5) {
+        if (result) {
+            result.className = 'verify-result error';
+            result.textContent = '⚠️ 請先寫下今天想說的話（至少 5 個字），才能完成簽到';
+        }
+        if (box) box.focus();
+        return;
+    }
+
     if (btn) { btn.disabled = true; btn.textContent = '簽到中...'; }
     try {
-        const data = await apiRequest('/parent/sign-in', 'POST', {});
+        const data = await apiRequest('/parent/sign-in', 'POST', { comment });
         if (result) {
             result.className = 'verify-result ' + (data.success ? 'ok' : 'error');
             result.textContent = (data.success ? '✅ ' : '⚠️ ') + (data.message || '');
@@ -858,6 +1214,11 @@ async function parentSignIn() {
         if (btn) {
             btn.textContent = data.success ? '今天已簽到 ✅' : '今日簽到（孩子 +1 S幣）';
             btn.disabled = Boolean(data.success);
+        }
+        // 成功後鎖住評論欄位，但保留內容——家長要看得到自己今天寫了什麼
+        if (box && data.success) {
+            box.value = data.comment || comment;
+            box.readOnly = true;
         }
         await loadChildStatus();
     } catch (error) {
@@ -2238,6 +2599,11 @@ const ACTION_HANDLERS = {
     loadTrend: (el) => loadTrend(el),
     // 個人英雄榜
     loadHeroBoard: () => loadHeroBoard(),
+    // 管理員：從 Google 試算表同步名冊
+    syncStudents: () => syncStudents(),
+    syncStudentsDryRun: () => syncStudentsDryRun(),
+    syncMenus: () => syncMenus(),
+    syncMenusDryRun: () => syncMenusDryRun(),
     // 管理員：發幣公式參數
     loadCoinRules: () => loadCoinRules(),
     previewCoinRules: () => previewCoinRules(),
@@ -2266,6 +2632,20 @@ document.addEventListener('click', (event) => {
     Promise.resolve(handler(target)).catch((error) => {
         console.error(`執行 ${target.dataset.action} 失敗:`, error);
     });
+});
+
+// 兩個必填的長文字欄位即時顯示字數：使用者要看得到自己離門檻多遠，
+// 而不是按下送出才被退回。
+document.addEventListener('input', (event) => {
+    const COUNTERS = {
+        parentComment: 'parentCommentCount',
+        surveyReason: 'surveyReasonCount',
+    };
+    const counterId = COUNTERS[event.target && event.target.id];
+    if (!counterId) return;
+    const el = document.getElementById(counterId);
+    // 用與送出時相同的正規化，否則使用者看到的字數會跟實際送出的不一樣
+    if (el) el.textContent = String(event.target.value.replace(/\s+/g, ' ').trim().length);
 });
 
 document.addEventListener('change', (event) => {

@@ -302,6 +302,21 @@
           "order": "ASCENDING"
         }
       ]
+    },
+    {
+      "//": "我的兌換紀錄（最近 N 筆）",
+      "collectionGroup": "exchange_records",
+      "queryScope": "COLLECTION",
+      "fields": [
+        {
+          "fieldPath": "userId",
+          "order": "ASCENDING"
+        },
+        {
+          "fieldPath": "exchangedAt",
+          "order": "DESCENDING"
+        }
+      ]
     }
   ],
   "fieldOverrides": []

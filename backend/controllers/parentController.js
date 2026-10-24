@@ -26,11 +26,38 @@ async function loadBoundStudent(req) {
  * POST /api/parent/sign-in （相容路徑：POST /api/user/parent-sign-in）
  * 家長簽到 → 綁定學生 +1 S幣，每日一次。
  */
+/**
+ * 評論的長度限制。
+ *
+ * 下限不是刁難，是為了讓這個欄位真的有內容——沒有下限的話，
+ * 想快點拿幣的人會直接打一個句號。上限則是避免有人把整篇文章貼進資料庫。
+ */
+const COMMENT_MIN = 5;
+const COMMENT_MAX = 200;
+
+/** 清掉前後空白與連續空白行，再判斷長度。 */
+function normalizeComment(raw) {
+  return String(raw == null ? '' : raw).replace(/\s+/g, ' ').trim();
+}
+
 const parentSignIn = async (req, res) => {
   try {
     if (req.user.role !== ROLES.PARENT) {
       return bad(res, 403, '僅家長身份可簽到');
     }
+
+    // 先擋評論再查資料庫：驗證失敗就不必白跑一次查詢
+    const comment = normalizeComment(req.body && req.body.comment);
+    if (!comment) {
+      return bad(res, 400, '請先寫下今天想對孩子午餐說的話，才能完成簽到');
+    }
+    if (comment.length < COMMENT_MIN) {
+      return bad(res, 400, `評論太短了，請至少寫 ${COMMENT_MIN} 個字`);
+    }
+    if (comment.length > COMMENT_MAX) {
+      return bad(res, 400, `評論請控制在 ${COMMENT_MAX} 字以內（目前 ${comment.length} 字）`);
+    }
+
     const student = await loadBoundStudent(req);
     if (!student) {
       return bad(res, 400, '此家長帳號尚未綁定學生，請重新註冊或聯絡老師');
@@ -47,6 +74,8 @@ const parentSignIn = async (req, res) => {
         message: '今天已經簽到過了，明天再來關心孩子的午餐吧',
         date,
         student: { displayName: student.displayName, className: student.className },
+        // 回傳當初寫的那則，家長看得到自己今天說了什麼
+        comment: existing.data().comment || null,
         reward: { E: 0, S: 0 },
       });
     }
@@ -70,6 +99,8 @@ const parentSignIn = async (req, res) => {
       studentName: student.displayName || '',
       classId: student.classId || null,
       schoolId: student.schoolId || null,
+      comment,
+      commentAt: serverTime(),
       coinAwarded: true,
       rewardToStudent: reward,
       signedInAt: serverTime(),
@@ -81,6 +112,7 @@ const parentSignIn = async (req, res) => {
       message: `簽到成功！已為 ${student.displayName} 加 ${reward.S} 個 S幣`,
       date,
       student: { displayName: student.displayName, className: student.className },
+      comment,
       reward,
     });
   } catch (error) {

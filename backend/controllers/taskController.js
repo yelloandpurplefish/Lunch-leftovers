@@ -48,10 +48,17 @@ async function hasPendingRecord(userId, taskType) {
 
 
 // 提交問卷（24 小時認領制）
+/** 原因欄位的長度限制，理由同家長評論：太短等於沒填，太長塞爆資料庫。 */
+const REASON_MIN = 5;
+const REASON_MAX = 200;
+
 const submitSurvey = async (req, res) => {
   try {
     const userId = req.user.uid;
     const { favoriteFood, hateFood } = req.body;
+    // 不喜歡的原因才是廚房能據以改善的資訊，單純知道「哪道菜被討厭」不夠
+    const reason = String(req.body.reason == null ? '' : req.body.reason)
+      .replace(/\s+/g, ' ').trim();
     const now = admin.firestore.FieldValue.serverTimestamp();
     const cooldownHours = 24;
     const cooldownMs = cooldownHours * 60 * 60 * 1000;
@@ -60,6 +67,24 @@ const submitSurvey = async (req, res) => {
       return res.status(400).json({
         success: false,
         message: '請填寫所有欄位'
+      });
+    }
+    if (!reason) {
+      return res.status(400).json({
+        success: false,
+        message: '請填寫不喜歡的原因'
+      });
+    }
+    if (reason.length < REASON_MIN) {
+      return res.status(400).json({
+        success: false,
+        message: `原因太短了，請至少寫 ${REASON_MIN} 個字`
+      });
+    }
+    if (reason.length > REASON_MAX) {
+      return res.status(400).json({
+        success: false,
+        message: `原因請在 ${REASON_MAX} 字以內（目前 ${reason.length} 字）`
       });
     }
 
@@ -85,7 +110,8 @@ const submitSurvey = async (req, res) => {
       rewards: {},
       metadata: {
         favoriteFood,
-        hateFood
+        hateFood,
+        reason
       }
     });
 

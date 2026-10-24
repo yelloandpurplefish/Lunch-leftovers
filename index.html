@@ -496,6 +496,18 @@
 
     <br><br>
 
+    <label for="surveyReason">✍️ 為什麼不喜歡？<span class="required">必填</span></label>
+
+    <textarea id="surveyReason" rows="3" maxlength="200"
+              placeholder="例如：太鹹了、菜梗咬不動、份量太多吃不完"></textarea>
+
+    <p class="field-hint">
+        只知道哪道菜被討厭沒辦法改善，說明原因廚房才知道要調整什麼。
+        <span id="surveyReasonCount">0</span>/200 字，至少 5 個字。
+    </p>
+
+    <br>
+
     <button data-action="submitSurvey">
 
         送出問卷
@@ -579,6 +591,56 @@
                 <button data-action="resetCoinRules" class="danger-btn">↺ 還原出廠預設</button>
             </div>
             <p id="coinRulesResult" class="verify-result"></p>
+        </div>
+
+
+        <!-- 從 Google 試算表同步學生名冊。先試算再寫入，避免欄位對不上就動到資料。 -->
+        <div class="admin-card sync-card">
+            <h3>🔄 同步學生名冊</h3>
+            <p class="field-hint">
+                從 Google 試算表抓取 Gmail、學號、班級、座號、姓名、性別、年齡、身高、體重，
+                並自動計算 BMI 後存入。以 <strong>Gmail</strong> 認人，
+                不會動到幣、角色，也不會動到試算表裡沒有的學生。
+            </p>
+
+            <div class="sync-actions">
+                <button data-action="syncStudentsDryRun" class="secondary-btn">🧪 試算（不寫入）</button>
+                <button data-action="syncStudents">🔄 開始同步</button>
+            </div>
+
+            <p id="syncStudentsResult" class="verify-result"></p>
+            <div id="syncStudentsReport"></div>
+        </div>
+
+
+        <!-- 每月菜單：一列一天、日期為主鍵，只處理表上出現的日期 -->
+        <div class="admin-card sync-card">
+            <h3>🍱 同步每月菜單</h3>
+            <p class="field-hint">
+                從菜單試算表逐日寫入。<strong>只供餐週一到週五</strong>，
+                週末出現在表上會報錯；「供餐」欄留空或填否代表那天不供餐。
+                只會處理表上出現的日期，不影響其他月份。
+            </p>
+
+            <div class="admin-row">
+                <label for="menuSyncMonth">月份</label>
+                <input type="month" id="menuSyncMonth">
+                <span class="field-hint">留空＝整張表</span>
+            </div>
+
+            <label class="sync-opt">
+                <input type="checkbox" id="menuCreateDishes">
+                一併建立表上有、系統沒有的菜色
+                <span class="field-hint">新菜色的份量與營養值會先用分類預設，建立後請到菜色管理複核</span>
+            </label>
+
+            <div class="sync-actions">
+                <button data-action="syncMenusDryRun" class="secondary-btn">🧪 試算（不寫入）</button>
+                <button data-action="syncMenus">🍱 開始同步</button>
+            </div>
+
+            <p id="syncMenusResult" class="verify-result"></p>
+            <div id="syncMenusReport"></div>
         </div>
 
         <div class="admin-grid">
@@ -714,6 +776,15 @@
         <h2>👨‍👩‍👧 家長專區</h2>
 
         <div id="childStatus">載入中...</div>
+
+        <label for="parentComment">今天想對孩子的午餐說什麼？<span class="required">必填</span></label>
+
+        <textarea id="parentComment" rows="3" maxlength="200"
+                  placeholder="例如：今天孩子說湯很好喝，但青菜有點鹹"></textarea>
+
+        <p class="field-hint">
+            寫完才能完成簽到。<span id="parentCommentCount">0</span>/200 字，至少 5 個字。
+        </p>
 
         <button data-action="parentSignIn" id="parentSignInBtn">今日簽到（孩子 +1 S幣）</button>
 
