@@ -2157,6 +2157,12 @@ body{
    ────────────────────────────────────────────────────────────────── */
 
 :root{
+    /* 固定淺色：不跟隨系統的深色模式。
+       這一行不只是宣告偏好——系統設深色時，瀏覽器會自己把 input、select、
+       textarea、捲軸與日期選擇器畫成深色，就算 CSS 一個深色規則都沒有。
+       color-scheme 是關掉那層 UA 行為的唯一開關。 */
+    color-scheme:light;
+
     /* 內容與螢幕邊緣的距離 */
     --gutter:16px;
 
@@ -2549,16 +2555,6 @@ body{
     color:#1b2420;
 }
 
-/* 「為什麼不喜歡？」固定為淺色：使用者指定這個欄位不隨系統深淺模式變。
-   只刪掉深色規則不夠——瀏覽器仍會用深色樣式畫游標、選取色與捲軸，
-   color-scheme 才是關掉那層 UA 行為的開關。 */
-#surveyReason{
-    color-scheme:light;
-    background:#fff;
-    color:#1b2420;
-    border-color:#d4dcd7;
-}
-
 #parentComment:focus,
 #surveyReason:focus{
     outline:2px solid #2e7d32;
@@ -2583,22 +2579,6 @@ body{
     font-weight:600;
     letter-spacing:.02em;
     vertical-align:middle;
-}
-
-@media (prefers-color-scheme: dark){
-    :root:not([data-theme="light"]) #parentComment{
-        background:#1b211e;
-        color:#e6ebe7;
-        border-color:#2e3833;
-    }
-    :root:not([data-theme="light"]) #parentComment[readonly]{
-        background:#161b18;
-        color:#98a69e;
-    }
-    :root:not([data-theme="light"]) .required{
-        background:#2e1f1b;
-        color:#e0a58f;
-    }
 }
 
 :root[data-theme="dark"] #parentComment{
@@ -2680,17 +2660,6 @@ body{
 }
 
 .sync-details table{ font-size:13px; }
-
-@media (prefers-color-scheme: dark){
-    :root:not([data-theme="light"]) .sync-tile{ background:#1f2723; border-color:#2e3833; color:#9aa8a0; }
-    :root:not([data-theme="light"]) .sync-tile .sync-n{ color:#e6ebe7; }
-    :root:not([data-theme="light"]) .sync-tile.ok{ background:#1d2f22; border-color:#2b4531; }
-    :root:not([data-theme="light"]) .sync-tile.ok .sync-n{ color:#72c477; }
-    :root:not([data-theme="light"]) .sync-tile.bad{ background:#2e1f1b; border-color:#4a2d25; }
-    :root:not([data-theme="light"]) .sync-tile.bad .sync-n{ color:#e08a74; }
-    :root:not([data-theme="light"]) .sync-details{ background:#1b211e; border-color:#2e3833; }
-    :root:not([data-theme="light"]) .sync-details.bad{ background:#241a17; border-color:#4a2d25; }
-}
 
 :root[data-theme="dark"] .sync-tile{ background:#1f2723; border-color:#2e3833; color:#9aa8a0; }
 :root[data-theme="dark"] .sync-tile .sync-n{ color:#e6ebe7; }
@@ -2822,25 +2791,6 @@ body{
 }
 
 .shop-toggle-card .admin-row{ margin-top:10px; }
-
-@media (prefers-color-scheme: dark){
-    :root:not([data-theme="light"]) .intake-col{
-        background:#1b211e;
-        border-color:#2e3833;
-    }
-    :root:not([data-theme="light"]) .menu-slot,
-    :root:not([data-theme="light"]) .menu-portion{
-        background:transparent;
-        color:#98a69e;
-    }
-    :root:not([data-theme="light"]) .menu-slot{ background:#222a26; }
-    :root:not([data-theme="light"]) .menu-list li{ border-bottom-color:#2e3833; }
-    :root:not([data-theme="light"]) .shop-closed{
-        background:#2a2318;
-        border-color:#4a3c22;
-        color:#e8cf9a;
-    }
-}
 
 :root[data-theme="dark"] .intake-col{
     background:#1b211e;

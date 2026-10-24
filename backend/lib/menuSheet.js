@@ -20,7 +20,13 @@ const { COL, MENU_SLOTS, SLOT_LABEL, SLOT_CATEGORY, TUNABLE_DEFAULTS } = require
 
 const SHEET_URL = process.env.MENU_SHEET_URL || '';
 const SHEET_TOKEN = process.env.MENU_SHEET_TOKEN || '';
-const FETCH_TIMEOUT_MS = Number(process.env.MENU_SHEET_TIMEOUT_MS || 20000);
+/**
+ * Apps Script 的回應是兩段式的：script.google.com 先回 302 轉址，
+ * 真正的內容在 script.googleusercontent.com。再加上網頁應用程式的冷啟動，
+ * 整趟經常超過 20 秒——而執行紀錄只會顯示 doGet 已完成，看起來像我們這邊的問題。
+ * 因此預設給 60 秒。這是管理員按按鈕觸發的動作，不是使用者等待中的頁面。
+ */
+const FETCH_TIMEOUT_MS = Number(process.env.MENU_SHEET_TIMEOUT_MS || 60000);
 const MAX_ROWS = Number(process.env.MENU_SHEET_MAX_ROWS || 400);
 
 const norm = (v) => String(v == null ? '' : v).trim();
@@ -72,13 +78,22 @@ async function fetchMenus(month) {
   const controller = new AbortController();
   const timer = setTimeout(() => controller.abort(), FETCH_TIMEOUT_MS);
 
-  let res;
+  // 計時器要一路保護到「內容讀完」為止。
+  // 原本在拿到標頭後就 clearTimeout，於是標頭回來、內容卻卡住時會無限等下去。
+  let text;
   try {
-    res = await fetch(`${SHEET_URL}${sep}${q}`, { signal: controller.signal, redirect: 'follow' });
+    const res = await fetch(`${SHEET_URL}${sep}${q}`,
+      { signal: controller.signal, redirect: 'follow' });
+    text = await res.text();
   } catch (error) {
     const err = new Error(
       error.name === 'AbortError'
-        ? `試算表沒有在 ${FETCH_TIMEOUT_MS}ms 內回應`
+        ? `試算表沒有在 ${FETCH_TIMEOUT_MS}ms 內回應。`
+          + 'Apps Script 會先回 302 轉址到 script.googleusercontent.com，'
+          + '內容在第二段才拿得到，所以執行紀錄顯示「已完成」仍可能逾時。'
+          + `請看執行紀錄的「持續時間」：超過 ${Math.round(FETCH_TIMEOUT_MS / 1000)} 秒`
+          + '就調高 MENU_SHEET_TIMEOUT_MS；'
+          + '若遠低於此，多半是網路擋掉了 script.googleusercontent.com。'
         : `無法連線試算表：${error.message}`
     );
     err.status = 502;
@@ -86,8 +101,6 @@ async function fetchMenus(month) {
   } finally {
     clearTimeout(timer);
   }
-
-  const text = await res.text();
   let body;
   try {
     body = JSON.parse(text);

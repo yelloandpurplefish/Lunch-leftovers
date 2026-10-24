@@ -23,7 +23,13 @@ const { COL, ROLES, COIN_HOLDER_ROLES } = require('../config/schema');
 
 const SHEET_URL = process.env.STUDENT_SHEET_URL || '';
 const SHEET_TOKEN = process.env.STUDENT_SHEET_TOKEN || '';
-const FETCH_TIMEOUT_MS = Number(process.env.STUDENT_SHEET_TIMEOUT_MS || 20000);
+/**
+ * Apps Script 的回應是兩段式的：script.google.com 先回 302 轉址，
+ * 真正的內容在 script.googleusercontent.com。再加上網頁應用程式的冷啟動，
+ * 整趟經常超過 20 秒——而執行紀錄只會顯示 doGet 已完成，看起來像我們這邊的問題。
+ * 因此預設給 60 秒。這是管理員按按鈕觸發的動作，不是使用者等待中的頁面。
+ */
+const FETCH_TIMEOUT_MS = Number(process.env.STUDENT_SHEET_TIMEOUT_MS || 60000);
 
 /** 一次同步最多處理幾筆，避免一張壞掉的表把整個流程拖垮。 */
 const MAX_ROWS = Number(process.env.STUDENT_SHEET_MAX_ROWS || 2000);
@@ -74,14 +80,22 @@ async function fetchRoster() {
   const controller = new AbortController();
   const timer = setTimeout(() => controller.abort(), FETCH_TIMEOUT_MS);
 
-  let res;
+  // 計時器要一路保護到「內容讀完」為止。
+  // 原本在拿到標頭後就 clearTimeout，於是標頭回來、內容卻卡住時會無限等下去。
+  let text;
   try {
     // Apps Script 會 302 轉址到 googleusercontent，fetch 預設會跟隨
-    res = await fetch(url, { signal: controller.signal, redirect: 'follow' });
+    const res = await fetch(url, { signal: controller.signal, redirect: 'follow' });
+    text = await res.text();
   } catch (error) {
     const err = new Error(
       error.name === 'AbortError'
-        ? `試算表沒有在 ${FETCH_TIMEOUT_MS}ms 內回應`
+        ? `試算表沒有在 ${FETCH_TIMEOUT_MS}ms 內回應。`
+          + 'Apps Script 會先回 302 轉址到 script.googleusercontent.com，'
+          + '內容在第二段才拿得到，所以執行紀錄顯示「已完成」仍可能逾時。'
+          + `請看執行紀錄的「持續時間」：超過 ${Math.round(FETCH_TIMEOUT_MS / 1000)} 秒`
+          + '就調高 STUDENT_SHEET_TIMEOUT_MS；'
+          + '若遠低於此，多半是網路擋掉了 script.googleusercontent.com。'
         : `無法連線試算表：${error.message}`
     );
     err.status = 502;
@@ -89,8 +103,6 @@ async function fetchRoster() {
   } finally {
     clearTimeout(timer);
   }
-
-  const text = await res.text();
   let body;
   try {
     body = JSON.parse(text);
