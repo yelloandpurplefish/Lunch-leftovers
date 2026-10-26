@@ -14,9 +14,7 @@
  */
 const bcrypt = require('bcryptjs');
 const { db, admin } = require('../config/firebase');
-const {
-  COL, ROLES, ALL_ROLES, COIN_HOLDER_ROLES, MENU_SLOTS, SLOT_LABEL,
-} = require('../config/schema');
+const { COL, ROLES, ALL_ROLES, COIN_HOLDER_ROLES, MENU_SLOTS, SLOT_LABEL, DEVICE } = require('../config/schema');
 const { createUserWithAccount, findClass, findUserByIdentifier } = require('./authController');
 const { today } = require('../lib/dates');
 const { getSettings, saveSettings, validateTunables, deepMerge } = require('../lib/settings');
@@ -25,6 +23,8 @@ const menu = require('../lib/menuSheet');
 const { TUNABLE_DEFAULTS } = require('../config/schema');
 const { computeNutrition, computeEnergyCoins, computeSdg } = require('../lib/scoring');
 const shop = require('../lib/shop');
+const bucketTare = require('../lib/bucketTare');
+const scaleReadings = require('../lib/scaleReadings');
 
 const serverTime = () => admin.firestore.FieldValue.serverTimestamp();
 const norm = (v) => String(v == null ? '' : v).trim();
@@ -1059,7 +1059,132 @@ const updateShop = async (req, res) => {
   }
 };
 
+
+// ── 桶型皮重（空桶扣重）────────────────────────────────────────
+/**
+ * GET /api/admin/bucket-tare
+ *
+ * 一次回齊面板需要的三樣東西，省掉前端串接多支端點：
+ *   桶型與目前皮重、是哪一台秤量的、以及可用的裝置清單（含在線狀態）。
+ */
+const getBucketTare = async (req, res) => {
+  try {
+    const tares = await bucketTare.getTares({ force: true });
+    const snap = await db.collection(COL.devices).get();
+    const now = Date.now();
+    const devices = snap.docs.map((d) => {
+      const v = d.data();
+      const lastSeen = v.lastSeenAt ? v.lastSeenAt.toDate() : null;
+      const secs = lastSeen ? Math.round((now - lastSeen.getTime()) / 1000) : null;
+      return {
+        deviceId: d.id,
+        label: v.label || null,
+        className: v.className || null,
+        status: v.status || 'active',
+        online: secs != null && secs < DEVICE.offlineAfterSeconds,
+        secondsSinceSeen: secs,
+      };
+    }).sort((a, b) => Number(b.online) - Number(a.online)
+      || String(a.deviceId).localeCompare(String(b.deviceId)));
+
+    return res.status(200).json({
+      success: true,
+      types: bucketTare.BUCKET_TYPES.map((x) => ({
+        id: x.id,
+        label: x.label,
+        slots: x.slots.map((s) => SLOT_LABEL[s] || s),
+      })),
+      tares: tares.values,
+      meta: tares.meta,
+      devices,
+      range: bucketTare.TARE_RANGE,
+    });
+  } catch (error) {
+    console.error('讀取桶型皮重失敗:', error);
+    return bad(res, 500, error.message || '讀取桶型皮重失敗');
+  }
+};
+
+/**
+ * POST /api/admin/bucket-tare/measure
+ * body: { deviceId, bucketType }
+ *
+ * 用指定的那台秤量現在放在上面的空桶。取 netG 而不是 grossG：
+ * netG 已經扣掉裝置自身的 tareG（秤台上固定的托盤），
+ * 所以量到的就是「容器本身」的重量，兩層扣重不會重複計算。
+ */
+const measureBucketTare = async (req, res) => {
+  try {
+    const deviceId = String(req.body.deviceId || '').trim();
+    const bucketType = String(req.body.bucketType || '').trim();
+    if (!deviceId) return bad(res, 400, '請選擇要用哪一台秤量測');
+    if (!bucketType) return bad(res, 400, '請選擇桶型');
+
+    const reading = await scaleReadings.latestByDevice(deviceId);
+    if (reading.state !== 'ok') {
+      return bad(res, 409, `這台秤現在讀不到有效重量：${reading.note || reading.state}`, {
+        reading,
+      });
+    }
+    // 重量欄位是 value_g（classify() 的輸出），不是 netG。
+    // value_g 已經是 grossG − 裝置 tareG，也就是「放在秤上的容器」的重量。
+    if (!Number.isFinite(Number(reading.value_g))) {
+      return bad(res, 409, '讀數沒有有效的重量值', { reading });
+    }
+
+    const after = await bucketTare.setTare({
+      bucketType,
+      tareG: Number(reading.value_g),
+      method: 'measured',
+      deviceId,
+      uid: req.user.uid,
+      displayName: req.user.displayName,
+    });
+
+    return res.status(200).json({
+      success: true,
+      message: `已把「${bucketTare.bucketTypeLabel(bucketType)}」的皮重設為 `
+        + `${Math.round(Number(reading.value_g) * 10) / 10} g（全校共用）`,
+      measuredG: Number(reading.value_g),
+      reading,
+      tares: after.values,
+      meta: after.meta,
+    });
+  } catch (error) {
+    console.error('量測桶型皮重失敗:', error);
+    return bad(res, error.status || 500, error.message || '量測桶型皮重失敗');
+  }
+};
+
+/**
+ * PUT /api/admin/bucket-tare
+ * body: { bucketType, tareG }
+ * 手動輸入（秤不在手邊、或拿別的磅秤量好了）。
+ */
+const updateBucketTare = async (req, res) => {
+  try {
+    const after = await bucketTare.setTare({
+      bucketType: String(req.body.bucketType || '').trim(),
+      tareG: req.body.tareG,
+      method: 'manual',
+      uid: req.user.uid,
+      displayName: req.user.displayName,
+    });
+    return res.status(200).json({
+      success: true,
+      message: '已更新皮重（全校共用）',
+      tares: after.values,
+      meta: after.meta,
+    });
+  } catch (error) {
+    return bad(res, error.status || 500, error.message || '更新皮重失敗');
+  }
+};
+
 module.exports = {
+  getBucketTare,
+  measureBucketTare,
+  updateBucketTare,
   getShop,
   updateShop,
   getOverview,

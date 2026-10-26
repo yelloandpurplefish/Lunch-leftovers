@@ -40,7 +40,10 @@ function presentDevice(id, d, nowMs = Date.now()) {
     className: d.className || null,
     bucketId: d.bucketId || null,
     bucketLabel: d.bucketId ? (BUCKET_LAYOUT.find((b) => b.id === d.bucketId) || {}).label || null : null,
-    provisioned: Boolean(d.classId && d.bucketId),
+    // 一個班級一台秤：綁定班級就算設定完成。
+    // bucketId 是影像時代「一桶一台」的遺留欄位，現在量哪一桶由操作者
+    // 在依序稱重時指定，不再綁在裝置上。
+    provisioned: Boolean(d.classId),
     // 量測參數
     tareG: Number(d.tareG || 0),
     calibrationFactor: Number(d.calibrationFactor || 1),
@@ -427,7 +430,7 @@ const fleetHealth = async (req, res) => {
       .filter((d) => d.status !== 'disabled')
       .map((d) => {
         const reasons = [];
-        if (!d.provisioned) reasons.push('未綁定班級/桶別');
+        if (!d.provisioned) reasons.push('未綁定班級');
         if (!d.online) reasons.push(d.lastSeenAt ? '離線' : '從未連線');
         if (d.batteryPct != null && d.batteryPct < 20) reasons.push(`電量 ${d.batteryPct}%`);
         if (d.authFailures > 0) reasons.push(`憑證驗證失敗 ${d.authFailures} 次`);

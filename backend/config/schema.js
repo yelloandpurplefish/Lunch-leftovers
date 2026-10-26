@@ -239,6 +239,30 @@ const BUCKET_LAYOUT = [
   { id: 'soup', label: '湯桶', dishSlots: ['soup'] },
 ];
 
+/**
+ * 桶型。**一個班級一台秤**，量測時一桶一桶輪流放上去，
+ * 所以皮重按桶型登錄一次、全校共用（同款桶空重一樣）。
+ *
+ * 與 BUCKET_LAYOUT（四桶，影像時代的分區）不同：
+ * BUCKET_LAYOUT 是「一次拍一桶、桶內有幾道菜」的分組；
+ * BUCKET_TYPES 是「這道菜裝在哪一種容器裡」，只為了扣皮重。
+ * 影像停用後，實際流程走 BUCKET_TYPES。
+ */
+const BUCKET_TYPES = [
+  { id: 'staple', label: '主食桶', slots: ['staple'] },
+  { id: 'dish',   label: '菜桶',   slots: ['main', 'side1', 'side2', 'veg'] },
+  { id: 'soup',   label: '湯桶',   slots: ['soup'] },
+];
+
+/** 菜色欄位 → 桶型。由 BUCKET_TYPES 推導，避免兩邊各寫一份而走樣。 */
+const SLOT_BUCKET_TYPE = BUCKET_TYPES.reduce((acc, t) => {
+  t.slots.forEach((s) => { acc[s] = t.id; });
+  return acc;
+}, {});
+
+/** 桶型皮重存放的位置：system_config 下的這份文件。 */
+const BUCKET_TARE_DOC_ID = 'bucket_tare';
+
 const MENU_SLOTS = ['staple', 'main', 'side1', 'side2', 'veg', 'soup'];
 
 const SLOT_LABEL = {
@@ -282,6 +306,9 @@ module.exports = {
   CLASS_COIN_TO_MEMBER,
   SUPPORT,
   BUCKET_LAYOUT,
+  BUCKET_TYPES,
+  SLOT_BUCKET_TYPE,
+  BUCKET_TARE_DOC_ID,
   MENU_SLOTS,
   SLOT_LABEL,
   SLOT_CATEGORY,

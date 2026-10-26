@@ -35,7 +35,9 @@ const app = express();
 const PORT = process.env.PORT || 3000;
 
 // 安全中介軟體
-// 註：前端不使用任何內聯 script/onclick，因此無需 'unsafe-inline'
+// 註：前端不使用任何內聯 script/onclick，因此 script-src 無需 'unsafe-inline'。
+//     style 也一樣：原本散在 HTML 裡的 6 個 style 屬性已搬進 style.css，
+//     因為 style-src 'self' 會讓 style 屬性被瀏覽器直接丟掉——跑版而且不報錯。
 app.use(helmet({
   contentSecurityPolicy: {
     directives: {
@@ -56,7 +58,19 @@ app.use(helmet({
       frameSrc: ["https://www.youtube.com", "https://www.youtube-nocookie.com"],
       fontSrc: ["'self'"],
       objectSrc: ["'none'"],
-      upgradeInsecureRequests: []
+      /**
+       * upgrade-insecure-requests 只有在前面真的有 HTTPS 時才該送。
+       *
+       * 它會把所有 http:// 子資源改寫成 https://。若伺服器是在校內區網以
+       * 純 HTTP 提供（例如 http://192.168.1.50:3000），瀏覽器就會去抓
+       * https://192.168.1.50:3000/app.js → ERR_SSL_PROTOCOL_ERROR →
+       * 腳本全部載不進來，整個頁面變成空殼。API 本身是通的，所以很難查。
+       * localhost 是「可信任來源」豁免於這個升級，因此本機開發察覺不到。
+       *
+       * 預設不送；部署在 Caddy / Render 等 HTTPS 之後時設 HTTPS_UPGRADE=true。
+       */
+      upgradeInsecureRequests:
+        String(process.env.HTTPS_UPGRADE || '').toLowerCase() === 'true' ? [] : null
     }
   },
   crossOriginEmbedderPolicy: false // 允許嵌入 YouTube 影片

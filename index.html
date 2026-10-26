@@ -13,98 +13,6 @@
     <title>學校午餐零廚餘管理系統</title>
 
     <link rel="stylesheet" href="style.css">
-    <style>
-        /* 抽獎特效 */
-        @keyframes popText {
-            0% { transform: scale(0.2); opacity: 0; }
-            50% { transform: scale(1.2); opacity: 1; }
-            70% { transform: scale(0.95); }
-            100% { transform: scale(1); opacity: 1; }
-        }
-        @keyframes floatUp {
-            0% { transform: translate(-50%, 0) scale(1); opacity: 1; }
-            100% { transform: translate(-50%, -120px) scale(1.2); opacity: 0; }
-        }
-        @keyframes meteorFall {
-            0% { transform: translate(200px, -200px) rotate(-45deg); opacity: 1; }
-            70% { transform: translate(-30px, 220px) rotate(-45deg); opacity: 1; }
-            100% { transform: translate(-40px, 240px) rotate(-45deg); opacity: 0; }
-        }
-        @keyframes impactFlash {
-            0% { transform: scale(0); opacity: 0.9; }
-            100% { transform: scale(2); opacity: 0; }
-        }
-        @keyframes pillarGrow {
-            0% { height: 0; opacity: 0; }
-            30% { opacity: 1; }
-            100% { height: 100%; opacity: 0.85; }
-        }
-        @keyframes pillarGlow {
-            0%, 100% { box-shadow: 0 0 30px #00aaff; }
-            50% { box-shadow: 0 0 60px #00aaff, 0 0 100px #0055ff; }
-        }
-        @keyframes slideDown {
-            0% { transform: translateY(-100%); }
-            100% { transform: translateY(0); }
-        }
-        .lottery-congrats {
-            position: absolute;
-            top: 50%;
-            left: 50%;
-            transform: translate(-50%, -50%);
-            font-size: 32px;
-            font-weight: bold;
-            color: #ff6b00;
-            text-shadow: 0 0 10px #ffd700;
-            animation: popText 0.6s ease-out forwards;
-            white-space: nowrap;
-        }
-        .lottery-congrats.float {
-            animation: popText 0.5s ease-out forwards, floatUp 1.2s ease-in forwards 0.6s;
-        }
-        .meteor {
-            position: absolute;
-            width: 12px;
-            height: 12px;
-            background: radial-gradient(circle, #fff 0%, #ffaa00 40%, #ff4400 100%);
-            border-radius: 50%;
-            box-shadow: -20px 0 15px 5px rgba(255, 100, 0, 0.6);
-            z-index: 20;
-        }
-        .meteor::before {
-            content: '';
-            position: absolute;
-            top: 50%;
-            left: -80px;
-            width: 100px;
-            height: 3px;
-            background: linear-gradient(90deg, transparent, rgba(255, 200, 100, 0.8), #fff);
-            transform: translateY(-50%);
-        }
-        .impact {
-            position: absolute;
-            width: 80px;
-            height: 80px;
-            background: radial-gradient(circle, #fff 0%, #ff8800 40%, transparent 70%);
-            border-radius: 50%;
-            z-index: 19;
-            animation: impactFlash 0.6s ease-out forwards;
-        }
-        .light-pillar {
-            position: absolute;
-            top: 0;
-            left: 50%;
-            width: 60px;
-            transform: translateX(-50%);
-            background: linear-gradient(to bottom, rgba(0, 170, 255, 0.9), rgba(0, 85, 255, 0.4), transparent);
-            border-radius: 0 0 50% 50%;
-            z-index: 20;
-            animation: pillarGrow 1.2s ease-out forwards, pillarGlow 1.5s ease-in-out infinite 1s;
-        }
-        .global-announcement {
-            animation: slideDown 0.5s ease-out;
-        }
-    </style>
 </head>
 <body>
 
@@ -237,7 +145,7 @@
         <div class="logged-in-container hidden" id="loggedInContainer">
             <div class="user-info">
                 <h3>👤 歡迎回來，<span id="userDisplayName"></span>！<span id="userRoleTag" class="role-tag"></span></h3>
-                <p style="color:#2e7d32; margin-top:6px; font-size:15px;">一起減碳 零廚餘愛地球</p>
+                <p class="hero-tagline">一起減碳 零廚餘愛地球</p>
                 <div class="user-stats">
                     <div class="stat-item">
                         <span class="stat-label">E幣 <small>（光盤）</small></span>
@@ -508,7 +416,7 @@
 
     </button>
 
-    <div id="surveyDisplay" class="survey-display" style="margin-top: 20px;">
+    <div id="surveyDisplay" class="survey-display">
         <p class="survey-placeholder">送出問卷後會顯示結果</p>
     </div>
 
@@ -519,11 +427,12 @@
 <h2>👨‍🍳 午餐長專區</h2>
 <div class="reward" id="recordPanel">
 
-    <h2>📷 四桶剩食紀錄</h2>
+    <h2>⚖️ 依序稱重紀錄</h2>
 
     <p class="field-hint">
-        依序拍攝：主食桶 → 配菜桶A → 配菜桶B → 湯桶。系統辨識各菜殘餘比例後，
-        由你確認再送出；辨識服務未啟動時會改用預設估算，務必自行確認數值。
+        一個班級一台秤。照下面的順序，<strong>一桶一桶放上去</strong>，
+        每放一桶按一次「讀取並記錄」——桶子的空重系統已經知道，不必歸零。
+        順序是主食桶 → 四個菜桶 → 湯桶，換桶次數最少。
     </p>
 
     <p id="recordVisionStatus" class="verify-result"></p>
@@ -532,7 +441,16 @@
 
     <button data-action="startRecord" id="startRecordBtn">開始今日紀錄</button>
 
-    <div id="recordBuckets"></div>
+    <!-- 秤的即時狀態：放上去之後這裡要看得到重量在變 -->
+    <div id="scaleLive" class="scale-live hidden">
+        <span class="scale-live-label">秤上現在</span>
+        <span id="scaleLiveValue" class="scale-live-value">—</span>
+        <span class="scale-live-unit">g</span>
+        <span id="scaleLiveState" class="scale-live-state"></span>
+    </div>
+
+    <!-- 依序稱重清單 -->
+    <div id="weighQueue"></div>
 
     <div id="recordSummary"></div>
 
@@ -664,6 +582,30 @@
 
             <p id="shopToggleResult" class="verify-result"></p>
             <p id="shopToggleMeta" class="field-hint"></p>
+        </div>
+
+        <!-- 桶型皮重：全校共用。量測時要指定用哪一台秤。 -->
+        <div class="admin-card tare-card">
+            <h3>⚖️ 桶型扣重（空桶重）</h3>
+            <p class="field-hint">
+                一個班級一台秤，量測時一桶一桶輪流放上去。同款桶的空重一樣，
+                所以皮重<strong>按桶型設定一次、全校共用</strong>，
+                午餐長現場就不必歸零，也不用選桶——系統從菜色就知道是哪種桶。
+            </p>
+
+            <div class="admin-row">
+                <label for="tareDevice">用哪一台秤量</label>
+                <select id="tareDevice"></select>
+                <button data-action="loadBucketTare" class="secondary-btn">🔄 重新整理</button>
+            </div>
+            <p class="field-hint">
+                把空桶放到那台秤上，再按對應桶型的「量測」。
+                也可以直接在欄位裡填數字後按「儲存」。
+            </p>
+
+            <div id="tareRows"></div>
+
+            <p id="tareResult" class="verify-result"></p>
         </div>
 
         <div class="admin-grid">
@@ -816,16 +758,16 @@
     </div>
 
 <!-- 全站大獎公告 -->
-<div id="globalAnnouncement" class="hidden" style="position: fixed; top: 0; left: 0; right: 0; z-index: 9999; background: linear-gradient(90deg, #1e3c72, #2a5298); color: #fff; text-align: center; padding: 12px; font-size: 16px; box-shadow: 0 4px 12px rgba(0,0,0,0.3);"></div>
+<div id="globalAnnouncement" class="global-announcement hidden"></div>
 
 <!-- 抽獎彈窗 -->
 <div id="lotteryModal" class="lottery-modal">
-    <div class="lottery-content" style="position: relative; overflow: hidden; min-height: 320px;">
+    <div class="lottery-content">
         <span class="close-btn" data-action="closeLottery">&times;</span>
         <h2>🎰 幸運抽獎</h2>
         <p>消耗 10 E幣進行抽獎</p>
-        <div id="lotteryEffects" style="position: absolute; top: 0; left: 0; right: 0; bottom: 0; pointer-events: none; overflow: hidden; z-index: 5;"></div>
-        <div id="lotteryResult" class="lottery-result" style="position: relative; z-index: 10;"></div>
+        <div id="lotteryEffects" class="lottery-effects"></div>
+        <div id="lotteryResult" class="lottery-result"></div>
         <button class="spin-btn" data-action="spinLottery">開始抽獎</button>
     </div>
 </div>

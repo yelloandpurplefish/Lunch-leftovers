@@ -155,8 +155,61 @@ async function latestReading({ classId, bucketId, maxAgeSec = DEFAULT_MAX_AGE_SE
   }
 }
 
+
+/** 某台裝置的最新讀數。管理員量測桶型皮重時要指定用哪一台秤。 */
+async function latestByDevice(deviceId, { maxAgeSec = DEFAULT_MAX_AGE_SEC } = {}) {
+  if (!deviceId) return { state: 'disabled', note: '未指定裝置' };
+  try {
+    const devSnap = await db.collection(COL.devices).doc(String(deviceId)).get();
+    if (!devSnap.exists) return { state: 'disabled', note: `查無裝置 ${deviceId}` };
+    const device = devSnap.data();
+    if (device.status === 'disabled') {
+      return { state: 'offline', note: `裝置 ${deviceId} 已被停用` };
+    }
+    const snap = await db
+      .collection(COL.deviceReadings)
+      .where('deviceId', '==', device.deviceId || devSnap.id)
+      .orderBy('receivedAt', 'desc')
+      .limit(1)
+      .get();
+    if (snap.empty) return { state: 'offline', note: '這台裝置尚未上傳任何讀數' };
+    return classify(snap.docs[0].data(), { maxAgeSec });
+  } catch (error) {
+    return { state: 'offline', note: `讀取感測器資料失敗：${error.message}` };
+  }
+}
+
+/**
+ * 某個班級的秤的最新讀數。
+ * 新模型是一個班級一台秤，所以不再需要 bucketId——
+ * 「這一筆是哪道菜」由操作者在依序稱重時指定。
+ */
+async function latestByClass(classId, { maxAgeSec = DEFAULT_MAX_AGE_SEC } = {}) {
+  if (!classId) return { state: 'disabled', note: '未指定班級' };
+  try {
+    const devSnap = await db.collection(COL.devices)
+      .where('classId', '==', classId)
+      .limit(1)
+      .get();
+    if (devSnap.empty) {
+      return { state: 'disabled', note: '這個班級還沒綁定稱重模組，請洽技術員' };
+    }
+    const doc = devSnap.docs[0];
+    const device = doc.data();
+    if (device.status === 'disabled') {
+      return { state: 'offline', note: `裝置 ${doc.id} 已被停用，請洽技術員` };
+    }
+    const reading = await latestByDevice(doc.id, { maxAgeSec });
+    return { ...reading, deviceId: doc.id };
+  } catch (error) {
+    return { state: 'offline', note: `讀取感測器資料失敗：${error.message}` };
+  }
+}
+
 module.exports = {
   latestReading,
+  latestByDevice,
+  latestByClass,
   classify,
   MIN_VALID_G,
   DEFAULT_MAX_AGE_SEC,

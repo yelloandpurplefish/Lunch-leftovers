@@ -803,6 +803,24 @@ function renderSyncReport(data) {
  * 放進 HTML 屬性值的字串。escapeText 是給節點內容用的，
  * 屬性還得處理引號，否則菜名裡一個雙引號就能跳出 value="..."。
  */
+/**
+ * 把 data-bar-width / data-bar-height 的百分比套到元素上。
+ *
+ * 為什麼不直接寫 style="width:37%"：CSP 的 style-src 'self' 會讓
+ * HTML 裡的 style 屬性被瀏覽器丟掉（不報錯，只是沒效果——實測算繪寬度
+ * 會變成父層寬度）。改用 CSSOM 設定則不受限制，所以把數值先放進
+ * data- 屬性，插入 DOM 後再呼叫這支套用。
+ */
+function applyBarSizes(root) {
+    const scope = root || document;
+    scope.querySelectorAll('[data-bar-width]').forEach((el) => {
+        el.style.width = el.dataset.barWidth + '%';
+    });
+    scope.querySelectorAll('[data-bar-height]').forEach((el) => {
+        el.style.height = el.dataset.barHeight + '%';
+    });
+}
+
 function escapeAttr(s) {
     return String(s == null ? '' : s)
         .replace(/&/g, '&amp;')
@@ -950,6 +968,296 @@ async function saveShopState() {
             result.className = 'verify-result error';
             result.textContent = '儲存失敗：' + (error.message || '請稍後再試');
         }
+    }
+}
+
+
+// ══════════════════════════════════════════════════════════════════
+//  依序稱重（午餐長）
+// ══════════════════════════════════════════════════════════════════
+//
+//  一個班級一台秤，一桶一桶放上去。介面要做到三件事：
+//   1. 清楚指出「現在該放哪一桶」——不然六道菜很容易漏或重複
+//   2. 秤上的重量要即時看得到，放上去沒反應時人才知道是秤的問題
+//   3. 每一筆都要能看出是量測、手動輸入，還是宣告吃光
+
+let weighPollTimer = null;
+
+async function loadWeighQueue() {
+    const box = document.getElementById('weighQueue');
+    if (!box) return;
+    try {
+        const data = await apiRequest('/record/weigh-queue', 'GET');
+        if (!data.success) {
+            box.innerHTML = `<p class="field-hint">${escapeText(data.message || '尚未開始今日紀錄')}</p>`;
+            stopScalePolling();
+            return;
+        }
+        renderWeighQueue(data);
+        startScalePolling();
+    } catch (error) {
+        box.innerHTML = `<p class="field-hint">稱重清單載入失敗：${escapeText(error.message || '')}</p>`;
+    }
+}
+
+function renderWeighQueue(data) {
+    const box = document.getElementById('weighQueue');
+    if (!box) return;
+    const queue = data.queue || [];
+    const prog = data.progress || {};
+
+    if (!queue.length) {
+        box.innerHTML = '<p class="field-hint">今天的菜單還沒設定，無法稱重。</p>';
+        return;
+    }
+
+    // 皮重沒設好就先別讓人開始量——量了也算不出剩餘量
+    const blocked = (data.blocked || []).filter(Boolean);
+    const blockHtml = blocked.length
+        ? `<div class="weigh-block">⚠️ ${blocked.map(escapeText).join('<br>')}
+             <br><span class="field-hint">請管理員到「桶型扣重」設定後再量</span></div>`
+        : '';
+
+    // 下一個要量的：第一個還沒量的
+    const nextSlot = (queue.find((q) => !q.weighed) || {}).slot || null;
+
+    const rows = queue.map((q) => {
+        const isNext = q.slot === nextSlot;
+        const cls = ['weigh-row'];
+        if (q.weighed) cls.push('done');
+        if (isNext) cls.push('next');
+        return `
+        <div class="${cls.join(' ')}">
+            <div class="weigh-main">
+                <span class="weigh-bucket">${escapeText(q.bucketLabel)}</span>
+                <span class="weigh-dish">${escapeText(q.slotLabel)}　${escapeText(q.dishName)}</span>
+            </div>
+            <div class="weigh-value">
+                ${q.weighed
+                    ? `<strong>${q.leftoverG}</strong> g`
+                    : `<span class="weigh-pending">待量</span>`}
+                ${q.tareG != null ? `<span class="weigh-tare">皮重 ${q.tareG} g</span>` : ''}
+            </div>
+            <div class="weigh-actions">
+                ${isNext && !blocked.length ? `
+                    <button data-action="weighDish" data-slot="${escapeAttr(q.slot)}">
+                        ⚖️ 讀取並記錄
+                    </button>
+                    <button data-action="weighEmptied" data-slot="${escapeAttr(q.slot)}"
+                            class="secondary-btn">吃光了</button>` : ''}
+                ${q.weighed && !blocked.length ? `
+                    <button data-action="weighDish" data-slot="${escapeAttr(q.slot)}"
+                            class="secondary-btn">重量一次</button>` : ''}
+            </div>
+        </div>`;
+    }).join('');
+
+    box.innerHTML = `
+        ${blockHtml}
+        <p class="weigh-progress">
+            進度 <strong>${prog.done || 0}</strong> / ${prog.total || 0}
+            ${prog.allDone ? '　✅ 六道都量完了，可以結算' : ''}
+        </p>
+        <div class="weigh-list">${rows}</div>
+        <p class="field-hint">
+            「重量一次」會覆蓋原本那筆。秤故障時可以請管理員改用手動輸入。
+        </p>`;
+}
+
+/** 秤的即時讀數。放上桶子後這裡要看得到數字在變，才知道秤是活的。 */
+async function pollScale() {
+    const box = document.getElementById('scaleLive');
+    const val = document.getElementById('scaleLiveValue');
+    const st = document.getElementById('scaleLiveState');
+    if (!box || !val) return;
+    try {
+        const data = await apiRequest('/record/weigh-queue', 'GET');
+        if (!data.success) return;
+        const s = data.scale || {};
+        box.classList.remove('hidden');
+        val.textContent = s.netG != null ? Math.round(s.netG) : '—';
+        const label = {
+            ok: '穩定', unstable: '還在晃，等一下', no_load: '秤上沒有東西',
+            offline: '秤離線', overload: '超出量程', disabled: '未綁定秤',
+        }[s.state] || s.state || '';
+        st.textContent = label + (s.note ? `（${s.note}）` : '');
+        st.className = 'scale-live-state ' + (s.state === 'ok' ? 'ok' : 'warn');
+    } catch (error) {
+        if (st) st.textContent = '讀不到秤的狀態';
+    }
+}
+
+function startScalePolling() {
+    if (weighPollTimer) return;
+    pollScale();
+    // 2 秒一次：放上桶子到讀數穩定大約就這個量級，再快只是多打 API
+    weighPollTimer = setInterval(pollScale, 2000);
+}
+
+function stopScalePolling() {
+    if (!weighPollTimer) return;
+    clearInterval(weighPollTimer);
+    weighPollTimer = null;
+}
+
+async function weighDish(el) {
+    const slot = el && el.dataset ? el.dataset.slot : null;
+    if (!slot) return;
+    el.disabled = true;
+    const original = el.textContent;
+    el.textContent = '讀取中…';
+    try {
+        const data = await apiRequest('/record/weigh', 'POST', { slot });
+        if (!data.success) {
+            alert(data.message || '稱重失敗');
+        } else {
+            let msg = data.message;
+            if ((data.warnings || []).length) msg += '\n\n⚠️ ' + data.warnings.join('\n');
+            alert(msg);
+        }
+        await loadWeighQueue();
+    } catch (error) {
+        alert('稱重失敗：' + (error.message || '請稍後再試'));
+    } finally {
+        el.disabled = false;
+        el.textContent = original;
+    }
+}
+
+async function weighEmptied(el) {
+    const slot = el && el.dataset ? el.dataset.slot : null;
+    if (!slot) return;
+    if (!confirm('確定這道菜全部吃完、完全沒有剩？會記為 0 g。')) return;
+    try {
+        const data = await apiRequest('/record/weigh', 'POST', { slot, emptied: true });
+        if (!data.success) alert(data.message || '記錄失敗');
+        await loadWeighQueue();
+    } catch (error) {
+        alert('記錄失敗：' + (error.message || '請稍後再試'));
+    }
+}
+
+// ══════════════════════════════════════════════════════════════════
+//  桶型皮重（管理員）
+// ══════════════════════════════════════════════════════════════════
+
+let bucketTareState = { types: [], tares: {}, meta: {}, devices: [], range: [0, 20000] };
+
+async function loadBucketTare() {
+    const rows = document.getElementById('tareRows');
+    if (!rows) return;
+    try {
+        const data = await apiRequest('/admin/bucket-tare', 'GET');
+        if (!data.success) {
+            rows.innerHTML = `<p class="field-hint">${escapeText(data.message || '載入失敗')}</p>`;
+            return;
+        }
+        bucketTareState = data;
+        renderTareDevices(data.devices || []);
+        renderTareRows(data);
+    } catch (error) {
+        rows.innerHTML = `<p class="field-hint">載入失敗：${escapeText(error.message || '')}</p>`;
+    }
+}
+
+function renderTareDevices(devices) {
+    const sel = document.getElementById('tareDevice');
+    if (!sel) return;
+    const keep = sel.value;
+    if (!devices.length) {
+        sel.innerHTML = '<option value="">（沒有已註冊的秤）</option>';
+        return;
+    }
+    // 在線的排前面：要量皮重就得用在線的那台
+    sel.innerHTML = devices.map((d) => {
+        const name = d.label ? `${d.deviceId}（${d.label}）` : d.deviceId;
+        const cls = d.className ? `　${d.className} 班` : '';
+        const state = d.online ? '🟢 在線' : '⚪ 離線';
+        return `<option value="${escapeAttr(d.deviceId)}" ${d.online ? '' : 'data-offline="1"'}>`
+            + `${escapeText(name)}${escapeText(cls)}　${state}</option>`;
+    }).join('');
+    const stillThere = devices.some((d) => d.deviceId === keep);
+    if (keep && stillThere) sel.value = keep;
+}
+
+function renderTareRows(data) {
+    const box = document.getElementById('tareRows');
+    if (!box) return;
+    box.innerHTML = (data.types || []).map((ty) => {
+        const v = (data.tares || {})[ty.id];
+        const m = (data.meta || {})[ty.id];
+        const info = m
+            ? `${m.method === 'measured' ? '量測' : '手動'}`
+              + (m.measuredWith ? `　用 ${escapeText(m.measuredWith)}` : '')
+              + (m.updatedBy ? `　by ${escapeText(m.updatedBy)}` : '')
+            : '尚未設定';
+        return `
+        <div class="tare-row ${v == null ? 'unset' : ''}">
+            <div class="tare-label">
+                <strong>${escapeText(ty.label)}</strong>
+                <span class="field-hint">${(ty.slots || []).map(escapeText).join('、')}</span>
+            </div>
+            <div class="tare-input">
+                <input type="number" step="1" min="0" id="tare-${escapeAttr(ty.id)}"
+                       value="${v == null ? '' : v}" placeholder="未設定">
+                <span>g</span>
+            </div>
+            <div class="tare-actions">
+                <button data-action="measureTare" data-bucket-type="${escapeAttr(ty.id)}">
+                    ⚖️ 量測
+                </button>
+                <button data-action="saveTare" data-bucket-type="${escapeAttr(ty.id)}"
+                        class="secondary-btn">儲存</button>
+            </div>
+            <p class="field-hint tare-meta">${info}</p>
+        </div>`;
+    }).join('');
+}
+
+function tareResult(ok, message) {
+    const el = document.getElementById('tareResult');
+    if (!el) return;
+    el.className = 'verify-result ' + (ok ? 'ok' : 'error');
+    el.textContent = (ok ? '✅ ' : '⚠️ ') + message;
+}
+
+async function measureTare(el) {
+    const bucketType = el && el.dataset ? el.dataset.bucketType : null;
+    const sel = document.getElementById('tareDevice');
+    const deviceId = sel ? sel.value : '';
+    if (!bucketType) return;
+    if (!deviceId) return tareResult(false, '請先選一台秤');
+
+    const opt = sel.options[sel.selectedIndex];
+    if (opt && opt.dataset.offline === '1'
+        && !confirm('這台秤目前顯示離線，量到的可能是舊讀數。還是要量嗎？')) {
+        return;
+    }
+    if (!confirm('請確認那台秤上放的是**空桶**，然後按確定。')) return;
+
+    tareResult(true, '量測中…');
+    try {
+        const data = await apiRequest('/admin/bucket-tare/measure', 'POST',
+            { deviceId, bucketType });
+        tareResult(Boolean(data.success), data.message || '');
+        if (data.success) await loadBucketTare();
+    } catch (error) {
+        tareResult(false, '量測失敗：' + (error.message || '請稍後再試'));
+    }
+}
+
+async function saveTare(el) {
+    const bucketType = el && el.dataset ? el.dataset.bucketType : null;
+    if (!bucketType) return;
+    const input = document.getElementById('tare-' + bucketType);
+    if (!input || input.value === '') return tareResult(false, '請先填入皮重');
+    try {
+        const data = await apiRequest('/admin/bucket-tare', 'PUT',
+            { bucketType, tareG: Number(input.value) });
+        tareResult(Boolean(data.success), data.message || '');
+        if (data.success) await loadBucketTare();
+    } catch (error) {
+        tareResult(false, '儲存失敗：' + (error.message || '請稍後再試'));
     }
 }
 
@@ -1792,12 +2100,14 @@ async function loadRoleData() {
         await loadDevices();
         await loadCoinRules();
         await loadShopState();
+        await loadBucketTare();
     }
     if (role === 'teacher' || role === 'admin') {
         await loadCheckRoster();
     }
     if (role === 'lunch_leader' || role === 'admin') {
         await loadRecordToday();
+        await loadWeighQueue();
     }
     if (role === 'student' || role === 'lunch_leader') {
         await loadMyMealStatus();
@@ -2304,10 +2614,11 @@ async function loadSupportDishes(opts) {
                     <span>${d.dishName}</span>
                     <span>剩 ${d.remainingPct}%（${d.leftoverG}g）</span>
                 </div>
-                <div class="dish-bar"><div class="dish-bar-fill" style="width:${Math.min(100, d.remainingPct)}%"></div></div>
+                <div class="dish-bar"><div class="dish-bar-fill" data-bar-width="${Math.min(100, d.remainingPct)}"></div></div>
                 ${renderCrossClass(d)}
             </div>
         `).join('');
+        applyBarSizes(box);
         renderSupportMeta();
         syncSupportPolling();
         // 紀錄面板的每一道菜也要跟著更新
@@ -2645,10 +2956,12 @@ function renderTrendChart(data) {
         const h = Math.max(4, Math.round((p.leftoverG / max) * 100));
         return `<div class="trend-col">
                     <span class="trend-v">${Math.round(p.leftoverG)}</span>
-                    <div class="trend-bar" style="height:${h}%" title="${p.remainingPct}%"></div>
+                    <div class="trend-bar" data-bar-height="${h}" title="${p.remainingPct}%"></div>
                     <span class="trend-x">${label}</span>
                 </div>`;
     }).join('') + '</div>';
+    // 長條高度是資料驅動的，插入 DOM 後才能用 CSSOM 套上去（見 applyBarSizes）
+    applyBarSizes(box);
 
     if (stats) {
         stats.textContent = `量測 ${data.stats.measuredDays} 天　平均 ${data.stats.avgLeftoverG} g`
@@ -2877,6 +3190,12 @@ const ACTION_HANDLERS = {
     syncStudents: () => syncStudents(),
     syncStudentsDryRun: () => syncStudentsDryRun(),
     saveShopState: () => saveShopState(),
+    loadWeighQueue: () => loadWeighQueue(),
+    weighDish: (el) => weighDish(el),
+    weighEmptied: (el) => weighEmptied(el),
+    loadBucketTare: () => loadBucketTare(),
+    measureTare: (el) => measureTare(el),
+    saveTare: (el) => saveTare(el),
     syncMenus: () => syncMenus(),
     syncMenusDryRun: () => syncMenusDryRun(),
     // 管理員：發幣公式參數

@@ -30,7 +30,21 @@ function normalizeBase(v) {
 
 const VISION_API_BASE = normalizeBase(process.env.VISION_API_BASE);
 
+/**
+ * ⛔ 影像辨識總開關（目前：停用）。
+ *
+ * 系統已改為「一個班級一台秤、依序稱重」，剩餘量一律由磅秤量得，
+ * 不再由影像估算各菜的殘餘比例。此開關為 true 時：
+ *   · visionEnabled() 一律回 false，所有呼叫點走非影像的分支
+ *   · /api/record/vision-status 回報已停用
+ *
+ * 要恢復影像辨識：把這個常數改成 false，並設定 VISION_API_BASE。
+ * （整份 vision.js 刻意保留不刪——註解掉的程式會腐爛，留著加開關比較好復原）
+ */
+const VISION_DISABLED = true;
+
 function visionEnabled() {
+  if (VISION_DISABLED) return false;
   return VISION_API_BASE.length > 0;
 }
 
@@ -55,6 +69,12 @@ function round(v, d = 2) {
 /** 服務狀態（前端據此顯示「拍照辨識」或「預設估算」）。*/
 async function visionStatus() {
   if (!visionEnabled()) {
+    if (VISION_DISABLED) {
+      return {
+        enabled: false, ok: false, disabled: true,
+        note: '影像辨識已停用：系統改以磅秤依序稱重取得各菜剩餘量',
+      };
+    }
     return { enabled: false, ok: false, note: '後端未設定 VISION_API_BASE，將以預設估算代替辨識' };
   }
   const controller = new AbortController();
@@ -190,6 +210,7 @@ async function recognizeBucketWithVision(params) {
 }
 
 module.exports = {
+  VISION_DISABLED,
   VISION_API_BASE,
   visionEnabled,
   visionStatus,

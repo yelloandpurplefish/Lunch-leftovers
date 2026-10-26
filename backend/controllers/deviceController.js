@@ -81,9 +81,9 @@ const hello = async (req, res) => {
       serverDate: today(),
       config: deviceConfig(device),
       // 尚未綁定班級/桶別時明講，韌體可以亮燈提示現場人員
-      needsProvisioning: !device.classId || !device.bucketId,
-      message: !device.classId || !device.bucketId
-        ? '此裝置尚未綁定班級與桶別，請技術員於後台設定'
+      needsProvisioning: !device.classId,   // 一班一台秤，綁班級就夠
+      message: !device.classId
+        ? '此裝置尚未綁定班級，請技術員於後台設定'
         : undefined,
     });
   } catch (error) {

@@ -51,6 +51,43 @@ function computeLeftover(dish, remainingRatio, servings) {
   };
 }
 
+/**
+ * 由**實測克數**反推各欄位（依序稱重用）。
+ *
+ * 與 computeLeftover 的方向相反，而且刻意不走它：
+ * computeLeftover 會 clamp01(ratio) 再乘回供應量，若實測值大於供應量，
+ * 克數就會被壓成供應量——**量測值被估算值蓋掉**，那是最不該發生的事。
+ * 這裡 leftoverG 原樣保留，成本與碳排也直接由實測公斤數算，
+ * 只有 remainingRatio（給介面顯示用）才夾在 0–1。
+ *
+ * 實測大於供應量時回一個 warning：那通常代表供應份數填錯或皮重設定錯，
+ * 應該讓人去查，而不是默默截掉。
+ */
+function leftoverFromWeight(dish, measuredG, servings) {
+  const leftoverG = Math.max(0, Number(measuredG) || 0);
+  const suppliedG = Number(dish.portionG || 0) * Number(servings || 0);
+  const kg = leftoverG / 1000;
+  const rawRatio = suppliedG > 0 ? leftoverG / suppliedG : 0;
+
+  const warnings = [];
+  if (suppliedG > 0 && leftoverG > suppliedG * 1.05) {
+    warnings.push(
+      `量到的剩餘量 ${round(leftoverG, 1)} g 比供應量 ${round(suppliedG, 1)} g 還多，`
+      + '請確認供應份數與桶型皮重是否正確'
+    );
+  }
+
+  return {
+    suppliedG: round(suppliedG, 1),
+    leftoverG: round(leftoverG, 1),
+    remainingRatio: clamp01(rawRatio),
+    rawRatio: round(rawRatio, 4),
+    cost: round(kg * Number(dish.unitCost || 0), 2),
+    co2e: round(kg * Number(dish.emissionFactor || 0), 3),
+    warnings,
+  };
+}
+
 /** 當餐彙總 = 各菜加總。*/
 function summarize(leftovers) {
   return leftovers.reduce(
@@ -217,6 +254,7 @@ function computeSdg({ classWastePerCapitaG, schoolAvgPerCapitaG, servings, setti
 }
 
 module.exports = {
+  leftoverFromWeight,
   clamp01,
   round,
   computeLeftover,

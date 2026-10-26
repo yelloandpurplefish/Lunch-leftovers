@@ -11,6 +11,9 @@ const {
   syncStudents, syncMenus,
   getShop,
   updateShop,
+  getBucketTare,
+  measureBucketTare,
+  updateBucketTare,
 } = require('../controllers/adminController');
 const { authenticate, requireRole } = require('../middleware/auth');
 const { ROLES } = require('../config/schema');
@@ -39,6 +42,11 @@ router.post('/sync/menus', authenticate, adminOnly, syncMenus);
 // 商城開關：讀給面板顯示現況，寫是日常的暫停/開張
 router.get('/shop', authenticate, adminOnly, getShop);
 router.put('/shop', authenticate, adminOnly, updateShop);
+
+// 桶型皮重：全校共用，量測時要指定用哪一台秤
+router.get('/bucket-tare', authenticate, adminOnly, getBucketTare);
+router.post('/bucket-tare/measure', authenticate, adminOnly, measureBucketTare);
+router.put('/bucket-tare', authenticate, adminOnly, updateBucketTare);
 
 // 帳號
 router.get('/users', authenticate, adminOnly, listUsers);

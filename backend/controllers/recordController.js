@@ -14,19 +14,16 @@
  * 權限：只有午餐長（含導師/管理員）能紀錄；學生端是唯讀。
  */
 const { db, admin } = require('../config/firebase');
-const {
-  COL, ids, ROLES, BUCKET_LAYOUT, MENU_SLOTS, SLOT_LABEL, SLOT_CATEGORY, COIN_RULES,
-} = require('../config/schema');
+const { COL, ids, ROLES, BUCKET_LAYOUT, MENU_SLOTS, SLOT_LABEL, SLOT_CATEGORY, COIN_RULES } = require('../config/schema');
 const { today, isYmd, daysAgo } = require('../lib/dates');
-const {
-  computeLeftover, summarize, computeReduction, clamp01, round,
-  computeNutrition, computeEnergyCoins, computeSdg,
-} = require('../lib/scoring');
+const { computeLeftover, summarize, computeReduction, clamp01, round, computeNutrition, computeEnergyCoins, computeSdg, leftoverFromWeight } = require('../lib/scoring');
 const { getSettings } = require('../lib/settings');
 const { recognizeBucket } = require('../lib/recognizer');
 const vision = require('../lib/vision');
 const { awardClassAndMembers } = require('../lib/coins');
 const { latestReading } = require('../lib/scaleReadings');
+const bucketTare = require('../lib/bucketTare');
+const scaleReadings = require('../lib/scaleReadings');
 const {
   PROVENANCE, LEVEL, isRejected, needsAttention, usableForCalibration,
   normalizeLevel, normalizeProvenance,
@@ -416,6 +413,10 @@ const measureBucket = async (req, res) => {
       source = 'manual';
     } else {
       let rec = null;
+      // ⛔ 影像辨識分支：已停用（vision.VISION_DISABLED = true）。
+      //    visionEnabled() 現在一律回 false，所以這整段不會執行。
+      //    剩餘量改由「依序稱重」取得，見 weighDish()。
+      //    保留此段是為了日後要恢復影像時不必重寫。
       if (image && !manualRatios && vision.visionEnabled()) {
         const dishMap = await getDishMap(bucket.items.map((i) => i.dishId));
         try {
@@ -760,7 +761,247 @@ const getVisionStatus = async (req, res) => {
   return res.status(200).json({ success: true, ...status });
 };
 
+
+// ══════════════════════════════════════════════════════════════════
+//  依序稱重（取代影像辨識的主流程）
+// ══════════════════════════════════════════════════════════════════
+//
+//  一個班級一台秤，午餐長把六道菜的桶子一桶一桶放上去。
+//  每一筆稱重只需要兩個資訊：**現在這桶是哪道菜**，以及**秤上的讀數**。
+//  桶型由菜色推得（主食→主食桶、主菜/副菜/蔬菜→菜桶、湯品→湯桶），
+//  所以現場不必選桶、不必歸零。
+//
+//      剩餘量 = netG − 該桶型皮重
+//
+//  netG 已經扣掉裝置自身的 tareG（秤台上固定的托盤），皮重是容器本身。
+
+/** 菜色欄位 → 它在 BUCKET_LAYOUT 的哪一桶（沿用既有結構儲存，結算與統計不必改）。 */
+function bucketIdForSlot(slot) {
+  const b = BUCKET_LAYOUT.find((x) => x.dishSlots.includes(slot));
+  return b ? b.id : null;
+}
+
+/**
+ * GET /api/record/weigh-queue
+ * 今天要量哪幾道、順序、各自用哪種桶、哪幾道已經量完。
+ * 順序刻意用 MENU_SLOTS：主食桶 → 四個菜桶 → 湯桶，換桶次數最少。
+ */
+const getWeighQueue = async (req, res) => {
+  try {
+    const classId = recorderClassId(req);
+    const date = isYmd(req.query.date) ? req.query.date : today();
+    const session = await loadSession(classId, date);
+    if (!session) return bad(res, 404, '今日尚未開始紀錄，請先開始');
+
+    const tares = await bucketTare.getTares();
+    const reading = await scaleReadings.latestByClass(classId);
+
+    const queue = [];
+    for (const slot of MENU_SLOTS) {
+      const bucketId = bucketIdForSlot(slot);
+      const bucket = bucketId ? session.buckets[bucketId] : null;
+      const item = bucket ? (bucket.items || []).find((i) => i.slot === slot) : null;
+      if (!item || !item.dishId) continue;        // 今天沒有這道菜
+      const tare = bucketTare.tareForSlot(slot, tares);
+      queue.push({
+        slot,
+        slotLabel: SLOT_LABEL[slot] || slot,
+        dishId: item.dishId,
+        dishName: item.dishName,
+        bucketType: tare.bucketType,
+        bucketLabel: tare.ok ? tare.label : bucketTare.bucketTypeLabel(tare.bucketType),
+        tareG: tare.ok ? tare.tareG : null,
+        tareReady: tare.ok,
+        tareProblem: tare.ok ? null : tare.reason,
+        weighed: Boolean(item.weighedAt),
+        leftoverG: item.weighedAt ? Number(item.leftoverG || 0) : null,
+        suppliedG: Number(item.suppliedG || 0) || null,
+      });
+    }
+
+    const done = queue.filter((q) => q.weighed).length;
+    return res.status(200).json({
+      success: true,
+      date,
+      servings: session.servings,
+      scale: { state: reading.state, note: reading.note || null, netG: reading.value_g ?? null },
+      queue,
+      progress: { done, total: queue.length, allDone: queue.length > 0 && done === queue.length },
+      blocked: queue.filter((q) => !q.tareReady).map((q) => q.tareProblem),
+    });
+  } catch (error) {
+    console.error('取得稱重清單失敗:', error);
+    return bad(res, 500, error.message || '取得稱重清單失敗');
+  }
+};
+
+/**
+ * POST /api/record/weigh
+ * body: { slot, netG?, emptied?, date? }
+ *
+ * netG 不給就從這個班級的秤讀最新值（正常操作就是這樣：放上去、按確認）。
+ * 給 netG 是為了讓現場在秤故障時能手動輸入，以及供測試使用。
+ * emptied:true 代表「這道全部吃完」，一鍵記 0，不必把空桶放上去。
+ */
+const weighDish = async (req, res) => {
+  try {
+    const classId = recorderClassId(req);
+    const date = isYmd(req.body.date) ? req.body.date : today();
+    const slot = String(req.body.slot || '').trim();
+    const emptied = Boolean(req.body.emptied);
+
+    if (!MENU_SLOTS.includes(slot)) {
+      return bad(res, 400, `slot 需為 ${MENU_SLOTS.join(' / ')}`);
+    }
+
+    const session = await loadSession(classId, date);
+    if (!session) return bad(res, 404, '今日尚未開始紀錄，請先開始');
+
+    const bucketId = bucketIdForSlot(slot);
+    const bucket = bucketId ? session.buckets[bucketId] : null;
+    if (!bucket) return bad(res, 404, `場次沒有對應的桶：${slot}`);
+    const item = (bucket.items || []).find((i) => i.slot === slot);
+    if (!item || !item.dishId) return bad(res, 404, `今天的菜單沒有「${SLOT_LABEL[slot] || slot}」`);
+
+    const warnings = [];
+    let measuredG = 0;
+    let reading = { state: 'disabled', note: '吃光，未使用磅秤' };
+    let tareG = 0;
+    let bucketType = bucketTare.bucketTypeForSlot(slot);
+
+    if (!emptied) {
+      // 皮重要先設定好，否則算不出剩餘量
+      const tares = await bucketTare.getTares();
+      const tare = bucketTare.tareForSlot(slot, tares);
+      if (!tare.ok) return bad(res, 409, tare.reason, { bucketType: tare.bucketType });
+      tareG = tare.tareG;
+      bucketType = tare.bucketType;
+
+      if (req.body.netG != null) {
+        const v = Number(req.body.netG);
+        if (!Number.isFinite(v)) return bad(res, 400, 'netG 必須是數字');
+        measuredG = v - tareG;
+        reading = { state: 'manual', note: '手動輸入秤上讀數', value_g: v };
+        warnings.push('這筆是手動輸入的讀數，不是由磅秤讀取');
+      } else {
+        reading = await scaleReadings.latestByClass(classId);
+        if (reading.state !== 'ok') {
+          return bad(res, 409,
+            `秤目前讀不到有效重量：${reading.note || reading.state}。`
+            + '請確認裝置在線，或改用手動輸入。',
+            { scale: reading });
+        }
+        measuredG = Number(reading.value_g) - tareG;
+      }
+
+      if (measuredG < -30) {
+        return bad(res, 409,
+          `扣掉皮重後是負的（${Math.round(measuredG)} g）。`
+          + `多半是「${bucketTare.bucketTypeLabel(bucketType)}」的皮重設錯，或放上去的是別種桶。`,
+          { measuredG, tareG, reading });
+      }
+      if (measuredG < 0) {
+        warnings.push('扣掉皮重後略小於 0，已當作 0（磅秤雜訊）');
+        measuredG = 0;
+      }
+    }
+
+    // ── 寫回該桶的這道菜 ──
+    const dishMap = await getDishMap([item.dishId]);
+    const dish = dishMap.get(item.dishId);
+    if (!dish) return bad(res, 404, '查無此菜色資料');
+
+    const calc = leftoverFromWeight(dish, emptied ? 0 : measuredG, session.servings);
+    warnings.push(...calc.warnings);
+
+    const newItems = bucket.items.map((it) => (it.slot !== slot ? it : {
+      ...it,
+      remainingRatio: calc.remainingRatio,
+      rawRatio: calc.rawRatio,
+      leftoverG: calc.leftoverG,
+      suppliedG: calc.suppliedG,
+      cost: calc.cost,
+      co2e: calc.co2e,
+      // ── 這一筆的來源：量測、手動輸入、還是宣告吃光 ──
+      method: emptied ? 'emptied' : (reading.state === 'manual' ? 'manual' : 'scale'),
+      // 這裡**不能**用 serverTimestamp()：那是哨兵值，Firestore 不允許放在陣列元素裡
+      // （items 是陣列），會丟 Update() requires ... 的驗證錯誤。
+      // Timestamp.now() 是具體值，放陣列裡沒問題，精度對這個用途也足夠。
+      weighedAt: admin.firestore.Timestamp.now(),
+      weighedBy: req.user.uid,
+      scaleNetG: emptied ? null : (reading.value_g ?? null),
+      bucketType,
+      tareG: emptied ? null : tareG,
+      needsReview: false,
+      confidence: emptied ? 1 : 0.99,
+    }));
+
+    // 整桶的狀態由「桶內各菜是否都量過」推得
+    const allWeighed = newItems.filter((i) => i.dishId).every((i) => i.weighedAt);
+    const updated = {
+      ...bucket,
+      items: newItems,
+      measured: allWeighed,
+      emptied: newItems.filter((i) => i.dishId).every((i) => i.method === 'emptied'),
+      source: 'scale',
+      provenance: PROVENANCE.WEIGHT_ONLY,
+      reviewLevel: LEVEL.AUTO,
+      pendingReview: false,
+      findings: [],
+      bucketConfidence: allWeighed ? 1 : 0,
+      warnings,
+      measuredBy: req.user.uid,
+      measuredAt: serverTime(),
+      weightG: emptied ? null : (reading.value_g ?? null),
+      scaleState: reading.state,
+      scaleNote: reading.note || null,
+    };
+
+    const buckets = { ...session.buckets, [bucketId]: updated };
+    await sessionRef(classId, date).update({
+      buckets, status: 'measuring', updatedAt: serverTime(),
+    });
+    await upsertDishLeftovers({ ...session, id: session.sessionId }, updated);
+
+    // 回傳進度，前端才知道下一道要量什麼
+    const remaining = [];
+    for (const s of MENU_SLOTS) {
+      const bid = bucketIdForSlot(s);
+      const b = bid === bucketId ? updated : (bid ? session.buckets[bid] : null);
+      const it = b ? (b.items || []).find((i) => i.slot === s) : null;
+      if (it && it.dishId && !it.weighedAt) {
+        remaining.push({ slot: s, slotLabel: SLOT_LABEL[s] || s, dishName: it.dishName });
+      }
+    }
+
+    return res.status(200).json({
+      success: true,
+      message: emptied
+        ? `已記錄「${item.dishName}」吃光`
+        : `已記錄「${item.dishName}」剩 ${calc.leftoverG} g`,
+      slot,
+      dishName: item.dishName,
+      bucketType,
+      bucketLabel: bucketTare.bucketTypeLabel(bucketType),
+      scaleNetG: emptied ? null : (reading.value_g ?? null),
+      tareG: emptied ? null : tareG,
+      leftoverG: calc.leftoverG,
+      suppliedG: calc.suppliedG,
+      remainingRatio: calc.remainingRatio,
+      warnings,
+      scale: { state: reading.state, note: reading.note || null },
+      remaining,
+      allDone: remaining.length === 0,
+    });
+  } catch (error) {
+    console.error('稱重失敗:', error);
+    return bad(res, error.status || 500, error.message || '稱重失敗');
+  }
+};
+
 module.exports = {
+  getWeighQueue,
+  weighDish,
   getTodaySession,
   startSession,
   measureBucket,

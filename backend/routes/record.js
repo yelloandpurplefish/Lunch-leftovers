@@ -7,6 +7,7 @@ const router = express.Router();
 const {
   getTodaySession, startSession, measureBucket, adjustBucket,
   finalizeSession, getRecordHistory, getVisionStatus, getLatestScale,
+  getWeighQueue, weighDish,
 } = require('../controllers/recordController');
 const { authenticate, requireRole, requireClass } = require('../middleware/auth');
 const { ROLES } = require('../config/schema');
@@ -26,6 +27,11 @@ router.get('/scale/latest', authenticate, canReadScale, getLatestScale);
 
 // 紀錄（午餐長專屬）
 router.post('/start', authenticate, canRecord, requireClass, startSession);
+// ── 依序稱重（現行主流程）──
+router.get('/weigh-queue', authenticate, canRecord, requireClass, getWeighQueue);
+router.post('/weigh', authenticate, canRecord, requireClass, weighDish);
+
+// ── 影像辨識的舊流程：保留但已停用（vision.VISION_DISABLED = true）──
 router.post('/bucket/:bucketId/measure', authenticate, canRecord, requireClass, measureBucket);
 router.patch('/bucket/:bucketId', authenticate, canRecord, requireClass, adjustBucket);
 router.post('/finalize', authenticate, canRecord, requireClass, finalizeSession);

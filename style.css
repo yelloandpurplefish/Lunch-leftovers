@@ -2136,7 +2136,6 @@ body{
 }
 
 
-
 /* ══════════════════════════════════════════════════════════════════
    版面參數與 RWD
    ══════════════════════════════════════════════════════════════════
@@ -2581,20 +2580,6 @@ body{
     vertical-align:middle;
 }
 
-:root[data-theme="dark"] #parentComment{
-    background:#1b211e;
-    color:#e6ebe7;
-    border-color:#2e3833;
-}
-:root[data-theme="dark"] #parentComment[readonly]{
-    background:#161b18;
-    color:#98a69e;
-}
-:root[data-theme="dark"] .required{
-    background:#2e1f1b;
-    color:#e0a58f;
-}
-
 
 /* ── 名冊同步報告 ───────────────────────────────────────────── */
 
@@ -2660,15 +2645,6 @@ body{
 }
 
 .sync-details table{ font-size:13px; }
-
-:root[data-theme="dark"] .sync-tile{ background:#1f2723; border-color:#2e3833; color:#9aa8a0; }
-:root[data-theme="dark"] .sync-tile .sync-n{ color:#e6ebe7; }
-:root[data-theme="dark"] .sync-tile.ok{ background:#1d2f22; border-color:#2b4531; }
-:root[data-theme="dark"] .sync-tile.ok .sync-n{ color:#72c477; }
-:root[data-theme="dark"] .sync-tile.bad{ background:#2e1f1b; border-color:#4a2d25; }
-:root[data-theme="dark"] .sync-tile.bad .sync-n{ color:#e08a74; }
-:root[data-theme="dark"] .sync-details{ background:#1b211e; border-color:#2e3833; }
-:root[data-theme="dark"] .sync-details.bad{ background:#241a17; border-color:#4a2d25; }
 
 
 /* 同步選項的勾選列：說明要排在核取方塊底下，不要擠成一行 */
@@ -2792,15 +2768,277 @@ body{
 
 .shop-toggle-card .admin-row{ margin-top:10px; }
 
-:root[data-theme="dark"] .intake-col{
-    background:#1b211e;
-    border-color:#2e3833;
+
+
+/* ── 依序稱重（午餐長）────────────────────────────────────────── */
+.scale-live{
+    display:flex;
+    align-items:baseline;
+    gap:8px;
+    flex-wrap:wrap;
+    margin:12px 0;
+    padding:12px 16px;
+    background:#eef5f0;
+    border:1px solid var(--line,#d4dcd7);
+    border-radius:12px;
 }
-:root[data-theme="dark"] .menu-slot{ background:#222a26; color:#98a69e; }
-:root[data-theme="dark"] .menu-portion{ color:#98a69e; }
-:root[data-theme="dark"] .menu-list li{ border-bottom-color:#2e3833; }
-:root[data-theme="dark"] .shop-closed{
-    background:#2a2318;
-    border-color:#4a3c22;
-    color:#e8cf9a;
+
+.scale-live-label{ font-size:13px; color:#5f6b64; }
+.scale-live-value{ font-size:clamp(26px,6vw,36px); font-weight:700; color:#2e7d32; }
+.scale-live-unit{ font-size:14px; color:#5f6b64; }
+.scale-live-state{ font-size:12px; margin-left:auto; }
+.scale-live-state.ok{ color:#2e7d32; }
+.scale-live-state.warn{ color:#b26a00; }
+
+.weigh-progress{ margin:12px 0 8px; }
+
+.weigh-list{ display:flex; flex-direction:column; gap:8px; }
+
+.weigh-row{
+    display:grid;
+    grid-template-columns:1fr auto;
+    gap:6px 12px;
+    align-items:center;
+    padding:12px 14px;
+    background:#fff;
+    border:1px solid var(--line,#e8eeea);
+    border-radius:12px;
+    max-width:100%;
+}
+
+/* 下一個要量的那一桶要明顯——六道菜很容易漏或重複 */
+.weigh-row.next{
+    border-color:#2e7d32;
+    box-shadow:0 0 0 2px rgba(46,125,50,.15);
+    background:#f6fbf7;
+}
+
+.weigh-row.done{ background:#fafcfa; }
+.weigh-row.done .weigh-dish{ color:#5f6b64; }
+
+.weigh-main{ min-width:0; }
+
+.weigh-bucket{
+    display:inline-block;
+    font-size:12px;
+    padding:2px 9px;
+    border-radius:999px;
+    background:#eef3f0;
+    color:#5f6b64;
+    margin-right:8px;
+    white-space:nowrap;
+}
+
+.weigh-dish{ overflow-wrap:anywhere; }
+
+.weigh-value{ text-align:right; white-space:nowrap; }
+.weigh-value strong{ font-size:20px; color:#2e7d32; }
+.weigh-pending{ color:#9aa8a0; }
+.weigh-tare{ display:block; font-size:11px; color:#9aa8a0; }
+
+.weigh-actions{
+    grid-column:1 / -1;
+    display:flex;
+    gap:8px;
+    flex-wrap:wrap;
+}
+
+.weigh-actions button{ margin:0; }
+
+.weigh-block{
+    margin:0 0 12px;
+    padding:12px 14px;
+    border-radius:10px;
+    background:#fff6e5;
+    border:1px solid #f0d9a8;
+    color:#7a5200;
+}
+
+@media (min-width:768px){
+    /* 平板以上按鈕回到同一列，一眼看完一桶 */
+    .weigh-row{ grid-template-columns:1fr auto auto; }
+    .weigh-actions{ grid-column:auto; }
+}
+
+/* ── 桶型皮重（管理員）──────────────────────────────────────── */
+.tare-row{
+    display:grid;
+    grid-template-columns:1fr auto;
+    gap:8px 12px;
+    align-items:center;
+    padding:12px 0;
+    border-bottom:1px solid var(--line,#e8eeea);
+}
+
+.tare-row:last-child{ border-bottom:none; }
+
+/* 還沒設定的桶型要看得出來：沒設好午餐長就量不了 */
+.tare-row.unset{
+    background:#fff6e5;
+    border-radius:10px;
+    padding:12px 14px;
+    margin:6px 0;
+}
+
+.tare-label{ min-width:0; }
+.tare-label .field-hint{ display:block; }
+
+.tare-input{ display:flex; align-items:center; gap:6px; white-space:nowrap; }
+.tare-input input{ width:100px; }
+
+.tare-actions{ display:flex; gap:8px; flex-wrap:wrap; }
+.tare-actions button{ margin:0; }
+
+.tare-meta{ grid-column:1 / -1; margin:0; }
+
+@media (min-width:768px){
+    .tare-row{ grid-template-columns:1fr auto auto; }
+}
+
+
+/* ── 原本寫在 HTML 裡的 inline style 搬過來 ──────────────────────
+   CSP 的 style-src 'self' 不允許 style 屬性，inline 寫法會被瀏覽器直接丟掉
+   （連 localhost 也一樣，而且不會報錯），於是橫幅與抽獎特效會跑版。
+   解法是搬進這裡，而不是為了遷就而在 CSP 加 unsafe-inline。 */
+
+.hero-tagline{
+    color:#2e7d32;
+    margin-top:6px;
+    font-size:15px;
+}
+
+.survey-display{ margin-top:20px; }
+
+/* 全站公告：固定在最上方，蓋過所有內容 */
+.global-announcement{
+    position:fixed;
+    top:0;
+    left:0;
+    right:0;
+    z-index:9999;
+    background:linear-gradient(90deg,#1e3c72,#2a5298);
+    color:#fff;
+    text-align:center;
+    padding:12px;
+    font-size:16px;
+    box-shadow:0 4px 12px rgba(0,0,0,.3);
+}
+
+/* 抽獎：特效層疊在結果之下，而且不吃點擊 */
+.lottery-content{
+    position:relative;
+    overflow:hidden;
+    min-height:320px;
+}
+
+.lottery-effects{
+    position:absolute;
+    top:0;
+    left:0;
+    right:0;
+    bottom:0;
+    pointer-events:none;
+    overflow:hidden;
+    z-index:5;
+}
+
+.lottery-result{
+    position:relative;
+    z-index:10;
+}
+
+
+/* ── 從 index.html 的 <style> 搬過來 ────────────────────────────
+   CSP 的 style-src 'self' 不允許 inline <style>，整塊會被瀏覽器丟掉
+   （不報錯，只是動畫完全沒作用）。放在這個外部檔案裡才會生效。 */
+
+/* 抽獎特效 */
+@keyframes popText {
+    0% { transform: scale(0.2); opacity: 0; }
+    50% { transform: scale(1.2); opacity: 1; }
+    70% { transform: scale(0.95); }
+    100% { transform: scale(1); opacity: 1; }
+}
+@keyframes floatUp {
+    0% { transform: translate(-50%, 0) scale(1); opacity: 1; }
+    100% { transform: translate(-50%, -120px) scale(1.2); opacity: 0; }
+}
+@keyframes meteorFall {
+    0% { transform: translate(200px, -200px) rotate(-45deg); opacity: 1; }
+    70% { transform: translate(-30px, 220px) rotate(-45deg); opacity: 1; }
+    100% { transform: translate(-40px, 240px) rotate(-45deg); opacity: 0; }
+}
+@keyframes impactFlash {
+    0% { transform: scale(0); opacity: 0.9; }
+    100% { transform: scale(2); opacity: 0; }
+}
+@keyframes pillarGrow {
+    0% { height: 0; opacity: 0; }
+    30% { opacity: 1; }
+    100% { height: 100%; opacity: 0.85; }
+}
+@keyframes pillarGlow {
+    0%, 100% { box-shadow: 0 0 30px #00aaff; }
+    50% { box-shadow: 0 0 60px #00aaff, 0 0 100px #0055ff; }
+}
+@keyframes slideDown {
+    0% { transform: translateY(-100%); }
+    100% { transform: translateY(0); }
+}
+.lottery-congrats {
+    position: absolute;
+    top: 50%;
+    left: 50%;
+    transform: translate(-50%, -50%);
+    font-size: 32px;
+    font-weight: bold;
+    color: #ff6b00;
+    text-shadow: 0 0 10px #ffd700;
+    animation: popText 0.6s ease-out forwards;
+    white-space: nowrap;
+}
+.lottery-congrats.float {
+    animation: popText 0.5s ease-out forwards, floatUp 1.2s ease-in forwards 0.6s;
+}
+.meteor {
+    position: absolute;
+    width: 12px;
+    height: 12px;
+    background: radial-gradient(circle, #fff 0%, #ffaa00 40%, #ff4400 100%);
+    border-radius: 50%;
+    box-shadow: -20px 0 15px 5px rgba(255, 100, 0, 0.6);
+    z-index: 20;
+}
+.meteor::before {
+    content: '';
+    position: absolute;
+    top: 50%;
+    left: -80px;
+    width: 100px;
+    height: 3px;
+    background: linear-gradient(90deg, transparent, rgba(255, 200, 100, 0.8), #fff);
+    transform: translateY(-50%);
+}
+.impact {
+    position: absolute;
+    width: 80px;
+    height: 80px;
+    background: radial-gradient(circle, #fff 0%, #ff8800 40%, transparent 70%);
+    border-radius: 50%;
+    z-index: 19;
+    animation: impactFlash 0.6s ease-out forwards;
+}
+.light-pillar {
+    position: absolute;
+    top: 0;
+    left: 50%;
+    width: 60px;
+    transform: translateX(-50%);
+    background: linear-gradient(to bottom, rgba(0, 170, 255, 0.9), rgba(0, 85, 255, 0.4), transparent);
+    border-radius: 0 0 50% 50%;
+    z-index: 20;
+    animation: pillarGrow 1.2s ease-out forwards, pillarGlow 1.5s ease-in-out infinite 1s;
+}
+.global-announcement {
+    animation: slideDown 0.5s ease-out;
 }
