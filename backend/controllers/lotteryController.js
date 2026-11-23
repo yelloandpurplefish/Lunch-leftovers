@@ -1,11 +1,13 @@
 const { db, admin } = require('../config/firebase');
+const { esgFactor } = require('../config/schema');
 const { spendUser } = require('../lib/coins');
 
 // 進行抽獎
 const spinLottery = async (req, res) => {
   try {
     const userId = req.user.uid;
-    const lotteryCost = 10;
+    // 原本 10 E（約 2 天份），換算成 ESG 仍是 2 天份 → 40（見 schema.js 的 ESG_CONVERSION）
+    const lotteryCost = 40;
 
     const userDoc = await db.collection('users').doc(userId).get();
     if (!userDoc.exists) {
@@ -21,7 +23,7 @@ const spinLottery = async (req, res) => {
     try {
       await spendUser({
         userId,
-        coin: 'E',
+        coin: 'ESG',
         amount: lotteryCost,
         reason: '幸運抽獎',
         refType: 'lottery'
@@ -31,7 +33,7 @@ const spinLottery = async (req, res) => {
         success: false,
         message: err.message || '扣款失敗',
         required: lotteryCost,
-        current: Number(userData.eCoin || 0)
+        current: Number(userData.esgCoin || 0)
       });
     }
 
@@ -84,6 +86,10 @@ const spinLottery = async (req, res) => {
       prizeType = 'small';
     }
 
+    // 獎品「價值」原本以 E 幣標示；抽獎成本換算成 ESG 後，價值也要用同一個係數，
+    // 否則「花 10 抽中價值 60」的 6 倍關係會變成「花 40 抽中 60」的 1.5 倍。
+    prizeValue = Math.round(prizeValue * esgFactor('E'));
+
     // 記錄抽獎
     await db.collection('lottery_records').add({
       userId,
@@ -116,7 +122,8 @@ const spinLottery = async (req, res) => {
         value: prizeValue,
         isGrandPrize: prizeType === 'grand'
       },
-      remainingECoin: updatedUserData.eCoin
+      remainingCoin: updatedUserData.esgCoin,
+      remainingECoin: updatedUserData.esgCoin   // 舊欄位名，前端更新前的相容
     });
   } catch (error) {
     console.error('抽獎失敗:', error);

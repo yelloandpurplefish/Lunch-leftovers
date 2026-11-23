@@ -11,6 +11,8 @@ const {
   syncStudents, syncMenus,
   getShop,
   updateShop,
+  deleteClass,
+  deleteUser,
   getBucketTare,
   measureBucketTare,
   updateBucketTare,
@@ -26,6 +28,7 @@ router.get('/overview', authenticate, adminOnly, getOverview);
 router.get('/classes', authenticate, adminOnly, listClasses);
 router.post('/classes', authenticate, adminOnly, createClass);
 router.patch('/classes/:classId', authenticate, adminOnly, updateClass);
+router.delete('/classes/:classId', authenticate, adminOnly, deleteClass);
 router.post('/classes/:classId/lunch-leader', authenticate, adminOnly, setLunchLeader);
 router.post('/classes/:classId/teacher', authenticate, adminOnly, setTeacher);
 
@@ -52,5 +55,6 @@ router.put('/bucket-tare', authenticate, adminOnly, updateBucketTare);
 router.get('/users', authenticate, adminOnly, listUsers);
 router.post('/users', authenticate, adminOnly, createUser);
 router.patch('/users/:userId', authenticate, adminOnly, updateUser);
+router.delete('/users/:userId', authenticate, adminOnly, deleteUser);
 
 module.exports = router;

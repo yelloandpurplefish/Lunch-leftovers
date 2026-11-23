@@ -506,8 +506,7 @@ button:hover{
 .coin{
 
     display:grid;
-    /* 四張卡（E/S/G/積分）。手機放不下四欄，所以用 auto-fit 讓它自己折行：
-       寫死 repeat(4,...) 在 390px 寬的手機上每張卡只剩 80px，數字會被壓掉。 */
+    /* 兩張卡（ESG／積分）。用 auto-fit 讓它在窄螢幕自己折行。 */
     grid-template-columns:repeat(auto-fit,minmax(130px,1fr));
     gap:clamp(8px,2vw,20px);
 
@@ -515,7 +514,7 @@ button:hover{
 
 @media (min-width:768px){
     /* 平板以上四張並排，排序才和導覽列的順序一致 */
-    .coin{ grid-template-columns:repeat(4,minmax(0,1fr)); }
+    .coin{ grid-template-columns:repeat(2,minmax(0,1fr)); }
 }
 
 .card{
@@ -3041,4 +3040,42 @@ body{
 }
 .global-announcement {
     animation: slideDown 0.5s ease-out;
+}
+
+
+/* ── 刪除鈕與可複製的 ID ────────────────────────────────────────
+   刪除是不可復原的，所以要和「停用」在視覺上明顯不同，
+   不能讓人在一排同色按鈕裡按錯。 */
+.danger-btn{
+    background:#fff;
+    color:#a32d1c;
+    border:1px solid #e0b4aa;
+    padding:6px 12px;
+    border-radius:8px;
+    font-size:13px;
+    cursor:pointer;
+    margin:0;
+}
+
+.danger-btn:hover{
+    background:#fdf0ed;
+    border-color:#c96a56;
+}
+
+.danger-btn:disabled{
+    opacity:.5;
+    cursor:default;
+}
+
+/* 班級／裝置的 ID：等寬字體，方便對照與複製進韌體設定 */
+.row-id{
+    display:inline-block;
+    margin-left:8px;
+    padding:1px 7px;
+    border-radius:6px;
+    background:#eef3f0;
+    color:#4a5a52;
+    font-family:ui-monospace, SFMono-Regular, Menlo, Consolas, monospace;
+    font-size:12px;
+    user-select:all;          /* 點一下就全選，方便複製 */
 }

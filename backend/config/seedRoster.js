@@ -147,7 +147,7 @@ async function upsertUser(spec, passwordHash) {
     seatNo: spec.seatNo || null,
     createdAt: serverTime(),
     lastLoginAt: serverTime(),
-    ...(isCoinHolder ? { eCoin: 0, sCoin: 0, score: 0 } : {}),
+    ...(isCoinHolder ? { esgCoin: 0, score: 0 } : {}),
   };
 
   const batch = db.batch();

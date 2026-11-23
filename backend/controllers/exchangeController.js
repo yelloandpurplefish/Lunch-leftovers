@@ -1,5 +1,5 @@
 const { db, admin } = require('../config/firebase');
-const { COL, ROLES, COIN_SPENDER_ROLES } = require('../config/schema');
+const { COL, ROLES, COIN_SPENDER_ROLES, ESG } = require('../config/schema');
 const { getShopState, closedReason } = require('../lib/shop');
 
 // 兌換物品
@@ -56,12 +56,12 @@ const redeemItem = async (req, res) => {
         return { error: { status: 400, message: '物品庫存不足' } };
       }
 
-      const coinFieldMap = { E: 'eCoin', S: 'sCoin', G: 'gCoin' };
-      const coinField = coinFieldMap[item.costType];
-
-      if (!coinField) {
-        return { error: { status: 400, message: '不支援的貨幣類型' } };
+      // 已整合為單一 ESG 幣。商品若仍是舊的 E/S/G 計價，代表還沒跑遷移——
+      // 那個數字是舊單位，直接當 ESG 扣會扣錯價，所以寧可擋下。
+      if (item.costType !== ESG) {
+        return { error: { status: 409, message: '此商品尚未轉換為 ESG 幣計價，請聯絡管理員' } };
       }
+      const coinField = 'esgCoin';
 
       const balance = userData[coinField] || 0;
 
@@ -69,7 +69,7 @@ const redeemItem = async (req, res) => {
         return {
           error: {
             status: 400,
-            message: `${item.costType}幣不足`,
+            message: 'ESG 幣不足',
             required: item.cost,
             current: balance
           }
@@ -84,7 +84,8 @@ const redeemItem = async (req, res) => {
       transaction.set(db.collection(COL.coinTx).doc(), {
         ownerType: 'user',
         ownerId: userId,
-        coin: item.costType,
+        coin: ESG,
+        source: null,               // 消耗沒有來源
         amount: -item.cost,
         reason: `兌換「${item.name}」`,
         refType: 'exchange',

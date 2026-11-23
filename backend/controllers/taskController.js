@@ -1,5 +1,7 @@
 const { db, admin } = require('../config/firebase');
 const { today } = require('../lib/dates');
+const { awardUser } = require('../lib/coins');
+const { esgFactor } = require('../config/schema');
 const { dishNameSet } = require('../lib/dailyMenu');
 
 /**
@@ -246,9 +248,24 @@ const verifyTask = async (req, res) => {
       const updates = {};
       const rewards = record.rewards || {};
 
-      if (rewards.eCoin) updates.eCoin = admin.firestore.FieldValue.increment(rewards.eCoin);
-      if (rewards.sCoin) updates.sCoin = admin.firestore.FieldValue.increment(rewards.sCoin);
-      if (rewards.gCoin) updates.gCoin = admin.firestore.FieldValue.increment(rewards.gCoin);
+      // 幣一律走記帳層（會擋家長、會寫總帳）。舊紀錄的獎勵是 E/S/G 舊單位，要換算；
+      // 新紀錄直接寫 esgCoin。原本這裡直接 increment 欄位，總帳裡查不到這筆。
+      const fromLegacy = {
+        E: Number(rewards.eCoin || 0) * esgFactor('E'),
+        S: Number(rewards.sCoin || 0) * esgFactor('S'),
+        G: Number(rewards.gCoin || 0) * esgFactor('G') + Number(rewards.esgCoin || 0),
+      };
+      if (fromLegacy.E + fromLegacy.S + fromLegacy.G > 0) {
+        await awardUser({
+          userId: record.userId,
+          E: Math.round(fromLegacy.E),
+          S: Math.round(fromLegacy.S),
+          G: Math.round(fromLegacy.G),
+          reason: '任務審核通過',
+          refType: 'task',
+          refId: req.body.recordId || null,
+        });
+      }
       if (rewards.score) updates.score = admin.firestore.FieldValue.increment(rewards.score);
 
       if (Object.keys(updates).length > 0) {

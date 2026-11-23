@@ -11,7 +11,7 @@
  * 前端不需要再拉一次整份名冊。
  */
 const { db, admin } = require('../config/firebase');
-const { COL, ids, ROLES, COIN_RULES, COIN_HOLDER_ROLES } = require('../config/schema');
+const { COL, ids, ROLES, COIN_RULES, COIN_HOLDER_ROLES, esgFactor } = require('../config/schema');
 const { today, isYmd, daysAgo } = require('../lib/dates');
 const { awardUser, reverseAward } = require('../lib/coins');
 const { getSettings } = require('../lib/settings');
@@ -20,6 +20,31 @@ const { getSettings } = require('../lib/settings');
  * 這一餐的發幣額度：E/S 來自 COIN_RULES（固定），G 來自可調參數。
  * 每次請求都讀一次；settings 自己有 60 秒快取，不會每次都打資料庫。
  */
+/**
+ * 某筆檢查紀錄當初發出了多少 ESG（各來源）。
+ *
+ * 新紀錄存的是 awardedESG（已經是 ESG 單位）。
+ * 合併前的舊紀錄只有 awardedG（舊 G 單位），E、S 固定各 1（舊單位）；
+ * 學生的餘額在遷移時是用同一組係數換算的，所以沖銷也必須換算——
+ * 不換算的話一筆舊紀錄會扣 1+1+86 = 88 ESG，但它當初只換到約 26 ESG。
+ * 沒有 awardedG 的舊紀錄是 G 幣出現之前的，那時沒有發 G。
+ */
+function awardedOf(prev) {
+  if (!prev) return { E: 0, S: 0, G: 0 };
+  if (prev.awardedESG) {
+    return {
+      E: Number(prev.awardedESG.E || 0),
+      S: Number(prev.awardedESG.S || 0),
+      G: Number(prev.awardedESG.G || 0),
+    };
+  }
+  return {
+    E: COIN_RULES.MEAL_FINISHED.E * esgFactor('E'),
+    S: COIN_RULES.MEAL_FINISHED.S * esgFactor('S'),
+    G: Number(prev.awardedG || 0) * esgFactor('G'),
+  };
+}
+
 async function finishedReward() {
   const s = await getSettings();
   const g = Number((s.gratitude || {}).mealFinishedG || 0);
@@ -169,22 +194,20 @@ const toggleCheck = async (req, res) => {
       });
       coinsAwarded = true;
     } else if (!finished && coinsAwarded) {
-      // 沖銷用「當初發出的額度」而不是當下的設定值：
-      // 面板若在中途把 G 從 86 調成 50，沖銷 50 會讓學生白拿 36。
-      // 當初的額度記在 meal_checks 上（舊資料沒有這個欄位，退回當下設定）。
-      const awardedG = prev && prev.awardedG !== undefined
-        ? Number(prev.awardedG) : reward.G;
+      // 沖銷用「當初發出的額度」而不是當下的設定值——
+      // 面板若在中途調了額度，用新值沖銷會多扣或少扣。
+      const back = awardedOf(prev);
       const reversed = await reverseAward({
         userId: studentId,
-        E: COIN_RULES.MEAL_FINISHED.E,
-        S: COIN_RULES.MEAL_FINISHED.S,
-        G: Number.isFinite(awardedG) && awardedG > 0 ? awardedG : 0,
+        E: back.E,
+        S: back.S,
+        G: back.G,
         reason: '取消「吃完一餐」勾選',
         refType: 'meal_check',
         refId: ids.mealCheck(date, studentId),
         date,
       });
-      coinDelta = { E: -reversed.E, S: -reversed.S, G: -reversed.G };
+      coinDelta = { E: -reversed.E, S: -reversed.S, G: -reversed.G, total: -reversed.total };
       coinsAwarded = false;
     }
 
@@ -197,8 +220,8 @@ const toggleCheck = async (req, res) => {
       schoolId: student.schoolId || null,
       finished,
       coinsAwarded,
-      // 發出多少 G 要留存，取消勾選時才沖銷得準（見上面的說明）
-      awardedG: coinsAwarded ? reward.G : 0,
+      // 發出多少要留存（各來源，單位 ESG），取消勾選時才沖銷得準
+      awardedESG: coinsAwarded ? { E: reward.E, S: reward.S, G: reward.G } : null,
       checkedBy: req.user.uid,
       checkedByName: req.user.displayName,
       checkedAt: serverTime(),
@@ -269,7 +292,7 @@ const finishAll = async (req, res) => {
         classId,
         finished: true,
         coinsAwarded: true,
-        awardedG: reward.G,
+        awardedESG: { E: reward.E, S: reward.S, G: reward.G },
         checkedBy: req.user.uid,
         checkedByName: req.user.displayName,
         checkedAt: serverTime(),
@@ -326,6 +349,8 @@ const getMyChecks = async (req, res) => {
       success: true,
       studentId,
       range: `${days}d`,
+      // 讓前端的說明文字能顯示實際額度（G 幣可在開發者面板調整）
+      rewardPerStudent: await finishedReward(),
       records,
       stats: { days: records.length, finishedDays, rate: records.length ? Math.round((finishedDays / records.length) * 100) : 0 },
     });

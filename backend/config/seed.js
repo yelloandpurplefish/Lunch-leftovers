@@ -21,8 +21,8 @@ const REWARD_ITEMS = [
     itemId: 'eco_cup',
     name: '環保杯',
     description: '可重複使用的環保杯，減少一次性餐具浪費',
-    costType: 'E',
-    cost: 50,
+    costType: 'ESG',
+    cost: 200,   // 原 50 E
     category: 'exchange',
     stock: 5,
     isActive: true
@@ -31,8 +31,8 @@ const REWARD_ITEMS = [
     itemId: 'eco_utensils',
     name: '環保餐具',
     description: '不鏽鋼環保餐具組，包含湯匙、叉子、筷子',
-    costType: 'E',
-    cost: 80,
+    costType: 'ESG',
+    cost: 320,   // 原 80 E
     category: 'exchange',
     stock: 3,
     isActive: true
@@ -41,8 +41,8 @@ const REWARD_ITEMS = [
     itemId: 'stationery_set',
     name: '文具禮包',
     description: '實用文具組合，包含筆記本與鉛筆',
-    costType: 'S',
-    cost: 30,
+    costType: 'ESG',
+    cost: 60,   // 原 30 S
     category: 'exchange',
     stock: 8,
     isActive: true
@@ -51,8 +51,8 @@ const REWARD_ITEMS = [
     itemId: 'eco_bag',
     name: '環保購物袋',
     description: '耐用環保購物袋，減少塑膠袋使用',
-    costType: 'G',
-    cost: 20,
+    costType: 'ESG',
+    cost: 5,   // 原 20 G
     category: 'exchange',
     stock: 10,
     isActive: true
@@ -61,8 +61,8 @@ const REWARD_ITEMS = [
     itemId: 'reusable_straw',
     name: '不鏽鋼吸管組',
     description: '便攜不鏽鋼吸管，附清潔刷',
-    costType: 'E',
-    cost: 45,
+    costType: 'ESG',
+    cost: 180,   // 原 45 E
     category: 'exchange',
     stock: 6,
     isActive: true
@@ -71,8 +71,8 @@ const REWARD_ITEMS = [
     itemId: 'recycled_notebook',
     name: '再生紙筆記本',
     description: '100% 再生紙製成，環保又實用',
-    costType: 'S',
-    cost: 25,
+    costType: 'ESG',
+    cost: 50,   // 原 25 S
     category: 'exchange',
     stock: 7,
     isActive: true
@@ -81,8 +81,8 @@ const REWARD_ITEMS = [
     itemId: 'seed_pencil',
     name: '種子鉛筆',
     description: '用完後可種植的環保鉛筆',
-    costType: 'G',
-    cost: 15,
+    costType: 'ESG',
+    cost: 3,   // 原 15 G
     category: 'exchange',
     stock: 12,
     isActive: true
@@ -90,7 +90,7 @@ const REWARD_ITEMS = [
 ];
 
 const SYSTEM_CONFIG = [
-  { key: 'lottery_cost', value: 10, description: '每次抽獎消耗的 E幣' },
+  { key: 'lottery_cost', value: 40, description: '每次抽獎消耗的 ESG 幣（原 10 E，換算後仍是約 2 天份）' },
   { key: 'task_cooldown_hours', value: 24, description: '任務冷卻時間（小時）' },
   {
     key: 'light_disc_rewards',
@@ -123,10 +123,10 @@ const DEFAULT_MENU_ITEMS = [
 // ============================================================
 
 const TEST_ACCOUNTS = [
-  { email: 'dev@lunch-leftovers.local', displayName: '開發人員', role: 'admin', eCoin: 1000, sCoin: 500, gCoin: 200, score: 10000, classId: 'cls-302' },
-  { email: 'qa@lunch-leftovers.local', displayName: '測試人員', role: 'admin', eCoin: 1000, sCoin: 500, gCoin: 200, score: 10000, classId: 'cls-302' },
-  { email: 'teacher@lunch-leftovers.local', displayName: '測試老師', role: 'teacher', eCoin: 500, sCoin: 300, gCoin: 100, score: 5000, classId: 'cls-302' },
-  { email: 'student@lunch-leftovers.local', displayName: '測試學生', role: 'student', eCoin: 100, sCoin: 50, gCoin: 30, score: 1000, classId: 'cls-302', grade: '3', className: '302', seatNo: '30' }
+  { email: 'dev@lunch-leftovers.local', displayName: '開發人員', role: 'admin', esgCoin: 5047, score: 10000, classId: 'cls-302' },
+  { email: 'qa@lunch-leftovers.local', displayName: '測試人員', role: 'admin', esgCoin: 5047, score: 10000, classId: 'cls-302' },
+  { email: 'teacher@lunch-leftovers.local', displayName: '測試老師', role: 'teacher', esgCoin: 2623, score: 5000, classId: 'cls-302' },
+  { email: 'student@lunch-leftovers.local', displayName: '測試學生', role: 'student', esgCoin: 507, score: 1000, classId: 'cls-302', grade: '3', className: '302', seatNo: '30' }
 ];
 
 // ============================================================
@@ -136,14 +136,20 @@ const TEST_ACCOUNTS = [
 async function seedRewardItems() {
   const batch = db.batch();
 
-  REWARD_ITEMS.forEach(({ itemId, ...data }) => {
-    const ref = db.collection('reward_items').doc(itemId);
-    // mergeFields → 只覆寫預設欄位，保留管理員手動加入的其他欄位
-    batch.set(ref, data, { mergeFields: Object.keys(data) });
+  // 只建立「還不存在」的商品，已存在的一律不動。
+  // 原本用 mergeFields 每次啟動都覆寫預設欄位——那包含 cost 與 stock：
+  // 有人兌換後庫存 5→4，伺服器一重啟又變回 5；改過的價格也會被蓋回去。
+  const refs = REWARD_ITEMS.map(({ itemId }) => db.collection('reward_items').doc(itemId));
+  const snaps = await db.getAll(...refs);
+  let created = 0;
+  REWARD_ITEMS.forEach(({ itemId, ...data }, i) => {
+    if (snaps[i].exists) return;
+    batch.set(refs[i], data);
+    created += 1;
   });
 
-  await batch.commit();
-  console.log(`  ✓ reward_items：${REWARD_ITEMS.length} 筆`);
+  if (created) await batch.commit();
+  console.log(`  ✓ reward_items：${REWARD_ITEMS.length} 筆（新建 ${created}，既有的不覆寫）`);
 }
 
 async function seedSystemConfig() {
@@ -206,9 +212,7 @@ async function seedTestAccounts(password) {
           email: account.email,
           displayName: account.displayName,
           passwordHash,
-          eCoin: account.eCoin,
-          sCoin: account.sCoin,
-          gCoin: account.gCoin || 0,
+          esgCoin: account.esgCoin || 0,
           score: account.score,
           classId: account.classId || null,
           grade: account.grade || null,
@@ -274,9 +278,7 @@ async function seedExtraTestAccounts(count, password) {
           email,
           displayName,
           passwordHash,
-          eCoin: 50,
-          sCoin: 20,
-          gCoin: 10,
+          esgCoin: 242,   // 原 50 E / 20 S / 10 G
           score: 100,
           classId: 'class-extra',
           role: 'student',
@@ -410,7 +412,7 @@ function printCredentialTable(password) {
     ['學生', 'stu302-02', '觀看、兌換、抽獎'],
     ['學生', 'stu302-03', '同上（已綁定家長）'],
     ['學生', 'stu301-01', '301 班，用來測跨班支援'],
-    ['家長', 'parent302@example.com', '簽到（孩子 +1 S幣）、看孩子狀況'],
+    ['家長', 'parent302@example.com', '簽到（孩子 +1 ESG 幣）、看孩子狀況'],
     ['技術員', 'tech01', '稱重模組：註冊、綁班級桶別、扣重與校正'],
   ];
 

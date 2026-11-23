@@ -280,9 +280,7 @@ async function handleLogout() {
   try {
     currentUser = null;
     idToken = null;
-    eCoin = 0;
-    sCoin = 0;
-    gCoin = 0;
+    esgCoin = 0;
     score = 0;
     localStorage.removeItem('token');
     localStorage.removeItem('user');
@@ -298,9 +296,7 @@ async function loadUserData() {
     const data = await apiRequest('/user/profile', 'GET');
 
     if (data.success) {
-      eCoin = data.userData.eCoin || 0;
-      sCoin = data.userData.sCoin || 0;
-      gCoin = data.userData.gCoin || 0;
+      esgCoin = data.userData.esgCoin || 0;
       score = data.userData.score || 0;
 
       // 同步前端 currentUser
@@ -352,17 +348,15 @@ function showLoggedInState() {
 
 // 更新已登入狀態的統計數據
 function updateLoggedInStats() {
-  document.getElementById('userECoin').textContent = eCoin;
-  document.getElementById('userSCoin').textContent = sCoin;
+  const ue = document.getElementById('userEsgCoin');
+  if (ue) ue.textContent = esgCoin;
   document.getElementById('userScore').textContent = score;
 }
 
 // 更新 UI
 function updateUI() {
-  document.getElementById('ecoin').textContent = eCoin;
-  document.getElementById('scoin').textContent = sCoin;
-  const g = document.getElementById('gcoin');
-  if (g) g.textContent = gCoin;
+  const ec = document.getElementById('esgcoin');
+  if (ec) ec.textContent = esgCoin;
   document.getElementById('score').textContent = score;
   updateLoggedInStats();
 }
@@ -578,7 +572,7 @@ async function apiRequest(endpoint, method = 'GET', body = null) {
 // 個人英雄榜
 // ============================================================
 //
-// 一列就看得到 E幣、S幣與種樹數。分成三張榜輪流切換的話，
+// 一列就看得到 ESG 幣與種樹數。分成三張榜輪流切換的話，
 // 學生很難建立「我吃得好 → 營養夠 → 少浪費 → 種了樹」這條因果，
 // 而那正是這個榜要傳達的事。
 
@@ -601,7 +595,7 @@ async function loadHeroBoard() {
         const data = await apiRequest(
             `/leaderboard/heroes?period=${period}&within=${within}&sort=${sort}`, 'GET');
         if (!data.success) {
-            tbody.innerHTML = '<tr><td colspan="5">載入失敗</td></tr>';
+            tbody.innerHTML = '<tr><td colspan="4">載入失敗</td></tr>';
             return;
         }
         if (!data.rows.length) {
@@ -615,8 +609,7 @@ async function loadHeroBoard() {
             <tr class="${r.me ? 'my-rank-row' : ''}">
                 <td>${medal(r.rank)}</td>
                 <td>${r.displayName}${r.className ? `<small>　${r.className}</small>` : ''}</td>
-                <td>${r.E}</td>
-                <td>${r.S}</td>
+                <td>${r.ESG}</td>
                 <td>${formatTrees(r.trees)}</td>
             </tr>
         `).join('');
@@ -624,7 +617,7 @@ async function loadHeroBoard() {
         if (mineBox) {
             mineBox.innerHTML = data.me
                 ? `<p>你目前第 <strong>${data.me.rank}</strong> 名／共 ${data.total} 人　·　`
-                  + `這段期間 E幣 ${data.me.E}、S幣 ${data.me.S}　·　`
+                  + `這段期間獲得 ESG ${data.me.ESG}　·　`
                   + `🌳 累計種下 <strong>${formatTrees(data.me.treesLifetime)}</strong> 棵樹</p>`
                 : '<p class="field-hint">你這段期間還沒有獲得幣，先把自己那份吃完吧。</p>';
         }
@@ -1261,6 +1254,87 @@ async function saveTare(el) {
     }
 }
 
+
+// ══════════════════════════════════════════════════════════════════
+//  刪除（班級／帳號／稱重模組）
+// ══════════════════════════════════════════════════════════════════
+//
+//  後端只在「沒有任何依賴資料」時才真的刪，否則回 409 並附上每一種
+//  依賴的筆數（見 backend/lib/deletion.js）。前端的責任是把那串原因
+//  原樣顯示出來——管理員才知道是要先搬學生、還是該改用「停用」。
+
+/** 把後端回的依賴清單整理成可讀的提示。 */
+function describeDeps(data) {
+    const deps = (data && data.dependencies) || [];
+    if (!deps.length) return data && data.message ? data.message : '無法刪除';
+    return (data.message || '無法刪除') + '\n\n'
+        + deps.map((d) => `· ${d.label}：${d.count} 筆`).join('\n');
+}
+
+async function deleteClassRow(el) {
+    const classId = el.dataset.classId;
+    const label = el.dataset.label || classId;
+    if (!classId) return;
+    if (!confirm(`確定刪除「${label}」？\n\nclassId：${classId}\n`
+        + '只有在這個班沒有任何學生與歷史紀錄時才刪得掉。')) return;
+    el.disabled = true;
+    try {
+        const data = await apiRequest(`/admin/classes/${encodeURIComponent(classId)}`, 'DELETE');
+        alert(data.success ? '✅ ' + data.message : '⚠️ ' + describeDeps(data));
+        if (data.success) await loadAdminClasses();
+    } catch (error) {
+        alert('刪除失敗：' + (error.message || '請稍後再試'));
+    } finally {
+        el.disabled = false;
+    }
+}
+
+async function deleteUserRow(el) {
+    const userId = el.dataset.userId;
+    const label = el.dataset.label || userId;
+    if (!userId) return;
+    if (!confirm(`確定刪除帳號「${label}」？\n\n`
+        + '有活動紀錄（幣的總帳、用餐檢查…）的帳號刪不掉，\n'
+        + '那種情況請改用「停用」，歷史資料才留得住。')) return;
+    el.disabled = true;
+    try {
+        const data = await apiRequest(`/admin/users/${encodeURIComponent(userId)}`, 'DELETE');
+        if (data.success) {
+            alert('✅ ' + data.message);
+            await loadAdminUsers();
+        } else {
+            alert('⚠️ ' + describeDeps(data)
+                + (data.suggestion === 'deactivate' ? '\n\n→ 建議改按「停用」' : ''));
+        }
+    } catch (error) {
+        alert('刪除失敗：' + (error.message || '請稍後再試'));
+    } finally {
+        el.disabled = false;
+    }
+}
+
+async function deleteDeviceRow(el) {
+    const deviceId = el.dataset.deviceId;
+    if (!deviceId) return;
+    if (!confirm(`確定刪除稱重模組「${deviceId}」？\n\n`
+        + '燒進韌體的 token 會立刻失效，那台秤就連不上了。\n'
+        + '歷史讀數預設會保留。')) return;
+    // 讀數是現場排查的依據，所以要不要一起刪另外問一次
+    const purge = confirm('要連同這台的歷史讀數一起刪除嗎？\n\n'
+        + '確定＝一起刪（不可復原）\n取消＝只刪裝置，保留讀數');
+    el.disabled = true;
+    try {
+        const data = await apiRequest(
+            `/tech/devices/${encodeURIComponent(deviceId)}?purgeReadings=${purge}`, 'DELETE');
+        alert(data.success ? '✅ ' + data.message : '⚠️ ' + (data.message || '刪除失敗'));
+        if (data.success) await loadDevices();
+    } catch (error) {
+        alert('刪除失敗：' + (error.message || '請稍後再試'));
+    } finally {
+        el.disabled = false;
+    }
+}
+
 function renderMenuReport(data) {
     const box = document.getElementById('syncMenusReport');
     if (!box) return;
@@ -1367,15 +1441,15 @@ let coinRulesState = { values: null, defaults: null };
 
 /** 參數說明：光看 kProtein 這種鍵名沒人知道要填什麼，一律附中文與單位。 */
 const RULE_LABELS = {
-    'energy.kProtein': ['每公克蛋白質 → E幣', '幣/g'],
-    'energy.kFiber': ['每公克膳食纖維 → E幣', '幣/g'],
+    'energy.kProtein': ['每公克蛋白質 → ESG（營養來源）', '幣/g'],
+    'energy.kFiber': ['每公克膳食纖維 → ESG（營養來源）', '幣/g'],
     'sdg.co2PerKgWaste': ['每公斤廚餘的碳排', 'kgCO2e/kg'],
     'sdg.treeAnnualCo2Kg': ['每棵樹每年吸收的 CO2', 'kg/年'],
-    'sdg.sCoinPerTree': ['每棵樹 → S幣（放大常數）', '幣/棵'],
+    'sdg.sCoinPerTree': ['每棵樹 → ESG（減碳來源，放大常數）', '幣/棵'],
     'sdg.schoolBaselineWindow': ['全校歷史平均取最近幾場', '場'],
     'sdg.fallbackSchoolWastePerCapitaG': ['歷史不足時的起步基準', 'g/人/餐'],
     'sdg.minSchoolSamples': ['低於幾場就用起步基準', '場'],
-    'gratitude.mealFinishedG': ['老師確認完食 → G幣（感謝）', '幣/人/餐'],
+    'gratitude.mealFinishedG': ['老師確認完食 → ESG（感謝來源）', '幣/人/餐'],
     'intake.normalKcal': ['體位正常的建議熱量（一餐）', 'kcal'],
     'intake.adjustKcal': ['過重往下／過輕往上調整', 'kcal'],
     'intake.fallbackUnderweightBmi': ['查無年齡性別時的過輕界線', 'BMI'],
@@ -1441,7 +1515,7 @@ function renderRulesPreview(preview) {
         <p class="field-hint">以 ${preview.servings} 人份示範菜單試算：${(preview.menu || []).join('、')}</p>
         <div class="table-scroll">
         <table class="rule-table">
-            <thead><tr><th>情境</th><th>人均攝取</th><th>E幣</th><th>S幣</th><th>全班種樹</th></tr></thead>
+            <thead><tr><th>情境</th><th>人均攝取</th><th>ESG（營養）</th><th>ESG（減碳）</th><th>全班種樹</th></tr></thead>
             <tbody>${(preview.scenarios || []).map((s) => `
                 <tr>
                     <td>${s.label}</td>
@@ -1639,7 +1713,7 @@ async function loadShopItems() {
         // G 幣商品原本被整批隱藏，因為當時沒有任何地方發 G 幣；
         // 現在教師確認完食會發 G，就該讓它們出現。
         container.innerHTML = data.items.map(item => {
-            const coinName = { E: 'E幣', S: 'S幣', G: 'G幣' }[item.costType] || item.costType;
+            const coinName = item.costType === 'ESG' ? 'ESG 幣' : `${item.costType}（舊計價，待轉換）`;
             const stockText = item.stock === null || item.stock === undefined
                 ? '剩餘：無限'
                 : `剩餘：${item.stock}`;
@@ -1673,13 +1747,7 @@ async function buyItem(el){
 
         if (data.success) {
             if (data.remainingCoin !== undefined) {
-                if (costType === 'E') {
-                    eCoin = data.remainingCoin;
-                } else if (costType === 'S') {
-                    sCoin = data.remainingCoin;
-                } else if (costType === 'G') {
-                    gCoin = data.remainingCoin;
-                }
+                esgCoin = data.remainingCoin;
             }
             updateUI();
             await loadShopItems();
@@ -1779,7 +1847,7 @@ async function parentSignIn() {
             result.textContent = (data.success ? '✅ ' : '⚠️ ') + (data.message || '');
         }
         if (btn) {
-            btn.textContent = data.success ? '今天已簽到 ✅' : '今日簽到（孩子 +1 S幣）';
+            btn.textContent = data.success ? '今天已簽到 ✅' : '今日簽到（孩子 +1 ESG）';
             btn.disabled = Boolean(data.success);
         }
         // 成功後鎖住評論欄位，但保留內容——家長要看得到自己今天寫了什麼
@@ -1793,7 +1861,7 @@ async function parentSignIn() {
             result.className = 'verify-result error';
             result.textContent = '簽到失敗：' + (error.message || '請稍後再試');
         }
-        if (btn) { btn.disabled = false; btn.textContent = '今日簽到（孩子 +1 S幣）'; }
+        if (btn) { btn.disabled = false; btn.textContent = '今日簽到（孩子 +1 ESG）'; }
     }
 }
 
@@ -1838,8 +1906,8 @@ function closeLottery(){
 }
 
 async function spinLottery(){
-    if(eCoin < 10){
-        alert("❌ E幣不足！需要 10 E幣進行抽獎");
+    if(esgCoin < 40){
+        alert("❌ ESG 幣不足！需要 40 ESG 幣進行抽獎");
         return;
     }
 
@@ -1872,8 +1940,8 @@ async function spinLottery(){
                     <div class="lottery-congrats" style="top: 0; color: #ff6b00;">🎉 恭喜中獎</div>
                     <div class="prize-name" style="margin-top: 20px;">${prize}</div>
                     <div class="prize-type">${typeLabel}</div>
-                    <div class="prize-value">價值：${prizeValue} E幣</div>
-                    <div class="prize-balance">E幣餘額：${data.remainingECoin}</div>
+                    <div class="prize-value">價值：${prizeValue} ESG</div>
+                    <div class="prize-balance">ESG 餘額：${data.remainingCoin}</div>
                 </div>
             `;
         } else if (prizeType === 'rare') {
@@ -1887,8 +1955,8 @@ async function spinLottery(){
                 <div class="prize-result">
                     <div class="prize-name">${prize}</div>
                     <div class="prize-type">${typeLabel}！</div>
-                    <div class="prize-value">價值：${prizeValue} E幣</div>
-                    <div class="prize-balance">E幣餘額：${data.remainingECoin}</div>
+                    <div class="prize-value">價值：${prizeValue} ESG</div>
+                    <div class="prize-balance">ESG 餘額：${data.remainingCoin}</div>
                 </div>
             `;
         } else if (prizeType === 'grand') {
@@ -1902,15 +1970,15 @@ async function spinLottery(){
                 <div class="prize-result">
                     <div class="prize-name" style="font-size: 26px; color: #00aaff; text-shadow: 0 0 20px #00aaff;">${prize}</div>
                     <div class="prize-type" style="font-size: 20px;">✨ ${typeLabel} ✨</div>
-                    <div class="prize-value">價值：${prizeValue} E幣</div>
-                    <div class="prize-balance">E幣餘額：${data.remainingECoin}</div>
+                    <div class="prize-value">價值：${prizeValue} ESG</div>
+                    <div class="prize-balance">ESG 餘額：${data.remainingCoin}</div>
                 </div>
             `;
             loadLotteryAnnouncement();
         }
 
-        // 同步 E幣餘額（僅扣除抽獎成本，不返還獎品價值）
-        eCoin = data.remainingECoin;
+        // 同步 ESG 餘額（僅扣除抽獎成本，不返還獎品價值）
+        esgCoin = data.remainingCoin;
         updateUI();
 
     } catch (error) {
@@ -2128,6 +2196,15 @@ async function loadMyMealStatus() {
     if (!box) return;
     try {
         const data = await apiRequest('/meal-check/mine?range=week', 'GET');
+        // 獎勵額度由後端帶回。G 幣的額度在開發者面板可調，
+        // 寫死在 HTML 裡會在校方調整後變成錯的說明。
+        const hint = document.getElementById('mealRewardHint');
+        const rw = data && data.rewardPerStudent;
+        if (hint && rw) {
+            const total = (rw.E || 0) + (rw.S || 0) + (rw.G || 0);
+            hint.textContent = '吃完自己的部分由老師在「檢查清單」確認，確認後自動獲得 '
+                + `ESG 幣 +${total}（營養 ${rw.E || 0}、減碳 ${rw.S || 0}、感謝 ${rw.G || 0}）。`;
+        }
         if (!data.success) {
             box.innerHTML = '<p>無法載入用餐紀錄</p>';
             return;
@@ -2137,7 +2214,7 @@ async function loadMyMealStatus() {
         const state = !todayRow
             ? '<span class="status-pending">⏳ 老師尚未確認</span>'
             : todayRow.finished
-                ? '<span class="status-ok">✅ 今天吃完了，已獲得 E幣 +1、S幣 +1</span>'
+                ? `<span class="status-ok">✅ 今天吃完了，已獲得 ESG 幣 +${((rw && (rw.E || 0) + (rw.S || 0) + (rw.G || 0)) || '')}</span>`
                 : '<span class="status-warn">⚠️ 今天記錄為沒吃完</span>';
 
         box.innerHTML = `
@@ -2475,11 +2552,12 @@ async function finalizeRecord() {
             `${data.message}\n\n`
             + `【吃了什麼】人均吃下 ${n.eatenG || 0} g\n`
             + `  蛋白質 ${n.proteinG || 0} g、膳食纖維 ${n.fiberG || 0} g\n`
-            + `  → E幣 +${data.classCoins.E}\n\n`
+            + `  → ESG +${data.classCoins.E}（營養來源）\n\n`
             + `【少浪費多少】本班人均廚餘 ${data.wastePerCapitaG || 0} g\n`
             + `  全校基準 ${sb.perCapitaG || 0} g（${baseNote}）\n`
             + `  少浪費 ${sdg.savedPerCapitaG || 0} g/人，減碳 ${sdg.co2ClassKg || 0} kgCO₂e\n`
-            + `  → 相當於 ${formatTrees(sdg.treesClass)} 棵樹，S幣 +${data.classCoins.S}\n\n`
+            + `  → 相當於 ${formatTrees(sdg.treesClass)} 棵樹，ESG +${data.classCoins.S}（減碳來源）\n\n`
+            + `合計每人 ESG +${(data.classCoins.E || 0) + (data.classCoins.S || 0)}\n`
             + `已分給 ${data.sharedTo} 位同學`
         );
         await loadRecordToday();
@@ -2705,7 +2783,7 @@ async function loadChildStatus() {
         box.innerHTML = `
             <p><strong>${c.displayName}</strong>　${c.grade} 年 ${c.className} 班 ${c.seatNo} 號</p>
             <p>${state}</p>
-            <p>孩子目前 E幣 ${c.coins.E}、S幣 ${c.coins.S}</p>
+            <p>孩子目前 ESG 幣 ${c.coins.ESG}</p>
             <p class="field-hint">近 ${data.stats.range}：有紀錄 ${data.stats.recordedDays} 天，吃完 ${data.stats.finishedDays} 天（${data.stats.finishedRate}%）</p>
             ${data.classDishesToday.length ? `<p class="field-hint">今天全班剩餘：${data.classDishesToday.map((d) => `${d.dishName} ${d.remainingPct}%`).join('、')}</p>` : ''}
         `;
@@ -2826,12 +2904,16 @@ async function loadAdminClasses() {
             <div class="admin-row">
                 <div class="admin-row-main">
                     <strong>${c.grade} 年 ${c.name} 班</strong>
-                    <span class="field-hint">人數 ${c.headcount}　已註冊 ${c.registered}　班級幣 E${c.classCoins.E}/S${c.classCoins.S}</span>
+                    <code class="row-id" title="綁定裝置、同步名冊時要用的 classId">${escapeText(c.classId)}</code>
+                    <span class="field-hint">人數 ${c.headcount}　已註冊 ${c.registered}　班級 ESG ${c.classCoins.ESG}</span>
                     <span class="field-hint">導師：${c.teacher ? c.teacher.displayName : '未指定'}　午餐長：${c.lunchLeader ? c.lunchLeader.displayName : '未指定'}</span>
                 </div>
                 <div class="admin-row-actions">
                     <input type="text" placeholder="帳號" data-role="leader-account" data-class-id="${c.classId}" class="inline-input">
                     <button data-action="setLunchLeader" data-class-id="${c.classId}" class="check-btn">設為午餐長</button>
+                    <button data-action="deleteClassRow" data-class-id="${escapeAttr(c.classId)}"
+                            data-label="${escapeAttr(c.grade + ' 年 ' + c.name + ' 班')}"
+                            class="danger-btn">刪除</button>
                 </div>
             </div>
         `).join('');
@@ -2870,13 +2952,16 @@ async function loadAdminUsers() {
                     <strong>${u.displayName}</strong>
                     <span class="field-hint">${ROLE_LABEL[u.role] || u.role}　${u.account || u.email || ''}
                         ${u.className ? `　${u.grade}年${u.className}班 ${u.seatNo || ''}號` : ''}
-                        ${u.coins ? `　E${u.coins.E}/S${u.coins.S}` : ''}
+                        ${u.coins ? `　ESG ${u.coins.ESG}` : ''}
                         ${u.isActive ? '' : '　（已停用）'}</span>
                 </div>
                 <div class="admin-row-actions">
                     <button data-action="toggleUserActive" data-user-id="${u.userId}" data-active="${u.isActive ? 'false' : 'true'}" class="check-btn">
                         ${u.isActive ? '停用' : '啟用'}
                     </button>
+                    <button data-action="deleteUserRow" data-user-id="${escapeAttr(u.userId)}"
+                            data-label="${escapeAttr(u.displayName || u.userId)}"
+                            class="danger-btn">刪除</button>
                 </div>
             </div>
         `).join('');
@@ -3050,6 +3135,8 @@ function renderDeviceCard(d) {
                 <button data-action="setTareManual" data-device-id="${d.deviceId}" class="check-btn">設扣重</button>
                 <button data-action="setTareLatest" data-device-id="${d.deviceId}" class="check-btn">空盆歸零</button>
                 <button data-action="showReadings" data-device-id="${d.deviceId}" class="check-btn">最近讀數</button>
+                <button data-action="deleteDeviceRow" data-device-id="${escapeAttr(d.deviceId)}"
+                        class="danger-btn">刪除</button>
             </div>
             <div class="device-readings hidden" id="readings-${d.deviceId}"></div>
         </div>
@@ -3190,6 +3277,9 @@ const ACTION_HANDLERS = {
     syncStudents: () => syncStudents(),
     syncStudentsDryRun: () => syncStudentsDryRun(),
     saveShopState: () => saveShopState(),
+    deleteClassRow: (el) => deleteClassRow(el),
+    deleteUserRow: (el) => deleteUserRow(el),
+    deleteDeviceRow: (el) => deleteDeviceRow(el),
     loadWeighQueue: () => loadWeighQueue(),
     weighDish: (el) => weighDish(el),
     weighEmptied: (el) => weighEmptied(el),

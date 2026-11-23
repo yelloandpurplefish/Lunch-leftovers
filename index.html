@@ -148,12 +148,8 @@
                 <p class="hero-tagline">一起減碳 零廚餘愛地球</p>
                 <div class="user-stats">
                     <div class="stat-item">
-                        <span class="stat-label">E幣 <small>（光盤）</small></span>
-                        <span class="stat-value" id="userECoin">0</span>
-                    </div>
-                    <div class="stat-item">
-                        <span class="stat-label">S幣 <small>（減碳）</small></span>
-                        <span class="stat-value" id="userSCoin">0</span>
+                        <span class="stat-label">ESG幣</span>
+                        <span class="stat-value" id="userEsgCoin">0</span>
                     </div>
                     <div class="stat-item">
                         <span class="stat-label">積分</span>
@@ -195,18 +191,8 @@
 <div class="coin">
 
             <div class="card">
-                <h3>E幣 <small>（光盤）</small></h3>
-                <span id="ecoin">0</span>
-            </div>
-
-            <div class="card">
-                <h3>S幣 <small>（減碳）</small></h3>
-                <span id="scoin">0</span>
-            </div>
-
-            <div class="card">
-                <h3>G幣 <small>（感謝）</small></h3>
-                <span id="gcoin">0</span>
+                <h3>ESG幣 <small>（營養＋減碳＋感謝）</small></h3>
+                <span id="esgcoin">0</span>
             </div>
 
             <div class="card">
@@ -240,7 +226,8 @@
 
             <h2>✅ 今日午餐狀況</h2>
 
-            <p class="field-hint">吃完自己的部分由老師在「檢查清單」確認，確認後自動獲得 E幣 +1、S幣 +1。</p>
+            <!-- 獎勵額度由 API 帶回（G 幣的額度在開發者面板可調，寫死會過期）-->
+    <p class="field-hint" id="mealRewardHint">吃完自己的部分由老師在「檢查清單」確認，確認後會自動獲得獎勵。</p>
 
             <div id="myMealStatus">載入中...</div>
 
@@ -271,7 +258,7 @@
     <h2>🏆 個人英雄榜</h2>
 
     <p class="field-hint">
-        E幣＝吃下去的營養（蛋白質＋膳食纖維）；S幣＝比全校平均少浪費的部分換算成的樹。
+        ESG幣有三個來源：E 營養（吃下去的蛋白質與膳食纖維）、S 減碳（比全校平均少浪費的部分換算成的樹）、G 感謝（老師確認你吃完）。
     </p>
 
     <div class="hero-controls">
@@ -291,8 +278,7 @@
         <label>排序
             <select id="heroSort" data-action="loadHeroBoard">
                 <option value="trees">種樹數</option>
-                <option value="E">E幣</option>
-                <option value="S">S幣</option>
+                <option value="ESG">ESG幣</option>
             </select>
         </label>
     </div>
@@ -305,13 +291,12 @@
             <tr>
                 <th>名次</th>
                 <th>姓名</th>
-                <th>E幣</th>
-                <th>S幣</th>
+                <th>ESG幣</th>
                 <th>🌳 種樹</th>
             </tr>
         </thead>
         <tbody id="heroBoardList">
-            <tr><td colspan="5">載入中...</td></tr>
+            <tr><td colspan="4">載入中...</td></tr>
         </tbody>
     </table>
     </div>
@@ -463,7 +448,7 @@
 
         <h2>👩‍🏫 今日用餐檢查</h2>
 
-        <p class="field-hint">勾選代表該學生吃完自己的部分（即「吃完一餐」），系統立即給該生 E幣 +1、S幣 +1；取消勾選會沖銷。</p>
+        <p class="field-hint">勾選代表該學生吃完自己的部分（即「吃完一餐」），系統立即發 ESG 幣給該生；取消勾選會沖銷。</p>
 
         <div id="checkSummary" class="check-summary"></div>
 
@@ -751,7 +736,7 @@
             寫完才能完成簽到。<span id="parentCommentCount">0</span>/200 字，至少 5 個字。
         </p>
 
-        <button data-action="parentSignIn" id="parentSignInBtn">今日簽到（孩子 +1 S幣）</button>
+        <button data-action="parentSignIn" id="parentSignInBtn">今日簽到（孩子 +1 ESG）</button>
 
         <p id="parentSignInResult" class="verify-result"></p>
 
@@ -765,7 +750,7 @@
     <div class="lottery-content">
         <span class="close-btn" data-action="closeLottery">&times;</span>
         <h2>🎰 幸運抽獎</h2>
-        <p>消耗 10 E幣進行抽獎</p>
+        <p>消耗 40 ESG 幣進行抽獎</p>
         <div id="lotteryEffects" class="lottery-effects"></div>
         <div id="lotteryResult" class="lottery-result"></div>
         <button class="spin-btn" data-action="spinLottery">開始抽獎</button>

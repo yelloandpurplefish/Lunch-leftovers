@@ -48,7 +48,7 @@ function buildUserResponse(u) {
   if (u.role === ROLES.PARENT) {
     return { ...base, studentBinding: u.studentBinding || null, boundStudentId: u.boundStudentId || null };
   }
-  return { ...base, eCoin: Number(u.eCoin || 0), sCoin: Number(u.sCoin || 0), score: Number(u.score || 0) };
+  return { ...base, esgCoin: Number(u.esgCoin || 0), score: Number(u.score || 0) };
 }
 
 const bad = (res, status, message, extra = {}) =>
@@ -166,7 +166,7 @@ const register = async (req, res) => {
         email,
         passwordHash,
         isActive: true,
-        // 家長沒有幣系統：不建立 eCoin/sCoin/score 欄位
+        // 家長沒有幣系統：不建立 esgCoin/score 欄位
         boundStudentId: student.id,
         studentBinding: {
           ...binding,
@@ -213,8 +213,7 @@ const register = async (req, res) => {
         email,
         passwordHash,
         isActive: true,
-        eCoin: 0,
-        sCoin: 0,
+        esgCoin: 0,
         score: 0,
         schoolId: klass.schoolId || null,
         classId: klass.id,

@@ -15,7 +15,8 @@
  * 這裡改成用 coin_transactions 與 meal_sessions 依日期區間查詢（見 firestore.indexes.json）。
  */
 const { db } = require('../config/firebase');
-const { COL, ROLES, COIN_HOLDER_ROLES } = require('../config/schema');
+const { COL, ROLES, COIN_HOLDER_ROLES, ESG } = require('../config/schema');
+const { legacyToEsg, sourceOf } = require('../lib/coins');
 const { daysAgo } = require('../lib/dates');
 
 const bad = (res, status, message) => res.status(status).json({ success: false, message });
@@ -28,48 +29,75 @@ function round(v, d = 3) {
   return Math.round(Number(v) * f) / f;
 }
 
-/** 個人榜：週期內獲得的 E 或 S 幣。*/
-async function personalBoard({ coin, since, within, classId, schoolId, myUid, limit }) {
-  const snap = await db.collection(COL.coinTx)
-    .where('ownerType', '==', 'user')
-    .where('coin', '==', coin)
-    .where('date', '>=', since)
-    .get();
-
-  const gained = new Map();
-  snap.docs.forEach((d) => {
-    const t = d.data();
-    if (Number(t.amount) <= 0) return; // 只算獲得
-    gained.set(t.ownerId, (gained.get(t.ownerId) || 0) + Number(t.amount));
-  });
-
-  // 取使用者資料以過濾範圍（全校/本班）與顯示名稱
-  const userIds = [...gained.keys()];
-  const users = new Map();
-  for (let i = 0; i < userIds.length; i += 30) {
-    const chunk = userIds.slice(i, i + 30);
-    const snaps = await db.getAll(...chunk.map((id) => db.collection(COL.users).doc(id)));
-    snaps.forEach((s) => {
-      if (s.exists) users.set(s.id, s.data());
+/**
+ * 期間內每位使用者「獲得」的 ESG（只算正數，不扣兌換）與種的樹。
+ *
+ * 合併前的分錄記的是 coin:'E'|'S'|'G'（舊單位），合併後是 coin:'ESG'。
+ * 期間若跨越合併日，兩種都要算進來，舊的用換算係數轉成 ESG，
+ * 否則合併那一週的排行會突然掉一截。
+ * 每種幣分開查是為了沿用現有索引 (ownerType, coin, date)，不必另開索引。
+ */
+async function earnedSince(since) {
+  const agg = new Map();
+  for (const coin of [ESG, 'E', 'S', 'G']) {
+    const snap = await db.collection(COL.coinTx)
+      .where('ownerType', '==', 'user')
+      .where('coin', '==', coin)
+      .where('date', '>=', since)
+      .get();
+    snap.docs.forEach((d) => {
+      const t = d.data();
+      const cur = agg.get(t.ownerId) || { ESG: 0, E: 0, S: 0, G: 0, trees: 0 };
+      const amount = legacyToEsg(t);
+      if (amount > 0) {
+        cur.ESG += amount;
+        const src = sourceOf(t);
+        if (src && cur[src] !== undefined) cur[src] += amount;
+      }
+      const trees = Number(t.trees || 0);
+      if (trees > 0) cur.trees += trees;
+      agg.set(t.ownerId, cur);
     });
   }
+  return agg;
+}
 
-  const rows = userIds
-    .map((id) => ({ id, value: gained.get(id), u: users.get(id) }))
-    .filter(({ u }) => {
-      if (!u || u.isActive === false) return false;
-      if (!COIN_HOLDER_ROLES.includes(u.role)) return false;       // 家長/教師不入榜
-      if (within === 'class') return classId && u.classId === classId;
-      return !schoolId || u.schoolId === schoolId;
-    })
-    .map(({ id, value, u }) => ({
+/** 一次取多位使用者（getAll 一次最多 30 筆）。 */
+async function loadUsers(ids) {
+  const users = new Map();
+  for (let i = 0; i < ids.length; i += 30) {
+    const chunk = ids.slice(i, i + 30);
+    const snaps = await db.getAll(...chunk.map((id) => db.collection(COL.users).doc(id)));
+    snaps.forEach((s) => { if (s.exists) users.set(s.id, s.data()); });
+  }
+  return users;
+}
+
+function inScope(u, { within, classId, schoolId }) {
+  if (!u || u.isActive === false) return false;
+  if (!COIN_HOLDER_ROLES.includes(u.role)) return false;        // 家長/教師不入榜
+  if (within === 'class') return classId && u.classId === classId;
+  return !schoolId || u.schoolId === schoolId;
+}
+
+/** 個人榜：週期內獲得的 ESG 幣。*/
+async function personalBoard({ since, within, classId, schoolId, myUid, limit }) {
+  const agg = await earnedSince(since);
+  const ids = [...agg.keys()];
+  const users = await loadUsers(ids);
+
+  const rows = ids
+    .map((id) => ({ id, a: agg.get(id), u: users.get(id) }))
+    .filter(({ u }) => inScope(u, { within, classId, schoolId }))
+    .map(({ id, a, u }) => ({
       id,
       displayName: u.displayName || '匿名',
       className: u.className || null,
       role: u.role,
-      value,
+      value: Math.round(a.ESG),
       me: id === myUid,
     }))
+    .filter((r) => r.value > 0)
     .sort((a, b) => b.value - a.value);
 
   rows.forEach((r, i) => { r.rank = i + 1; });
@@ -118,7 +146,7 @@ async function classBoard({ since, schoolId, myClassId, limit }) {
         avgLeftoverPerMealG: Math.round(a.leftoverG / Math.max(1, a.meals)),
         meals: a.meals,
         headcount: Number(c.headcount || 0),
-        classCoins: { E: Number(c.eCoin || 0), S: Number(c.sCoin || 0) },
+        classCoins: { ESG: Number(c.esgCoin || 0) },
         me: id === myClassId,
       };
     })
@@ -140,58 +168,27 @@ async function classBoard({ since, schoolId, myClassId, limit }) {
  * 只用 ownerType + date 範圍查會需要另開一個索引，而這裡多一次查詢就夠了。
  */
 async function heroBoard({ since, within, classId, schoolId, myUid, limit, sort }) {
-  const agg = new Map();
-  const bump = (id, field, amount) => {
-    const cur = agg.get(id) || { E: 0, S: 0, trees: 0 };
-    cur[field] += amount;
-    agg.set(id, cur);
-  };
-
-  for (const coin of ['E', 'S']) {
-    const snap = await db.collection(COL.coinTx)
-      .where('ownerType', '==', 'user')
-      .where('coin', '==', coin)
-      .where('date', '>=', since)
-      .get();
-    snap.docs.forEach((d) => {
-      const t = d.data();
-      const amount = Number(t.amount || 0);
-      if (amount > 0) bump(t.ownerId, coin, amount);        // 只算獲得，不扣兌換
-      const trees = Number(t.trees || 0);
-      if (coin === 'S' && trees > 0) bump(t.ownerId, 'trees', trees);
-    });
-  }
-
+  const agg = await earnedSince(since);
   const ids = [...agg.keys()];
-  const users = new Map();
-  for (let i = 0; i < ids.length; i += 30) {
-    const chunk = ids.slice(i, i + 30);
-    const snaps = await db.getAll(...chunk.map((id) => db.collection(COL.users).doc(id)));
-    snaps.forEach((s) => {
-      if (s.exists) users.set(s.id, s.data());
-    });
-  }
+  const users = await loadUsers(ids);
 
-  const key = ['E', 'S', 'trees'].includes(sort) ? sort : 'trees';
+  // 舊的 E / S 排序參數一律視為 ESG，避免舊版前端送來時排序失效
+  const key = sort === 'trees' ? 'trees' : ESG;
   const rows = ids
-    .map((id) => ({ id, ...agg.get(id), u: users.get(id) }))
-    .filter(({ u }) => {
-      if (!u || u.isActive === false) return false;
-      if (!COIN_HOLDER_ROLES.includes(u.role)) return false;      // 家長/教師不入榜
-      if (within === 'class') return classId && u.classId === classId;
-      return !schoolId || u.schoolId === schoolId;
-    })
-    .map(({ id, E, S, trees, u }) => ({
+    .map((id) => ({ id, a: agg.get(id), u: users.get(id) }))
+    .filter(({ u }) => inScope(u, { within, classId, schoolId }))
+    .map(({ id, a, u }) => ({
       id,
       displayName: u.displayName || '匿名',
       className: u.className || null,
       role: u.role,
-      E: Math.round(E),
-      S: Math.round(S),
-      trees: round(trees, 4),
+      ESG: Math.round(a.ESG),
+      // 各來源的拆解：餘額只有一個數字，但「ESG 從哪裡來」仍看得到
+      bySource: { E: Math.round(a.E), S: Math.round(a.S), G: Math.round(a.G) },
+      trees: round(a.trees, 4),
       // 累計值另外給：英雄榜下方會顯示「你到目前為止一共種了幾棵樹」
       treesLifetime: round(Number(u.treesPlanted || 0), 4),
-      value: key === 'trees' ? round(trees, 4) : Math.round(key === 'E' ? E : S),
+      value: key === 'trees' ? round(a.trees, 4) : Math.round(a.ESG),
       me: id === myUid,
     }))
     .sort((a, b) => b.value - a.value || b.trees - a.trees);
@@ -240,14 +237,13 @@ const getLeaderboard = async (req, res) => {
     const scope = req.query.scope === 'class' ? 'class' : 'personal';
     const period = PERIOD_DAYS[req.query.period] ? req.query.period : 'week';
     const within = req.query.within === 'class' ? 'class' : 'school';
-    const metric = req.query.metric === 'S' ? 'S' : 'E';
+    const metric = ESG;   // 已整合為單一幣別
     const limit = Math.min(Math.max(parseInt(req.query.limit, 10) || 20, 1), 100);
     const since = daysAgo(periodDays(period) - 1);
 
     const result = scope === 'class'
       ? await classBoard({ since, schoolId: req.user.schoolId, myClassId: req.user.classId, limit })
       : await personalBoard({
-          coin: metric,
           since,
           within,
           classId: req.user.classId,
@@ -256,7 +252,7 @@ const getLeaderboard = async (req, res) => {
           limit,
         });
 
-    const unit = scope === 'class' ? 'kg 人均減碳' : `${metric}幣`;
+    const unit = scope === 'class' ? 'kg 人均減碳' : 'ESG 幣';
 
     return res.status(200).json({
       success: true,

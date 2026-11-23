@@ -5,7 +5,7 @@
 const express = require('express');
 const router = express.Router();
 const {
-  listDevices, registerDevices, updateDevice, setTare,
+  listDevices, registerDevices, updateDevice, deleteDevice, setTare,
   calibrate, rotateToken, listReadings, fleetHealth,
 } = require('../controllers/technicianController');
 const { authenticate, requireRole } = require('../middleware/auth');
@@ -16,6 +16,7 @@ const techOnly = requireRole(ROLES.TECHNICIAN);
 router.get('/devices', authenticate, techOnly, listDevices);
 router.post('/devices', authenticate, techOnly, registerDevices);
 router.patch('/devices/:deviceId', authenticate, techOnly, updateDevice);
+router.delete('/devices/:deviceId', authenticate, techOnly, deleteDevice);
 router.post('/devices/:deviceId/tare', authenticate, techOnly, setTare);
 router.post('/devices/:deviceId/calibrate', authenticate, techOnly, calibrate);
 router.post('/devices/:deviceId/rotate-token', authenticate, techOnly, rotateToken);

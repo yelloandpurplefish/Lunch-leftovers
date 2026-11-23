@@ -25,6 +25,7 @@ const { computeNutrition, computeEnergyCoins, computeSdg } = require('../lib/sco
 const shop = require('../lib/shop');
 const bucketTare = require('../lib/bucketTare');
 const scaleReadings = require('../lib/scaleReadings');
+const deletion = require('../lib/deletion');
 
 const serverTime = () => admin.firestore.FieldValue.serverTimestamp();
 const norm = (v) => String(v == null ? '' : v).trim();
@@ -109,7 +110,7 @@ const listClasses = async (req, res) => {
           registered: members.get(d.id) || 0,
           teacher: c.teacherUserId ? { userId: c.teacherUserId, displayName: nameOf.get(c.teacherUserId) || null } : null,
           lunchLeader: c.lunchLeaderUserId ? { userId: c.lunchLeaderUserId, displayName: nameOf.get(c.lunchLeaderUserId) || null } : null,
-          classCoins: { E: Number(c.eCoin || 0), S: Number(c.sCoin || 0) },
+          classCoins: { ESG: Number(c.esgCoin || 0) },
         };
       })
       .sort((a, b) => String(a.grade).localeCompare(String(b.grade)) || String(a.name).localeCompare(String(b.name)));
@@ -151,8 +152,7 @@ const createClass = async (req, res) => {
       grade,
       name,
       headcount,
-      eCoin: 0,
-      sCoin: 0,
+      esgCoin: 0,
       createdBy: req.user.uid,
       createdAt: serverTime(),
       updatedAt: serverTime(),
@@ -315,7 +315,7 @@ const listUsers = async (req, res) => {
           isActive: u.isActive !== false,
           isTestAccount: Boolean(u.isTestAccount),
           coins: COIN_HOLDER_ROLES.includes(u.role)
-            ? { E: Number(u.eCoin || 0), S: Number(u.sCoin || 0) }
+            ? { ESG: Number(u.esgCoin || 0) }
             : null,
           parentUserId: u.parentUserId || null,
           boundStudentId: u.boundStudentId || null,
@@ -367,7 +367,7 @@ const createUser = async (req, res) => {
       createdBy: req.user.uid,
       createdAt: serverTime(),
       lastLoginAt: serverTime(),
-      ...(COIN_HOLDER_ROLES.includes(role) ? { eCoin: 0, sCoin: 0, score: 0 } : {}),
+      ...(COIN_HOLDER_ROLES.includes(role) ? { esgCoin: 0, score: 0 } : {}),
     };
 
     // 需要班級的角色：核對名冊
@@ -465,9 +465,8 @@ const updateUser = async (req, res) => {
       if (req.body.role === ROLES.PARENT) return bad(res, 400, '不可改為家長（家長需經孩子資料驗證）');
       updates.role = req.body.role;
       // 升成持幣角色但還沒有幣欄位時補 0，避免 undefined 進運算
-      if (COIN_HOLDER_ROLES.includes(req.body.role) && current.eCoin === undefined) {
-        updates.eCoin = 0;
-        updates.sCoin = 0;
+      if (COIN_HOLDER_ROLES.includes(req.body.role) && current.esgCoin === undefined) {
+        updates.esgCoin = 0;
         updates.score = 0;
       }
     }
@@ -557,9 +556,10 @@ const getCoinRules = async (req, res) => {
       defaults: TUNABLE_DEFAULTS,
       preview: previewWith(current),
       explain: {
-        E: 'E = 人均蛋白質(g) × kProtein + 人均膳食纖維(g) × kFiber',
-        S: 'S = round(樹 × sCoinPerTree)，樹 = 人均少浪費(kg) × co2PerKgWaste ÷ treeAnnualCo2Kg',
-        note: '兩者皆以人均計算，再全額加給班上每位學生。',
+        E: '營養來源 = 人均蛋白質(g) × kProtein + 人均膳食纖維(g) × kFiber',
+        S: '減碳來源 = round(樹 × sCoinPerTree)，樹 = 人均少浪費(kg) × co2PerKgWaste ÷ treeAnnualCo2Kg',
+        G: '感謝來源 = 老師確認完食時發 mealFinishedG',
+        note: '三個來源都發 ESG 幣。營養與減碳以人均計算，再全額加給班上每位學生。',
       },
     });
   } catch (error) {
@@ -792,7 +792,7 @@ const syncStudents = async (req, res) => {
             isActive: true,
             schoolId: klass.schoolId || null,
             createdAt: serverTime(),
-            eCoin: 0, sCoin: 0, score: 0,
+            esgCoin: 0, score: 0,
             // 沒有 passwordHash：帳密登入會被擋（回 401），
             // 要等 Google 登入上線這些帳號才真正可用
             authProvider: 'google',
@@ -1181,7 +1181,97 @@ const updateBucketTare = async (req, res) => {
   }
 };
 
+
+// ── 刪除（有依賴就拒絕，詳見 lib/deletion.js 的說明）────────────
+/**
+ * DELETE /api/admin/classes/:classId
+ *
+ * 只在「乾淨」時才刪：名下沒有使用者、沒有場次／剩餘量／檢查紀錄、
+ * 也沒有綁定的裝置。否則回 409 並列出每一種依賴的筆數——
+ * 直接刪掉會讓那些資料變成指向不存在班級的孤兒，統計會無聲地算錯。
+ */
+const deleteClass = async (req, res) => {
+  try {
+    const classId = String(req.params.classId || '').trim();
+    const ref = db.collection(COL.classes).doc(classId);
+    const snap = await ref.get();
+    if (!snap.exists) return bad(res, 404, `查無班級 ${classId}`);
+    const klass = snap.data();
+
+    const deps = await deletion.classDependencies(classId);
+    if (deps.length) {
+      return bad(res, 409,
+        `「${klass.grade} 年 ${klass.name} 班」還有資料，不能刪除：${deletion.describe(deps)}`,
+        { dependencies: deps });
+    }
+
+    await ref.delete();
+    console.log(`🗑  ${req.user.displayName} 刪除班級 ${classId}`);
+    return res.status(200).json({
+      success: true,
+      message: `已刪除「${klass.grade} 年 ${klass.name} 班」（${classId}）`,
+      classId,
+    });
+  } catch (error) {
+    console.error('刪除班級失敗:', error);
+    return bad(res, 500, error.message || '刪除班級失敗');
+  }
+};
+
+/**
+ * DELETE /api/admin/users/:userId
+ *
+ * 同樣只在乾淨時才刪。另外**一定要清掉 account_index**——
+ * 那是帳號唯一性的鎖，留著的話那個帳號名稱會永久被占用、無法重建。
+ */
+const deleteUser = async (req, res) => {
+  try {
+    const userId = String(req.params.userId || '').trim();
+    if (userId === req.user.uid) return bad(res, 400, '不能刪除自己的帳號');
+
+    const ref = db.collection(COL.users).doc(userId);
+    const snap = await ref.get();
+    if (!snap.exists) return bad(res, 404, '查無此使用者');
+    const user = snap.data();
+
+    const deps = await deletion.userDependencies(userId);
+    if (deps.length) {
+      return bad(res, 409,
+        `「${user.displayName || userId}」已經有活動紀錄，不能刪除：${deletion.describe(deps)}。`
+        + '要讓他無法登入請改用「停用」，歷史資料才留得住。',
+        { dependencies: deps, suggestion: 'deactivate' });
+    }
+
+    const batch = db.batch();
+    batch.delete(ref);
+    // 帳號鎖：不清掉的話這個帳號名稱會永久無法重建
+    if (user.account) {
+      batch.delete(db.collection(COL.accountIndex).doc(String(user.account).toLowerCase()));
+    }
+    // 班級上若指著這個人當午餐長，要一併清掉指標
+    if (user.classId) {
+      const cs = await db.collection(COL.classes).doc(user.classId).get();
+      if (cs.exists && cs.data().lunchLeaderUserId === userId) {
+        batch.set(cs.ref, { lunchLeaderUserId: null, updatedAt: serverTime() }, { merge: true });
+      }
+    }
+    await batch.commit();
+
+    console.log(`🗑  ${req.user.displayName} 刪除使用者 ${userId}（${user.account || user.email}）`);
+    return res.status(200).json({
+      success: true,
+      message: `已刪除「${user.displayName || userId}」，帳號 ${user.account || '(無)'} 可以重新使用`,
+      userId,
+    });
+  } catch (error) {
+    console.error('刪除使用者失敗:', error);
+    return bad(res, 500, error.message || '刪除使用者失敗');
+  }
+};
+
 module.exports = {
+  deleteClass,
+  deleteUser,
   getBucketTare,
   measureBucketTare,
   updateBucketTare,

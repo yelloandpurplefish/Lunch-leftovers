@@ -18,6 +18,7 @@ const { db, admin } = require('../config/firebase');
 const { COL, DEVICE, BUCKET_LAYOUT } = require('../config/schema');
 const { hashToken, generateToken } = require('../middleware/deviceAuth');
 const { today, daysAgo } = require('../lib/dates');
+const deletion = require('../lib/deletion');
 
 const serverTime = () => admin.firestore.FieldValue.serverTimestamp();
 const norm = (v) => String(v == null ? '' : v).trim();
@@ -456,7 +457,56 @@ const fleetHealth = async (req, res) => {
   }
 };
 
+
+/**
+ * DELETE /api/tech/devices/:deviceId
+ * query: ?purgeReadings=true 連讀數一起刪
+ *
+ * 裝置和班級／使用者不同：它的依賴只有自己上傳的讀數，
+ * 而讀數本身帶著 classId 與 date，裝置不在了那些量測仍然有意義，
+ * 所以**預設保留讀數**，只在明確要求時才一起清掉。
+ * 回應會講清楚留下了幾筆，不讓人以為資料也跟著沒了。
+ */
+const deleteDevice = async (req, res) => {
+  try {
+    const deviceId = String(req.params.deviceId || '').trim();
+    const ref = db.collection(COL.devices).doc(deviceId);
+    const snap = await ref.get();
+    if (!snap.exists) return bad(res, 404, `查無裝置 ${deviceId}`);
+    const device = snap.data();
+
+    const { readings } = await deletion.deviceDependencies(deviceId);
+    const purge = String(req.query.purgeReadings || '').toLowerCase() === 'true';
+
+    let purged = 0;
+    if (purge && readings > 0) {
+      purged = await deletion.deleteByQuery(COL.deviceReadings, 'deviceId', deviceId);
+    }
+    await ref.delete();
+
+    console.log(`🗑  ${req.user.displayName} 刪除裝置 ${deviceId}`
+      + `（讀數 ${purge ? '一併刪除 ' + purged : '保留 ' + readings} 筆）`);
+
+    return res.status(200).json({
+      success: true,
+      message: `已刪除裝置 ${deviceId}`
+        + (device.classId ? `（原綁定 ${device.className || device.classId}）` : '')
+        + (readings > 0
+          ? (purge ? `，並刪除 ${purged} 筆讀數` : `，保留 ${readings} 筆歷史讀數`)
+          : ''),
+      deviceId,
+      readingsKept: purge ? 0 : readings,
+      readingsPurged: purged,
+      note: '燒進韌體的 token 已失效。要重新佈建請重新註冊一台並更新韌體。',
+    });
+  } catch (error) {
+    console.error('刪除裝置失敗:', error);
+    return bad(res, 500, error.message || '刪除裝置失敗');
+  }
+};
+
 module.exports = {
+  deleteDevice,
   listDevices,
   registerDevices,
   updateDevice,

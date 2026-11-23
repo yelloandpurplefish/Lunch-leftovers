@@ -74,10 +74,52 @@ const COIN_SPENDER_ROLES = [ROLES.STUDENT];
 const RECORDER_ROLES = [ROLES.LUNCH_LEADER, ROLES.TEACHER, ROLES.ADMIN];
 
 // ── 發幣規則（使用者指定，勿擅自加項）──────────────────────────────
+// ── E／S／G 三幣合併為 ESG 幣 ────────────────────────────────────────
+/**
+ * ESG = E（Energy，吃進去的營養）＋ S（SDGs，少浪費換成的樹）＋ G（Gratitude，老師確認完食）。
+ *
+ * 三者不再是三種錢，而是 **ESG 幣的三個來源**：
+ *   · 餘額只有一個欄位 esgCoin（使用者與班級池都是）
+ *   · 總帳每一筆記 coin:'ESG'，再用 source:'E'|'S'|'G' 標出來源
+ * 呼叫端照樣傳 { E, S, G }，意思變成「從各來源各得多少 ESG」——
+ * 所以「你的 ESG 從哪裡來」的拆解不會因為合併而消失。
+ *
+ * ## 舊幣怎麼換算
+ *
+ * 舊制三種幣的發放速度差很多，直接 1:1 相加的話 G（每次 86）會占八成以上。
+ * 換算原則是「**代表幾天的努力不變**」：
+ *
+ *   每位學生每天約可得（舊制，依發幣規則推算）  E ≈ 5、S ≈ 10、G = 86
+ *   每位學生每天約可得（新制）                  ESG ≈ 5 + 10 + 5 = 20
+ *                                              （E、S 規則不變；G 由 86 調為 5）
+ *
+ *   1 枚舊幣 = 新制每天收入 ÷ 舊制該幣每天收入 枚 ESG
+ *            → E × 4、S × 2、G × 0.2326
+ *
+ * **餘額與商品價格用同一組係數**——兩邊只換一邊的話購買力會跟著變。
+ * 例如環保杯原本 50 E（約 10 天份），換算後 200 ESG（仍是 10 天份），
+ * 而學生手上的 105 E 也換成 420 ESG，換得起的數量不變。
+ *
+ * 每天的收入是由發幣規則推算的估計值，不是實測；改動時要連同遷移一起重想。
+ */
+const ESG_CONVERSION = {
+  dailyOld: { E: 5, S: 10, G: 86 },
+  dailyNew: 20,
+};
+
+/** 一枚舊幣（'E'|'S'|'G'）等於幾枚 ESG。未知幣別回 1。 */
+function esgFactor(legacyCoin) {
+  const d = ESG_CONVERSION.dailyOld[legacyCoin];
+  return d ? ESG_CONVERSION.dailyNew / d : 1;
+}
+
+/** 唯一的幣別代號。 */
+const ESG = 'ESG';
+
 const COIN_RULES = {
   /**
-   * 教師勾選「吃完他的部分」→ 個人 +1 E、+1 S（每人每日一次）。
-   * G 幣（感謝）的額度不在這裡，而在 TUNABLE_DEFAULTS.gratitude.mealFinishedG，
+   * 教師勾選「吃完他的部分」→ 個人得 ESG：營養來源 1、減碳來源 1、感謝來源見下。
+   * 感謝（G 來源）的額度不在這裡，而在 TUNABLE_DEFAULTS.gratitude.mealFinishedG，
    * 因為那是學校會想調的政策數字，不該要改程式重新部署。
    */
   MEAL_FINISHED: { E: 1, S: 1 },
@@ -147,7 +189,9 @@ const TUNABLE_DEFAULTS = {
    */
   gratitude: {
     /** 教師確認完食 → 該學生 +G（每人每日一次，取消勾選會沖銷）*/
-    mealFinishedG: 86,
+    // 合併為 ESG 後由 86 調為 5：86 是 G 還是獨立貨幣時訂的，
+    // 合併後若維持 86，ESG 有八成五會來自這一項，營養與減碳就看不見了。
+    mealFinishedG: 5,
   },
 
   /**
@@ -291,6 +335,9 @@ const ids = {
 };
 
 module.exports = {
+  ESG,
+  ESG_CONVERSION,
+  esgFactor,
   TUNABLE_DEFAULTS,
   TUNABLE_DOC_ID,
   COL,

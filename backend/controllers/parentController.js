@@ -3,7 +3,7 @@
  *
  * 簽到規則（使用者指定）：
  *  · 每位家長**每日一次**（doc id = `日期_家長id`，重複簽到不會重複發幣）
- *  · 獎勵 **+1 S幣記在綁定的學生帳上** —— 家長自己沒有幣系統
+ *  · 獎勵 **+1 ESG 幣（減碳來源）記在綁定的學生帳上** —— 家長自己沒有幣系統
  *
  * 原版的問題：沒有每日限制（可無限累加紀錄）、沒有發幣、也沒有把簽到連到學生。
  */
@@ -24,7 +24,7 @@ async function loadBoundStudent(req) {
 
 /**
  * POST /api/parent/sign-in （相容路徑：POST /api/user/parent-sign-in）
- * 家長簽到 → 綁定學生 +1 S幣，每日一次。
+ * 家長簽到 → 綁定學生 +1 ESG 幣，每日一次。
  */
 /**
  * 評論的長度限制。
@@ -109,7 +109,7 @@ const parentSignIn = async (req, res) => {
     return res.status(201).json({
       success: true,
       alreadySignedIn: false,
-      message: `簽到成功！已為 ${student.displayName} 加 ${reward.S} 個 S幣`,
+      message: `簽到成功！已為 ${student.displayName} 加 ${reward.total} 個 ESG 幣`,
       date,
       student: { displayName: student.displayName, className: student.className },
       comment,
@@ -175,7 +175,7 @@ const getChildStatus = async (req, res) => {
         grade: student.grade,
         className: student.className,
         seatNo: student.seatNo,
-        coins: { E: Number(student.eCoin || 0), S: Number(student.sCoin || 0) },
+        coins: { ESG: Number(student.esgCoin || 0) },
       },
       todayFinished: todayCheck ? Boolean(todayCheck.finished) : null, // null = 老師還沒勾
       todayCheckedAt: todayCheck && todayCheck.checkedAt ? todayCheck.checkedAt.toDate().toISOString() : null,
