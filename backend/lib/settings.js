@@ -1,9 +1,9 @@
 /**
- * 可調參數（老師確認完食的感謝額度、建議攝取熱量）：讀取、合併、快取、寫回。
+ * 可調參數（拍餐盤四個級距的 ESG 幣、建議攝取熱量）：讀取、合併、快取、寫回。
  *
  * ## 為什麼要有這一層
  *
- * 感謝額度是學校政策、建議熱量的界線會被主管機關更新，
+ * 發幣額度是學校政策、建議熱量的界線會被主管機關更新，
  * 不該每次調整都要改程式重新部署。因此：
  *
  *   預設值   config/schema.js 的 TUNABLE_DEFAULTS（進版控，是文件也是保底）
@@ -15,7 +15,7 @@
  *
  * ## 快取
  *
- * 老師勾選、首頁菜單每次都會讀參數，每次都打 Firestore 太浪費。
+ * 拍餐盤、首頁菜單每次都會讀參數，每次都打 Firestore 太浪費。
  * 快取 60 秒，面板寫入時立即失效——調完馬上就能看到效果，
  * 不會讓人以為「改了沒反應」而重複亂調。
  */
@@ -53,7 +53,7 @@ function invalidateSettings() {
 
 /**
  * 取得實際採用的參數（預設值 ⊕ 資料庫覆寫）。
- * 讀取失敗時回傳純預設值——參數讀不到不該讓勾選或菜單整個失敗，
+ * 讀取失敗時回傳純預設值——參數讀不到不該讓拍餐盤或菜單整個失敗，
  * 但會在日誌留痕，否則會變成無聲地用了錯的係數。
  */
 async function getSettings({ force = false } = {}) {
@@ -61,7 +61,9 @@ async function getSettings({ force = false } = {}) {
   try {
     const snap = await settingsRef().get();
     const override = snap.exists ? snap.data() : null;
-    cache = deepMerge(TUNABLE_DEFAULTS, override && override.values);
+    // 存著的值也要過一次驗證：只採用目前認得的參數，
+    // 已經拿掉的舊參數（例如改版前的感謝額度）不會混進來
+    cache = deepMerge(TUNABLE_DEFAULTS, validateTunables((override && override.values) || {}).values);
   } catch (error) {
     console.error('讀取發幣參數失敗，改用預設值:', error.message);
     cache = TUNABLE_DEFAULTS;
@@ -72,7 +74,10 @@ async function getSettings({ force = false } = {}) {
 
 /** 數值欄位的合法範圍。超出範圍多半是手滑打錯，寧可擋下也不要默默發錯幣。 */
 const LIMITS = {
-  'gratitude.mealFinishedG': [0, 10000],
+  'plate.rewards.clean': [0, 1000],
+  'plate.rewards.little': [0, 1000],
+  'plate.rewards.half': [0, 1000],
+  'plate.rewards.most': [0, 1000],
   'intake.normalKcal': [0, 5000],
   // 調整量不設上限為 normalKcal 的一半，是因為面板可能先改這個再改那個；
   // 真正不合理的組合（調整量 > 基準）在算出來時夾在 0 以上，見 lib/bmi.js
@@ -104,17 +109,16 @@ function validateTunables(input) {
     return v;
   };
 
-  for (const group of ['gratitude', 'intake']) {
-    if (!isPlainObject(input[group])) continue;
-    for (const [key, raw] of Object.entries(input[group])) {
-      const path = `${group}.${key}`;
-      if (!LIMITS[path]) continue;                 // 未知欄位忽略
-      const v = num(path, raw, LIMITS[path]);
-      if (v !== null) {
-        out[group] = out[group] || {};
-        out[group][key] = v;
-      }
-    }
+  // 依 LIMITS 的路徑逐一取值：只有列在那裡的參數會被接受
+  for (const [path, range] of Object.entries(LIMITS)) {
+    const keys = path.split('.');
+    const raw = keys.reduce((o, k) => (isPlainObject(o) ? o[k] : undefined), input);
+    if (raw === undefined || raw === null || raw === '') continue;
+    const v = num(path, raw, range);
+    if (v === null) continue;
+    let node = out;
+    keys.slice(0, -1).forEach((k) => { node[k] = node[k] || {}; node = node[k]; });
+    node[keys[keys.length - 1]] = v;
   }
 
   return { values: out, errors };

@@ -1,20 +1,22 @@
 /**
- * 學生的個人餐盤辨識：吃完拍一張自己的餐盤 → 模型判斷剩多少 → 依剩餘量給回饋。
+ * 餐盤辨識：學生吃完拍一張自己的餐盤 → 模型判斷剩多少 → 級距決定回饋與 ESG 幣。
  *
- *  · 一人一天一筆（plate_scans/{日期_學生id}），重拍會覆蓋並把 attempts +1
- *  · **照片不存**：只存辨識結果。學生的照片是個資，而這一輪沒有需要回看照片的功能
+ *  · 一人一天一次（使用者指定）：拍過就鎖住，辨識錯了由管理員更正（adminRosterController）
+ *  · **照片不存**：只存結果。學生的照片是個資，而系統沒有需要回看照片的功能
  *  · 不供餐的日子不收
+ *  · 結果、餘額、總帳在同一個 transaction 裡寫（lib/plates.js）
  *
- * ESG 幣：這一輪**不發**。發多少、重拍要不要鎖、跟老師勾選的「吃完」怎麼搭配，
- * 都等下一輪模型回傳定下來再決定，到時從 scanPlate 結尾接上 lib/coins.js 的 awardUser。
+ * 老師不再逐生勾選「吃完」——當天吃得怎麼樣一律以這裡的結果為準；
+ * 老師可以看本班的結果（getClassPlates），但不能改。
  */
-const { db, admin } = require('../config/firebase');
-const { COL, ids, PLATE } = require('../config/schema');
-const { today } = require('../lib/dates');
+const { db } = require('../config/firebase');
+const { COL, ROLES, PLATE } = require('../config/schema');
+const { today, isYmd, daysAgo } = require('../lib/dates');
 const { getDayMenu } = require('../lib/dailyMenu');
 const plateModel = require('../lib/plateModel');
+const plates = require('../lib/plates');
+const { targetClassId } = require('../middleware/auth');
 
-const serverTime = () => admin.firestore.FieldValue.serverTimestamp();
 const bad = (res, status, message, extra = {}) => res.status(status).json({ success: false, message, ...extra });
 
 /**
@@ -37,42 +39,49 @@ function decodeImage(raw) {
   return { buffer: buf };
 }
 
-/** 剩餘比例 → 回饋（級距在 config/schema.js 的 PLATE.feedback）。 */
-function feedbackFor(ratio) {
-  const r = Math.min(1, Math.max(0, Number(ratio) || 0));
-  const tier = PLATE.feedback.find((t) => r <= t.maxRatio) || PLATE.feedback[PLATE.feedback.length - 1];
-  return { level: tier.level, title: tier.title, message: tier.message };
+/** 四級的說明與額度，前端用來顯示「光盤 +10、剩一點 +6…」。 */
+async function tierTable() {
+  const rewards = await plates.rewardTable();
+  return PLATE.tiers.map((t) => ({
+    level: t.level, label: t.label, minPct: t.minPct, maxPct: t.maxPct, reward: rewards[t.level],
+  }));
 }
 
-function presentScan(id, d) {
-  if (!d) return null;
-  return {
-    scanId: id,
-    date: d.date,
-    leftoverPct: Math.round(Number(d.leftoverRatio || 0) * 100),
-    label: d.label || null,
-    confidence: d.confidence == null ? null : d.confidence,
-    feedback: feedbackFor(d.leftoverRatio),
-    stub: d.model ? d.model.mode === 'stub' : false,
-    attempts: Number(d.attempts || 0),
-    scannedAt: d.scannedAt && d.scannedAt.toDate ? d.scannedAt.toDate().toISOString() : null,
-  };
+/** 某位學生近 N 天的結果（新到舊）。 */
+async function recentOf(userId, days) {
+  const since = daysAgo(days - 1);
+  const snap = await db.collection(COL.plateScans)
+    .where('userId', '==', userId)
+    .orderBy('date', 'desc')
+    .limit(days)
+    .get();
+  return snap.docs.filter((d) => d.data().date >= since).map((d) => plates.present(d.id, d.data()));
 }
 
-/** GET /api/plate/today — 今天拍過了沒、模型能不能用、今天有沒有供餐。 */
+function summarizeRecent(list, days) {
+  const clean = list.filter((x) => x.level === 'clean').length;
+  return { days, scannedDays: list.length, cleanDays: clean };
+}
+
+/** GET /api/plate/today — 今天的結果、近 7 天、模型能不能用、四級額度。 */
 const getTodayScan = async (req, res) => {
   try {
     const date = today();
-    const [menu, snap] = await Promise.all([
+    const [menu, snap, recent, tiers] = await Promise.all([
       getDayMenu(date),
-      db.collection(COL.plateScans).doc(ids.plateScan(date, req.user.uid)).get(),
+      plates.scanRef(req.user.uid, date).get(),
+      recentOf(req.user.uid, 7),
+      tierTable(),
     ]);
     return res.status(200).json({
       success: true,
       date,
       served: menu.served,
       model: plateModel.modelStatus(),
-      scan: snap.exists ? presentScan(snap.id, snap.data()) : null,
+      scan: snap.exists ? plates.present(snap.id, snap.data()) : null,
+      recent,
+      stats: summarizeRecent(recent, 7),
+      tiers,
     });
   } catch (error) {
     console.error('取得今日餐盤紀錄失敗:', error);
@@ -90,6 +99,11 @@ const scanPlate = async (req, res) => {
     const menu = await getDayMenu(date);
     if (!menu.served) return bad(res, 409, '今天沒有供餐，不需要拍餐盤');
 
+    // 先擋已經拍過的：省掉一次辨識。真正的保證在 transaction 裡（併發時第二筆會被擋）
+    if ((await plates.scanRef(req.user.uid, date).get()).exists) {
+      return bad(res, 409, '今天已經拍過了，一天只能拍一次。結果有誤請找管理員更正。');
+    }
+
     const decoded = decodeImage(req.body && req.body.image);
     if (decoded.error) return bad(res, 400, decoded.error);
 
@@ -103,34 +117,77 @@ const scanPlate = async (req, res) => {
       throw err;
     }
 
-    const ref = db.collection(COL.plateScans).doc(ids.plateScan(date, req.user.uid));
-    const existed = (await ref.get()).exists;
-    await ref.set({
-      date,
+    const written = await plates.writeResult({
       userId: req.user.uid,
-      classId: req.user.classId || null,
-      schoolId: req.user.schoolId || null,
-      leftoverRatio: result.leftoverRatio,
-      label: result.label,
-      confidence: result.confidence,
-      model: { mode: result.mode, version: result.modelVersion },
-      attempts: admin.firestore.FieldValue.increment(1),
-      scannedAt: serverTime(),
-      ...(existed ? {} : { firstScannedAt: serverTime() }),
-    }, { merge: true });
+      date,
+      mode: 'scan',
+      leftoverPct: result.leftoverRatio * 100,
+      model: { mode: result.mode, version: result.modelVersion, label: result.label, confidence: result.confidence },
+    });
 
-    const saved = await ref.get();
-    const scan = presentScan(saved.id, saved.data());
+    const saved = await plates.scanRef(req.user.uid, date).get();
+    const scan = plates.present(saved.id, saved.data());
     return res.status(200).json({
       success: true,
-      message: scan.feedback.title,
+      message: written.coinsAwarded > 0
+        ? `${scan.feedback.title}　ESG 幣 +${written.coinsAwarded}`
+        : scan.feedback.title,
       scan,
       model: plateModel.modelStatus(),
     });
   } catch (error) {
+    if (error.status && error.status < 500) return bad(res, error.status, error.message);
     console.error('餐盤辨識失敗:', error);
-    return bad(res, error.status || 500, error.message || '餐盤辨識失敗');
+    return bad(res, 500, error.message || '餐盤辨識失敗');
   }
 };
 
-module.exports = { getTodayScan, scanPlate, decodeImage, feedbackFor };
+/**
+ * GET /api/plate/class?date=&classId=
+ * 老師看本班（管理員可指定班級）某天每位學生的結果。唯讀。
+ */
+const getClassPlates = async (req, res) => {
+  try {
+    const classId = targetClassId(req);
+    if (classId === null) return bad(res, 403, '只能看自己班級');
+    if (!classId) return bad(res, 400, '此帳號尚未編入班級');
+    const date = isYmd(req.query.date) ? req.query.date : today();
+
+    const [classSnap, studentsSnap, scansSnap] = await Promise.all([
+      db.collection(COL.classes).doc(classId).get(),
+      db.collection(COL.users).where('classId', '==', classId).where('role', '==', ROLES.STUDENT).get(),
+      db.collection(COL.plateScans).where('classId', '==', classId).where('date', '==', date).get(),
+    ]);
+    if (!classSnap.exists) return bad(res, 404, '查無此班級');
+    const byUser = new Map(scansSnap.docs.map((d) => [d.data().userId, plates.present(d.id, d.data())]));
+    const leaderId = classSnap.data().lunchLeaderUserId || null;
+
+    const rows = studentsSnap.docs
+      .filter((d) => d.data().isActive !== false)
+      .map((d) => ({
+        userId: d.id,
+        seatNo: d.data().seatNo || '',
+        displayName: d.data().displayName || '',
+        isLunchLeader: d.id === leaderId,
+        scan: byUser.get(d.id) || null,
+      }))
+      .sort((a, b) => String(a.seatNo).localeCompare(String(b.seatNo), 'zh-Hant', { numeric: true }));
+
+    const counts = {};
+    for (const t of PLATE.tiers) counts[t.level] = rows.filter((r) => r.scan && r.scan.level === t.level).length;
+    return res.status(200).json({
+      success: true,
+      date,
+      classId,
+      className: classSnap.data().name || null,
+      rows,
+      summary: { total: rows.length, scanned: rows.filter((r) => r.scan).length, ...counts },
+      tiers: await tierTable(),
+    });
+  } catch (error) {
+    console.error('取得班級餐盤結果失敗:', error);
+    return bad(res, 500, error.message || '取得班級餐盤結果失敗');
+  }
+};
+
+module.exports = { getTodayScan, scanPlate, getClassPlates, decodeImage, recentOf, summarizeRecent, tierTable };

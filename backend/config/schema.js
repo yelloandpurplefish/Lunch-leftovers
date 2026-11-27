@@ -39,7 +39,6 @@ const COL = {
   // 紀錄
   mealSessions: 'meal_sessions', // 一班一天一場：午餐長依序稱重的全班剩食量
   dishLeftovers: 'dish_leftovers', // 每班每天每道菜的剩餘量（支援跨班查詢）
-  mealChecks: 'meal_checks',     // 教師逐生勾選「吃完一餐」
   /** 學生拍自己餐盤的辨識結果：一人一天一筆（照片不存）。 */
   plateScans: 'plate_scans',
   coinTx: 'coin_transactions',   // ESG 幣總帳
@@ -52,9 +51,9 @@ const COL = {
  * 午餐長仍是學生，學生能做的事他都能做，另外多了本班稱重紀錄的權限。
  */
 const ROLES = {
-  STUDENT: 'student',           // 觀看、兌換、抽獎、拍餐盤（午餐長另加稱重紀錄）
+  STUDENT: 'student',           // 拍餐盤（決定當天的 ESG 幣）、兌換、抽獎（午餐長另加稱重紀錄）
   PARENT: 'parent',             // 簽到、查看孩子午餐狀況（無幣系統）
-  TEACHER: 'teacher',           // 每日逐生勾選是否吃完；也能做本班稱重紀錄
+  TEACHER: 'teacher',           // 看本班的餐盤結果；也能做本班稱重紀錄
   /**
    * 技術員：只管硬體，不碰學生資料與幣。
    * 能做的事：註冊/綁定稱重模組、設定盆體扣重與校正、看裝置健康狀態。
@@ -73,27 +72,27 @@ const COIN_HOLDER_ROLES = [ROLES.STUDENT];
 
 // ── ESG 幣 ──────────────────────────────────────────────────────────
 /**
- * 只有一種幣：ESG 幣。餘額只有 users.esgCoin 一個欄位。
+ * 只有一種幣：ESG 幣。餘額只有 users.esgCoin 一個欄位，只有學生持有。
  *
- * 總帳每一筆記 coin:'ESG'，獲得類再用 source 標出來源：
- *   E 營養、S 減碳、G 感謝
- * 呼叫端傳 { E, S, G }，意思是「從各來源各得多少 ESG」，
- * 餘額是一個數字，而「ESG 從哪裡來」仍查得到。
+ * 總帳每一筆記 coin:'ESG'，獲得與調整再用 source 標出是哪一種活動給的，
+ * 餘額是一個數字，而「ESG 從哪裡來」仍查得到。消耗（兌換、抽獎）的 source 是 null。
  *
- * 目前的發幣只有下面兩項（使用者指定，勿擅自加項）。
- * 稱重紀錄是單純的全班剩食紀錄，不發幣；拍餐盤的發幣下一輪定義。
+ * 目前的發幣只有下面這些（使用者指定，勿擅自加項）：
+ *   · 拍餐盤：依辨識出的剩餘量級距給（額度見 TUNABLE_DEFAULTS.plate.rewards）
+ *   · 家長簽到：綁定的學生 +1
+ * 稱重紀錄是單純的全班剩食紀錄，不發幣。
  */
 const ESG = 'ESG';
 
+const COIN_SOURCES = {
+  plate: '拍餐盤',
+  parent: '家長簽到',
+  admin: '管理員調整',
+};
+
 const COIN_RULES = {
-  /**
-   * 教師勾選「吃完他的部分」→ 個人得 ESG：營養 1、減碳 1、感謝見下。
-   * 感謝（G 來源）的額度不在這裡，而在 TUNABLE_DEFAULTS.gratitude.mealFinishedG，
-   * 因為那是學校會想調的政策數字，不該要改程式重新部署。
-   */
-  MEAL_FINISHED: { E: 1, S: 1 },
-  /** 家長簽到 → **綁定的學生** +1（減碳來源；每位家長每日一次）*/
-  PARENT_SIGN_IN: { E: 0, S: 1 },
+  /** 家長簽到 → **綁定的學生** +1（每位家長每日一次）*/
+  PARENT_SIGN_IN: 1,
 };
 
 
@@ -106,12 +105,12 @@ const COIN_RULES = {
  */
 const TUNABLE_DEFAULTS = {
   /**
-   * 感謝 —— 教師確認「吃完他的部分」時發給該學生的 ESG。
-   * 它不是算出來的，而是「老師看見你吃完了」這件事的份量，屬於學校政策。
+   * 拍餐盤的 ESG 幣：四個級距各給多少（級距的界線見下方 PLATE.tiers）。
+   * 數字是暫定值，學校可以在管理員面板調整；改了之後只影響之後的結果，
+   * 已經發出的不會重算。
    */
-  gratitude: {
-    /** 教師確認完食 → 該學生 +G（每人每日一次，取消勾選會沖銷）*/
-    mealFinishedG: 5,
+  plate: {
+    rewards: { clean: 10, little: 6, half: 3, most: 0 },
   },
 
   /**
@@ -134,23 +133,34 @@ const TUNABLE_DOC_ID = 'coin_rules';
 
 // ── 個人餐盤辨識 ────────────────────────────────────────────────────
 /**
- * 學生吃完拍一張自己的餐盤 → 模型判斷剩多少 → 依剩餘量給回饋。
- * 模型端點見 lib/plateModel.js；ESG 幣怎麼發、模型回傳格式下一輪定義。
+ * 學生吃完拍一張自己的餐盤 → 模型判斷剩多少 → 落在哪一級 → 回饋與 ESG 幣。
+ * 這是當天「吃得怎麼樣」的唯一依據（不再有老師勾選）。
+ * 一人一天只能拍一次；辨識錯了由管理員手動更正（見 lib/plates.js）。
  */
 const PLATE = {
   /** 解碼後的照片上限。前端會先縮到長邊 1024px，正常只有一兩百 KB。 */
   maxImageBytes: 3 * 1024 * 1024,
   /**
-   * 回饋級距：leftoverRatio（0＝吃光、1＝原封不動）≤ maxRatio 就落在這一級。
-   * 依序比對，最後一級要涵蓋到 1。
+   * 級距（使用者指定）：剩餘百分比四捨五入成整數後，落在 [minPct, maxPct] 就是這一級。
+   * 四級首尾相接、涵蓋 0–100，不會有落空的百分比。
    */
-  feedback: [
-    { level: 'clean', maxRatio: 0.05, title: '🌟 全部吃光！', message: '盤子乾乾淨淨，謝謝你把今天的午餐吃完。' },
-    { level: 'little', maxRatio: 0.25, title: '👍 只剩一點點', message: '差一點就吃光了，下次挑戰全部吃完！' },
-    { level: 'half', maxRatio: 0.5, title: '🙂 剩下約一半', message: '吃不完的話，打菜時可以先跟同學說少一點。' },
-    { level: 'most', maxRatio: 1, title: '🤔 剩下不少', message: '今天胃口不太好嗎？下次可以先盛少一點，不夠再添。' },
+  tiers: [
+    { level: 'clean', label: '光盤', minPct: 0, maxPct: 3,
+      title: '🌟 光盤！', message: '盤子乾乾淨淨，謝謝你把今天的午餐吃完。' },
+    { level: 'little', label: '剩一點', minPct: 4, maxPct: 20,
+      title: '👍 只剩一點點', message: '差一點就光盤了，下次挑戰全部吃完！' },
+    { level: 'half', label: '剩不少', minPct: 21, maxPct: 49,
+      title: '🙂 剩下不少', message: '吃不完的話，打菜時可以先跟同學說少一點。' },
+    { level: 'most', label: '剩一半以上', minPct: 50, maxPct: 100,
+      title: '🤔 剩一半以上', message: '今天胃口不太好嗎？下次可以先盛少一點，不夠再添。' },
   ],
 };
+
+/** 剩餘百分比 → 級距（不在 0–100 的先夾住）。 */
+function plateTier(pct) {
+  const p = Math.min(100, Math.max(0, Math.round(Number(pct) || 0)));
+  return PLATE.tiers.find((t) => p >= t.minPct && p <= t.maxPct) || PLATE.tiers[PLATE.tiers.length - 1];
+}
 
 // ── 跨班支援：門檻 ──────────────────────────────────────────────────
 const SUPPORT = {
@@ -236,15 +246,13 @@ const SLOT_CATEGORY = {
 
 // ── 決定性 doc id（天然防重複）──────────────────────────────────────
 const ids = {
-  /** 一位學生一天只有一筆「吃完一餐」勾選 */
-  mealCheck: (date, studentId) => `${date}_${studentId}`,
   /** 一位家長一天只能簽到一次 */
   parentSignIn: (date, parentId) => `${date}_${parentId}`,
   /** 一班一天一場量測 */
   mealSession: (classId, date) => `${classId}_${date}`,
   /** 一班一天一道菜（以菜單欄位為鍵，同一餐不會重複）*/
   dishLeftover: (classId, date, slot) => `${classId}_${date}_${slot}`,
-  /** 一位學生一天一筆餐盤辨識（重拍會覆蓋） */
+  /** 一位學生一天一筆餐盤結果（學生只能拍一次，管理員可以改） */
   plateScan: (date, userId) => `${date}_${userId}`,
   /**
    * 一台裝置的一筆讀數。裝置離線補傳時會用同一個 readingId 重試，
@@ -255,6 +263,7 @@ const ids = {
 
 module.exports = {
   ESG,
+  COIN_SOURCES,
   TUNABLE_DEFAULTS,
   TUNABLE_DOC_ID,
   COL,
@@ -265,6 +274,7 @@ module.exports = {
   COIN_HOLDER_ROLES,
   COIN_RULES,
   PLATE,
+  plateTier,
   SUPPORT,
   BUCKET_LAYOUT,
   BUCKET_TYPES,

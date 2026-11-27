@@ -3,14 +3,16 @@
  *
  * 簽到規則（使用者指定）：
  *  · 每位家長**每日一次**（doc id = `日期_家長id`，重複簽到不會重複發幣）
- *  · 獎勵 **+1 ESG 幣（減碳來源）記在綁定的學生帳上** —— 家長自己沒有幣系統
+ *  · 獎勵 **+1 ESG 幣記在綁定的學生帳上** —— 家長自己沒有幣系統
  *
- * 原版的問題：沒有每日限制（可無限累加紀錄）、沒有發幣、也沒有把簽到連到學生。
+ * 孩子「今天吃得怎麼樣」以孩子拍的餐盤結果為準（見 plateController）。
  */
 const { db, admin } = require('../config/firebase');
 const { COL, ids, ROLES, COIN_RULES } = require('../config/schema');
 const { today, isYmd, daysAgo } = require('../lib/dates');
-const { awardUser } = require('../lib/coins');
+const { applyInTx } = require('../lib/coins');
+const plates = require('../lib/plates');
+const { recentOf, summarizeRecent } = require('./plateController');
 
 const serverTime = () => admin.firestore.FieldValue.serverTimestamp();
 const bad = (res, status, message, extra = {}) => res.status(status).json({ success: false, message, ...extra });
@@ -19,13 +21,10 @@ async function loadBoundStudent(req) {
   const studentId = req.user.boundStudentId;
   if (!studentId) return null;
   const snap = await db.collection(COL.users).doc(studentId).get();
-  return snap.exists ? { id: snap.id, ...snap.data() } : null;
+  if (!snap.exists || snap.data().role !== ROLES.STUDENT) return null;
+  return { id: snap.id, ...snap.data() };
 }
 
-/**
- * POST /api/parent/sign-in （相容路徑：POST /api/user/parent-sign-in）
- * 家長簽到 → 綁定學生 +1 ESG 幣，每日一次。
- */
 /**
  * 評論的長度限制。
  *
@@ -40,6 +39,7 @@ function normalizeComment(raw) {
   return String(raw == null ? '' : raw).replace(/\s+/g, ' ').trim();
 }
 
+/** POST /api/parent/sign-in — 家長簽到 → 綁定學生 +1 ESG 幣，每日一次。 */
 const parentSignIn = async (req, res) => {
   try {
     if (req.user.role !== ROLES.PARENT) {
@@ -65,51 +65,57 @@ const parentSignIn = async (req, res) => {
 
     const date = today();
     const ref = db.collection(COL.parentSignIns).doc(ids.parentSignIn(date, req.user.uid));
-    const existing = await ref.get();
+    const studentRef = db.collection(COL.users).doc(student.id);
 
-    if (existing.exists && existing.data().coinAwarded) {
+    // 簽到紀錄與發幣在同一個 transaction：兩個分頁同時按也只會有一筆成功，
+    // 也不會出現「有簽到紀錄但幣沒發」或反過來的情況
+    const result = await db.runTransaction(async (tx) => {
+      const [existing, studentSnap] = await Promise.all([tx.get(ref), tx.get(studentRef)]);
+      if (existing.exists) return { already: true, comment: existing.data().comment || null };
+      const reward = applyInTx(tx, {
+        userRef: studentRef,
+        user: studentSnap.data(),
+        delta: COIN_RULES.PARENT_SIGN_IN,
+        source: 'parent',
+        reason: `家長簽到（${req.user.displayName}）`,
+        refType: 'parent_sign_in',
+        refId: ref.id,
+        date,
+      });
+      tx.set(ref, {
+        date,
+        parentId: req.user.uid,
+        parentName: req.user.displayName,
+        studentId: student.id,
+        studentName: student.displayName || '',
+        classId: student.classId || null,
+        schoolId: student.schoolId || null,
+        comment,
+        commentAt: serverTime(),
+        coinAwarded: reward > 0,
+        rewardToStudent: reward,
+        signedInAt: serverTime(),
+      });
+      return { already: false, reward };
+    });
+
+    if (result.already) {
       return res.status(200).json({
         success: true,
         alreadySignedIn: true,
         message: '今天已經簽到過了，明天再來關心孩子的午餐吧',
         date,
         student: { displayName: student.displayName, className: student.className },
-        // 回傳當初寫的那則，家長看得到自己今天說了什麼
-        comment: existing.data().comment || null,
-        reward: { E: 0, S: 0 },
+        comment: result.comment,
+        reward: 0,
       });
     }
-
-    const reward = await awardUser({
-      userId: student.id,
-      E: COIN_RULES.PARENT_SIGN_IN.E,
-      S: COIN_RULES.PARENT_SIGN_IN.S,
-      reason: `家長簽到（${req.user.displayName}）`,
-      refType: 'parent_sign_in',
-      refId: ids.parentSignIn(date, req.user.uid),
-      date,
-      role: student.role,
-    });
-
-    await ref.set({
-      date,
-      parentId: req.user.uid,
-      parentName: req.user.displayName,
-      studentId: student.id,
-      studentName: student.displayName || '',
-      classId: student.classId || null,
-      schoolId: student.schoolId || null,
-      comment,
-      commentAt: serverTime(),
-      coinAwarded: true,
-      rewardToStudent: reward,
-      signedInAt: serverTime(),
-    }, { merge: true });
+    const { reward } = result;
 
     return res.status(201).json({
       success: true,
       alreadySignedIn: false,
-      message: `簽到成功！已為 ${student.displayName} 加 ${reward.total} 個 ESG 幣`,
+      message: `簽到成功！已為 ${student.displayName} 加 ${reward} 個 ESG 幣`,
       date,
       student: { displayName: student.displayName, className: student.className },
       comment,
@@ -123,7 +129,7 @@ const parentSignIn = async (req, res) => {
 
 /**
  * GET /api/parent/child-status?range=week|month
- * 家長關心孩子午餐狀況：今天吃完了嗎、孩子的幣、今天全班剩了什麼、近期簽到與吃完紀錄。
+ * 家長關心孩子午餐狀況：今天的餐盤結果、孩子的幣、今天全班剩了什麼、近期紀錄與簽到。
  */
 const getChildStatus = async (req, res) => {
   try {
@@ -135,13 +141,9 @@ const getChildStatus = async (req, res) => {
     const days = String(req.query.range || 'week').includes('month') ? 30 : 7;
     const since = daysAgo(days - 1);
 
-    const [checkSnap, historySnap, signInSnap, leftoverSnap] = await Promise.all([
-      db.collection(COL.mealChecks).doc(ids.mealCheck(date, student.id)).get(),
-      db.collection(COL.mealChecks)
-        .where('studentId', '==', student.id)
-        .orderBy('date', 'desc')
-        .limit(days)
-        .get(),
+    const [todaySnap, recent, signInSnap, leftoverSnap] = await Promise.all([
+      plates.scanRef(student.id, date).get(),
+      recentOf(student.id, days),
       db.collection(COL.parentSignIns)
         .where('studentId', '==', student.id)
         .orderBy('date', 'desc')
@@ -151,10 +153,6 @@ const getChildStatus = async (req, res) => {
         ? db.collection(COL.dishLeftovers).where('classId', '==', student.classId).where('date', '==', date).get()
         : Promise.resolve({ docs: [] }),
     ]);
-
-    const todayCheck = checkSnap.exists ? checkSnap.data() : null;
-    const history = historySnap.docs.map((d) => d.data()).filter((c) => c.date >= since);
-    const finishedDays = history.filter((c) => c.finished).length;
 
     // 今天全班各菜剩多少（讓家長知道孩子今天的午餐內容與全班狀況）
     const classDishes = leftoverSnap.docs.map((d) => {
@@ -177,17 +175,14 @@ const getChildStatus = async (req, res) => {
         seatNo: student.seatNo,
         coins: { ESG: Number(student.esgCoin || 0) },
       },
-      todayFinished: todayCheck ? Boolean(todayCheck.finished) : null, // null = 老師還沒勾
-      todayCheckedAt: todayCheck && todayCheck.checkedAt ? todayCheck.checkedAt.toDate().toISOString() : null,
+      todayPlate: todaySnap.exists ? plates.present(todaySnap.id, todaySnap.data()) : null,
+      recentPlates: recent,
       classDishesToday: classDishes,
       stats: {
         range: `${days}d`,
-        recordedDays: history.length,
-        finishedDays,
-        finishedRate: history.length ? Math.round((finishedDays / history.length) * 100) : 0,
-        mySignIns: signInSnap.docs.filter((d) => d.data().date >= since).length,
+        ...summarizeRecent(recent, days),
+        mySignIns: signInSnap.docs.filter((d) => d.data().date >= since && d.data().parentId === req.user.uid).length,
       },
-      recentChecks: history.map((c) => ({ date: c.date, finished: Boolean(c.finished) })),
       signedInToday: signInSnap.docs.some((d) => d.data().date === date && d.data().parentId === req.user.uid),
     });
   } catch (error) {

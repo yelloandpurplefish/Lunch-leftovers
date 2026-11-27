@@ -46,7 +46,7 @@ function buildUserResponse(u) {
     seatNo: u.seatNo || null,
   };
   if (u.role === ROLES.PARENT) {
-    return { ...base, studentBinding: u.studentBinding || null, boundStudentId: u.boundStudentId || null };
+    return { ...base, boundStudentId: u.boundStudentId || null };
   }
   return { ...base, esgCoin: Number(u.esgCoin || 0) };
 }
@@ -167,13 +167,8 @@ const register = async (req, res) => {
         passwordHash,
         isActive: true,
         // 家長沒有幣系統：不建立 esgCoin 欄位
+        // 只存學生 id；學生的班級座號會變，存一份快照只會過期（要用就讀學生本人）
         boundStudentId: student.id,
-        studentBinding: {
-          ...binding,
-          studentId: student.id,
-          studentName: student.displayName || '',
-          classId: student.classId || null,
-        },
         schoolId: student.schoolId || null,
         createdAt: serverTime(),
         lastLoginAt: serverTime(),
@@ -181,7 +176,7 @@ const register = async (req, res) => {
       // 只在學生身上寫「家長是誰」，不改寫學生的名冊欄位
       extraWrites.push({
         ref: db.collection(COL.users).doc(student.id),
-        data: { parentUserId: userId, parentName: displayName },
+        data: { parentUserId: userId },
       });
     } else {
       const grade = norm(req.body.grade || req.body.studentGrade);

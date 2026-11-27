@@ -15,9 +15,10 @@
  * 個人的回饋改由學生拍自己的餐盤（見 plateController）。
  *
  * 權限：本班午餐長、導師、管理員（middleware/auth.js 的 requireRecorder）。
+ * 秤連不上時的**手動輸入重量**只限管理員（任何班、任何日期都可以補）。
  */
 const { db, admin } = require('../config/firebase');
-const { COL, ids, MENU_SLOTS, SLOT_LABEL, SLOT_CATEGORY } = require('../config/schema');
+const { COL, ids, ROLES, MENU_SLOTS, SLOT_LABEL, SLOT_CATEGORY } = require('../config/schema');
 const { today, isYmd } = require('../lib/dates');
 const { summarize, round, leftoverFromWeight } = require('../lib/scoring');
 const bucketTare = require('../lib/bucketTare');
@@ -27,6 +28,9 @@ const serverTime = () => admin.firestore.FieldValue.serverTimestamp();
 const bad = (res, status, message, extra = {}) => res.status(status).json({ success: false, message, ...extra });
 
 const sessionRef = (classId, date) => db.collection(COL.mealSessions).doc(ids.mealSession(classId, date));
+
+/** 「今日」或「11-27」——補登過去的日期時，錯誤訊息要講對是哪一天。 */
+const dayWord = (date) => (date === today() ? '今日' : `${date} `);
 
 async function loadSession(classId, date) {
   const snap = await sessionRef(classId, date).get();
@@ -198,7 +202,14 @@ const getWeighQueue = async (req, res) => {
     const { classId } = req;
     const date = isYmd(req.query.date) ? req.query.date : today();
     const session = await loadSession(classId, date);
-    if (!session) return bad(res, 404, '今日尚未開始紀錄，請先開始');
+    if (!session) {
+      // 還沒開始不是錯誤：前端據此顯示「開始今日紀錄」，不必當成失敗處理
+      const menuSlots = await getMenuSlots(date);
+      return res.status(200).json({
+        success: true, date, classId, status: 'none', menuReady: Boolean(menuSlots),
+        queue: [], progress: { done: 0, total: 0, allDone: false }, blocked: [],
+      });
+    }
 
     const [tares, reading] = await Promise.all([
       bucketTare.getTares(),
@@ -227,6 +238,7 @@ const getWeighQueue = async (req, res) => {
     return res.status(200).json({
       success: true,
       date,
+      classId,
       // 'done' = 已結算：前端據此停止每 2 秒的讀數輪詢
       status: session.status || null,
       servings: session.servings,
@@ -246,7 +258,7 @@ const getWeighQueue = async (req, res) => {
  * body: { slot, netG?, emptied?, date? }
  *
  * netG 不給就從這個班級的秤讀最新值（正常操作就是這樣：放上去、按確認）。
- * 給 netG 是為了讓現場在秤故障時能手動輸入，以及供測試使用。
+ * 給 netG＝秤連不上時的手動輸入，只限管理員——那等於繞過感測器，要由負責的人做。
  * emptied:true 代表「這道全部吃完」，一鍵記 0，不必把空桶放上去。
  * 已結算的場次再量一次會重新開啟，要再結算一次。
  */
@@ -260,9 +272,12 @@ const weighDish = async (req, res) => {
     if (!MENU_SLOTS.includes(slot)) {
       return bad(res, 400, `slot 需為 ${MENU_SLOTS.join(' / ')}`);
     }
+    if (req.body.netG != null && !emptied && req.user.role !== ROLES.ADMIN) {
+      return bad(res, 403, '手動輸入重量只限管理員；秤連不上時請聯絡管理員');
+    }
 
     const session = await loadSession(classId, date);
-    if (!session) return bad(res, 404, '今日尚未開始紀錄，請先開始');
+    if (!session) return bad(res, 404, `${dayWord(date)}尚未開始紀錄，請先開始`);
     const item = (session.dishes || {})[slot];
     if (!item || !item.dishId) return bad(res, 404, `今天的菜單沒有「${SLOT_LABEL[slot] || slot}」`);
 
@@ -283,8 +298,8 @@ const weighDish = async (req, res) => {
         const v = Number(req.body.netG);
         if (!Number.isFinite(v)) return bad(res, 400, 'netG 必須是數字');
         measuredG = v - tareG;
-        reading = { state: 'manual', note: '手動輸入秤上讀數', value_g: v };
-        warnings.push('這筆是手動輸入的讀數，不是由磅秤讀取');
+        reading = { state: 'manual', note: '管理員手動輸入', value_g: v };
+        warnings.push('這筆是管理員手動輸入的讀數，不是由磅秤讀取');
       } else {
         reading = await scaleReadings.latestByClass(classId);
         if (reading.state !== 'ok') {
@@ -375,7 +390,7 @@ const finalizeSession = async (req, res) => {
     const date = isYmd(req.body.date) ? req.body.date : today();
 
     const session = await loadSession(classId, date);
-    if (!session) return bad(res, 404, '今日尚未開始紀錄');
+    if (!session) return bad(res, 404, `${dayWord(date)}尚未開始紀錄`);
 
     const list = orderedDishes(session);
     const pending = list.filter((d) => !isWeighed(d));
@@ -411,7 +426,32 @@ const finalizeSession = async (req, res) => {
   }
 };
 
+/**
+ * DELETE /api/record/session?classId=&date= （限管理員）
+ * 整場重來：刪掉這班這天的場次與各菜紀錄。開錯日期、量到一半發現菜單錯了時用。
+ */
+const resetSession = async (req, res) => {
+  try {
+    if (req.user.role !== ROLES.ADMIN) return bad(res, 403, '只有管理員可以重設紀錄');
+    const { classId } = req;
+    const date = isYmd(req.query.date) ? req.query.date : today();
+    const session = await loadSession(classId, date);
+    if (!session) return bad(res, 404, '這天沒有紀錄');
+    const batch = db.batch();
+    batch.delete(sessionRef(classId, date));
+    for (const slot of MENU_SLOTS) {
+      batch.delete(db.collection(COL.dishLeftovers).doc(ids.dishLeftover(classId, date, slot)));
+    }
+    await batch.commit();
+    return res.status(200).json({ success: true, message: `已清除 ${session.className || classId} 班 ${date} 的稱重紀錄` });
+  } catch (error) {
+    console.error('重設紀錄失敗:', error);
+    return bad(res, 500, error.message || '重設紀錄失敗');
+  }
+};
+
 module.exports = {
+  resetSession,
   getTodaySession,
   startSession,
   getWeighQueue,

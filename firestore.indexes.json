@@ -123,36 +123,6 @@
       ]
     },
     {
-      "//": "教師頁：某班某日的逐生勾選清單",
-      "collectionGroup": "meal_checks",
-      "queryScope": "COLLECTION",
-      "fields": [
-        {
-          "fieldPath": "classId",
-          "order": "ASCENDING"
-        },
-        {
-          "fieldPath": "date",
-          "order": "ASCENDING"
-        }
-      ]
-    },
-    {
-      "//": "家長/學生查自己的吃完紀錄",
-      "collectionGroup": "meal_checks",
-      "queryScope": "COLLECTION",
-      "fields": [
-        {
-          "fieldPath": "studentId",
-          "order": "ASCENDING"
-        },
-        {
-          "fieldPath": "date",
-          "order": "DESCENDING"
-        }
-      ]
-    },
-    {
       "//": "班級量測場次歷史",
       "collectionGroup": "meal_sessions",
       "queryScope": "COLLECTION",
@@ -242,6 +212,36 @@
         },
         {
           "fieldPath": "exchangedAt",
+          "order": "DESCENDING"
+        }
+      ]
+    },
+    {
+      "//": "老師／管理員：某班某天每位學生的餐盤結果",
+      "collectionGroup": "plate_scans",
+      "queryScope": "COLLECTION",
+      "fields": [
+        {
+          "fieldPath": "classId",
+          "order": "ASCENDING"
+        },
+        {
+          "fieldPath": "date",
+          "order": "ASCENDING"
+        }
+      ]
+    },
+    {
+      "//": "學生／家長／管理員：某位學生近 N 天的餐盤結果",
+      "collectionGroup": "plate_scans",
+      "queryScope": "COLLECTION",
+      "fields": [
+        {
+          "fieldPath": "userId",
+          "order": "ASCENDING"
+        },
+        {
+          "fieldPath": "date",
           "order": "DESCENDING"
         }
       ]

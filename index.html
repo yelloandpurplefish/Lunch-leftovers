@@ -164,13 +164,13 @@
     <!-- data-roles 是身分標籤：lunch_leader 不是帳號角色，而是學生被指定為午餐長後多出的標籤（見 app.js viewTags） -->
     <button data-action="scrollToSection" data-arg="home" data-roles="student,teacher,admin">🏠<br>首頁</button>
 
-    <button data-action="scrollToSection" data-arg="teacher" data-roles="teacher,admin">📋<br>檢查</button>
+    <button data-action="scrollToSection" data-arg="teacher" data-roles="teacher">📋<br>本班</button>
 
     <button data-action="scrollToSection" data-arg="ranking" data-roles="student,teacher,admin">🏆<br>排行</button>
 
-    <button data-action="scrollToSection" data-arg="shop" data-roles="student,admin">🎁<br>兌換</button>
+    <button data-action="scrollToSection" data-arg="shop" data-roles="student">🎁<br>兌換</button>
 
-    <button data-action="scrollToSection" data-arg="leader" data-roles="lunch_leader,admin">🍳<br>紀錄</button>
+    <button data-action="scrollToSection" data-arg="leader" data-roles="lunch_leader">🍳<br>紀錄</button>
 
     <button data-action="scrollToSection" data-arg="parentZone" data-roles="parent">👨‍👩‍👧<br>家長</button>
 
@@ -185,58 +185,55 @@
 
 <section id="home" class="page hidden">
 
-<div class="coin">
+    <!-- ESG 幣餘額：和其他卡片同寬的一條（只有學生有幣） -->
+    <div class="balance-strip hidden" id="balanceStrip">
+        <div class="balance-main">
+            <span class="balance-label">我的 ESG 幣</span>
+            <span class="balance-value" id="esgcoin">0</span>
+        </div>
+        <span class="field-hint">拍餐盤的結果與家長簽到都會發 ESG 幣，可以拿去兌換或抽獎。</span>
+    </div>
 
-            <div class="card">
-                <h3>ESG幣</h3>
-                <span id="esgcoin">0</span>
+    <div class="menu">
+
+        <div class="menu-grid">
+
+            <div class="menu-col">
+                <h2>🍱 今日菜單</h2>
+                <div id="menuToday">載入中...</div>
+            </div>
+
+            <!-- 右欄：建議攝取熱量。體位分類與熱量都由後端算好，
+                 前端不碰年齡、性別與判定界線（見 backend/lib/bmi.js）。 -->
+            <div class="menu-col intake-col">
+                <h2>🔥 建議攝取</h2>
+                <div id="intakePanel">載入中...</div>
             </div>
 
         </div>
 
-        <div class="menu">
+    </div>
 
-            <div class="menu-grid">
+    <!-- 今日午餐：拍餐盤（一天一次）→ 剩多少 → 回饋與 ESG 幣。
+         這是「今天吃得怎麼樣」的唯一依據（不再有老師勾選）。 -->
+    <div class="task hidden" id="plateCard">
 
-                <div class="menu-col">
-                    <h2>🍱 今日菜單</h2>
-                    <div id="menuToday">載入中...</div>
-                </div>
+        <h2>📷 今日午餐</h2>
 
-                <!-- 右欄：建議攝取熱量。體位分類與熱量都由後端算好，
-                     前端不碰年齡、性別與判定界線（見 backend/lib/bmi.js）。 -->
-                <div class="menu-col intake-col">
-                    <h2>🔥 建議攝取</h2>
-                    <div id="intakePanel">載入中...</div>
-                </div>
+        <p class="field-hint">吃完後拍一張自己的餐盤，系統判斷剩多少並發 ESG 幣。
+            <strong>一天只能拍一次</strong>，結果有誤請找管理員更正。照片只用來辨識，不會存下來。</p>
 
-            </div>
+        <div id="plateTiers" class="plate-tiers"></div>
 
-        </div>
+        <div id="plateResult">載入中...</div>
 
-        <div class="task">
-
-            <h2>✅ 今日午餐狀況</h2>
-
-            <!-- 獎勵額度由 API 帶回（G 幣的額度在開發者面板可調，寫死會過期）-->
-    <p class="field-hint" id="mealRewardHint">吃完自己的部分由老師在「檢查清單」確認，確認後會自動獲得獎勵。</p>
-
-            <div id="myMealStatus">載入中...</div>
-
-        </div>
-
-        <!-- 學生拍自己的餐盤：一張照片 → 剩多少 → 回饋（午餐長也是學生，一樣看得到） -->
-        <div class="task hidden" id="plateCard">
-
-            <h2>📷 拍我的餐盤</h2>
-
-            <p class="field-hint">吃完後拍一張自己的餐盤，系統會看看你剩多少。照片只用來辨識，不會存下來；目前只給回饋，不發 ESG 幣。</p>
-
-            <div id="plateResult">載入中...</div>
-
+        <div class="card-actions">
             <button data-action="capturePlate" id="plateBtn" disabled>📷 拍餐盤</button>
-
         </div>
+
+        <p id="plateRecent" class="field-hint"></p>
+
+    </div>
 
 </section>
 
@@ -263,7 +260,7 @@
     <h2>🏆 個人英雄榜</h2>
 
     <p class="field-hint">
-        排的是這段期間獲得的 ESG 幣（花掉不會掉名次）。目前 ESG 幣來自老師確認你吃完自己的部分，以及家長每日簽到。
+        排的是這段期間獲得的 ESG 幣（花掉不會掉名次）。ESG 幣來自拍餐盤的結果與家長每日簽到。
     </p>
 
     <div class="hero-controls">
@@ -413,246 +410,244 @@
 
 </section>
 
-        <!-- 老師：每日逐生檢查「吃完他的部分」 -->
+    <!-- 老師：本班今天的餐盤結果（唯讀；判定以學生拍的餐盤為準，不再逐生勾選） -->
     <div id="teacher" class="teacher-panel hidden">
 
-        <h2>👩‍🏫 今日用餐檢查</h2>
+        <h2>👩‍🏫 本班餐盤結果</h2>
 
-        <p class="field-hint">勾選代表該學生吃完自己的部分（即「吃完一餐」），系統立即發 ESG 幣給該生；取消勾選會沖銷。</p>
+        <p class="field-hint">學生吃完拍自己的餐盤，系統依剩餘量判定並發 ESG 幣。這裡只能看；結果有誤請找管理員更正。</p>
 
-        <div id="checkSummary" class="check-summary"></div>
-
-        <div class="check-actions">
-            <button data-action="loadCheckRoster">🔄 重新載入</button>
-            <button data-action="finishAllChecks" class="secondary-btn">✅ 全班都吃完</button>
+        <div class="panel-toolbar">
+            <label>日期 <input type="date" id="teacherPlateDate" data-change="loadClassPlates"></label>
+            <button data-action="loadClassPlates" class="secondary-btn">🔄 重新載入</button>
         </div>
 
-        <div id="checkRoster">
-            <p>載入中...</p>
-        </div>
+        <div id="classPlateSummary" class="stat-row"></div>
+
+        <div id="classPlateList"><p>載入中...</p></div>
 
     </div>
 
-        <!-- 管理員 / 開發者：手動維護班級與帳號 -->
+    <!-- 管理員：分頁。先找到班級或帳號，再對它操作（不一次把全校列出來） -->
     <div id="adminZone" class="teacher-panel hidden">
 
         <h2>🛠 管理員專區</h2>
 
-        <p class="field-hint">學生自助註冊前，班級必須先存在；老師、管理員帳號一律由這裡建立。午餐長是班上的一位學生，在下方「班級列表」指定。</p>
+        <nav class="admin-tabs" aria-label="管理員功能">
+            <button data-action="adminTab" data-tab="overview" class="admin-tab active">總覽</button>
+            <button data-action="adminTab" data-tab="classes" class="admin-tab">班級</button>
+            <button data-action="adminTab" data-tab="users" class="admin-tab">帳號</button>
+            <button data-action="adminTab" data-tab="settings" class="admin-tab">設定</button>
+            <button data-action="adminTab" data-tab="sync" class="admin-tab">同步</button>
+            <button data-action="adminTab" data-tab="health" class="admin-tab">資料檢查</button>
+        </nav>
 
-        <div id="adminOverview" class="check-summary"></div>
-
-        <!-- 可調參數：老師確認完食的感謝額度、建議攝取熱量。 -->
-        <div class="admin-card coin-rules-card">
-            <h3>⚙️ 可調參數</h3>
-            <p class="field-hint">
-                老師勾選「吃完」時，學生得到 ESG 幣：營養 1＋減碳 1＋感謝（下方可調）。
-                稱重紀錄與拍餐盤目前都不發幣。
-            </p>
-            <div id="coinRulesForm">載入中...</div>
-            <div class="rules-actions">
-                <button data-action="saveCoinRules">💾 儲存</button>
-                <button data-action="resetCoinRules" class="danger-btn">↺ 還原出廠預設</button>
-            </div>
-            <p id="coinRulesResult" class="verify-result"></p>
+        <!-- 總覽 -->
+        <div class="admin-pane" id="adminPane-overview">
+            <div id="adminOverview"><p>載入中...</p></div>
         </div>
 
-
-        <!-- 從 Google 試算表同步學生名冊。先試算再寫入，避免欄位對不上就動到資料。 -->
-        <div class="admin-card sync-card">
-            <h3>🔄 同步學生名冊</h3>
-            <p class="field-hint">
-                從 Google 試算表抓取 Gmail、學號、班級、座號、姓名、性別、年齡、身高、體重，
-                並自動計算 BMI 後存入。以 <strong>Gmail</strong> 認人，
-                不會動到幣、角色，也不會動到試算表裡沒有的學生。
-            </p>
-
-            <div class="sync-actions">
-                <button data-action="syncStudentsDryRun" class="secondary-btn">🧪 試算（不寫入）</button>
-                <button data-action="syncStudents">🔄 開始同步</button>
+        <!-- 班級：左邊選班、右邊是這班的全部 -->
+        <div class="admin-pane hidden" id="adminPane-classes">
+            <div class="class-browser">
+                <aside class="class-picker">
+                    <div class="picker-toolbar">
+                        <input type="search" id="classFilter" placeholder="找班級，例如 302" data-input="filterClassPicker">
+                        <button data-action="toggleNewClass" class="secondary-btn small">＋ 新增</button>
+                    </div>
+                    <div id="newClassForm" class="inline-form hidden">
+                        <label>年級 <input type="text" id="newClassGrade" placeholder="3" inputmode="numeric"></label>
+                        <label>班級名稱 <input type="text" id="newClassName" placeholder="302 或 2"></label>
+                        <label>人數 <input type="number" id="newClassHeadcount" min="1" placeholder="30"></label>
+                        <p class="field-hint">年級 3、班名填 302 或 2 都會建成「302 班」（代號 cls-302）。</p>
+                        <button data-action="createClass">建立班級</button>
+                        <p id="newClassResult" class="verify-result"></p>
+                    </div>
+                    <div id="classPickerList" class="picker-list"><p class="field-hint">載入中...</p></div>
+                </aside>
+                <section class="class-detail" id="classDetail">
+                    <p class="empty-state">從班級清單選一個班</p>
+                </section>
             </div>
-
-            <p id="syncStudentsResult" class="verify-result"></p>
-            <div id="syncStudentsReport"></div>
         </div>
 
-
-        <!-- 每月菜單：一列一天、日期為主鍵，只處理表上出現的日期 -->
-        <div class="admin-card sync-card">
-            <h3>🍱 同步每月菜單</h3>
-            <p class="field-hint">
-                從菜單試算表逐日寫入。<strong>只供餐週一到週五</strong>，
-                週末出現在表上會報錯；「供餐」欄留空或填否代表那天不供餐。
-                只會處理表上出現的日期，不影響其他月份。
-            </p>
-
-            <div class="admin-row">
-                <label for="menuSyncMonth">月份</label>
-                <input type="month" id="menuSyncMonth">
-                <span class="field-hint">留空＝整張表</span>
+        <!-- 帳號：搜尋或依角色瀏覽 → 點一個人開啟操作面板 -->
+        <div class="admin-pane hidden" id="adminPane-users">
+            <div class="panel-toolbar">
+                <input type="search" id="userSearch" placeholder="帳號、Email 或姓名開頭" data-enter="searchUsers">
+                <select id="userRoleFilter" data-change="searchUsers">
+                    <option value="">全部角色</option>
+                    <option value="student">學生</option>
+                    <option value="teacher">老師</option>
+                    <option value="parent">家長</option>
+                    <option value="technician">技術員</option>
+                    <option value="admin">管理員</option>
+                </select>
+                <button data-action="searchUsers">搜尋</button>
+                <button data-action="toggleNewUser" class="secondary-btn">＋ 新增帳號</button>
             </div>
-
-            <label class="sync-opt">
-                <input type="checkbox" id="menuCreateDishes">
-                一併建立表上有、系統沒有的菜色
-                <span class="field-hint">新菜色的份量與營養值會先用分類預設，建立後請到菜色管理複核</span>
-            </label>
-
-            <div class="sync-actions">
-                <button data-action="syncMenusDryRun" class="secondary-btn">🧪 試算（不寫入）</button>
-                <button data-action="syncMenus">🍱 開始同步</button>
-            </div>
-
-            <p id="syncMenusResult" class="verify-result"></p>
-            <div id="syncMenusReport"></div>
-        </div>
-
-        <!-- 商城開關：面板是日常開關，SHOP_ENABLED 是營運層硬開關。
-             兩層都開才開張，所以被環境變數鎖住時要明講，不能只顯示已開啟。 -->
-        <div class="admin-card shop-toggle-card">
-            <h3>🎁 商城開關</h3>
-            <p class="field-hint">
-                暫停期間學生仍看得到獎品清單，但換不了，
-                兌換端點也會一併擋下（不是只把按鈕藏起來）。
-            </p>
-
-            <label class="sync-opt">
-                <input type="checkbox" id="shopToggle">
-                開放兌換商城
-            </label>
-
-            <div class="admin-row">
-                <label for="shopMessage">暫停說明</label>
-                <input type="text" id="shopMessage" maxlength="200"
-                       placeholder="例如：獎品盤點中，下週一恢復">
-            </div>
-            <p class="field-hint">留空會用預設說法。這段字會直接顯示給學生看。</p>
-
-            <div class="sync-actions">
-                <button data-action="saveShopState">💾 儲存</button>
-            </div>
-
-            <p id="shopToggleResult" class="verify-result"></p>
-            <p id="shopToggleMeta" class="field-hint"></p>
-        </div>
-
-        <!-- 桶型皮重：全校共用。量測時要指定用哪一台秤。 -->
-        <div class="admin-card tare-card">
-            <h3>⚖️ 桶型扣重（空桶重）</h3>
-            <p class="field-hint">
-                一個班級一台秤，量測時一桶一桶輪流放上去。同款桶的空重一樣，
-                所以皮重<strong>按桶型設定一次、全校共用</strong>，
-                午餐長現場就不必歸零，也不用選桶——系統從菜色就知道是哪種桶。
-            </p>
-
-            <div class="admin-row">
-                <label for="tareDevice">用哪一台秤量</label>
-                <select id="tareDevice"></select>
-                <button data-action="loadBucketTare" class="secondary-btn">🔄 重新整理</button>
-            </div>
-            <p class="field-hint">
-                把空桶放到那台秤上，再按對應桶型的「量測」。
-                也可以直接在欄位裡填數字後按「儲存」。
-            </p>
-
-            <div id="tareRows"></div>
-
-            <p id="tareResult" class="verify-result"></p>
-        </div>
-
-        <div class="admin-grid">
-
-            <div class="admin-card">
-
-                <h3>➕ 新增班級</h3>
-
-                <div class="form-group">
-                    <label>年級：</label>
-                    <input type="text" id="adminClassGrade" placeholder="例如：3">
-                </div>
-                <div class="form-group">
-                    <label>班級名稱：</label>
-                    <input type="text" id="adminClassName" placeholder="例如：302">
-                </div>
-                <div class="form-group">
-                    <label>班級人數（＝供餐份數）：</label>
-                    <input type="number" id="adminClassHeadcount" min="1" placeholder="例如：30">
-                </div>
-
-                <button data-action="createClass">建立班級</button>
-
-                <p id="adminClassResult" class="verify-result"></p>
-
-            </div>
-
-            <div class="admin-card">
-
-                <h3>➕ 新增帳號</h3>
-
-                <div class="form-group">
-                    <label>角色：</label>
-                    <select id="adminUserRole">
+            <div id="newUserForm" class="inline-form hidden">
+                <label>角色
+                    <select id="newUserRole" data-change="syncNewUserFields">
                         <option value="student">學生</option>
-                        <option value="teacher">老師（導師）</option>
+                        <option value="teacher">老師</option>
+                        <option value="technician">技術員</option>
                         <option value="admin">管理員</option>
                     </select>
-                </div>
-                <div class="form-group">
-                    <label>登入帳號：</label>
-                    <input type="text" id="adminUserAccount" placeholder="學生例如 stu302-05、老師例如 teacher305">
-                </div>
-                <div class="form-group">
-                    <label>姓名：</label>
-                    <input type="text" id="adminUserName" placeholder="例如：林小美">
-                </div>
-                <div class="form-group">
-                    <label>密碼：</label>
-                    <input type="text" id="adminUserPassword" placeholder="至少 6 個字元">
-                </div>
-                <div id="adminUserClassFields">
-                    <div class="form-group">
-                        <label>年級：</label>
-                        <input type="text" id="adminUserGrade" placeholder="例如：3">
-                    </div>
-                    <div class="form-group">
-                        <label>班級：</label>
-                        <input type="text" id="adminUserClassName" placeholder="例如：302">
-                    </div>
-                </div>
-                <div class="form-group" id="adminUserSeatGroup">
-                    <label>座號：</label>
-                    <input type="text" id="adminUserSeat" placeholder="例如：05">
-                </div>
-
+                </label>
+                <label>登入帳號 <input type="text" id="newUserAccount" placeholder="例如 stu302-05"></label>
+                <label>姓名 <input type="text" id="newUserName" placeholder="例如 林小美"></label>
+                <label>密碼 <input type="text" id="newUserPassword" placeholder="至少 6 個字元"></label>
+                <label id="newUserClassField">班級 <select id="newUserClass"></select></label>
+                <label id="newUserSeatField">座號 <input type="text" id="newUserSeat" placeholder="例如 05"></label>
                 <button data-action="createUserByAdmin">建立帳號</button>
-
-                <p id="adminUserResult" class="verify-result"></p>
-
+                <p class="field-hint">家長請由家長自行註冊（要驗證孩子資料）；建立後可以在家長的操作面板改綁定。</p>
+                <p id="newUserResult" class="verify-result"></p>
             </div>
-
+            <div id="userResults"><p class="field-hint">輸入關鍵字搜尋，或選一個角色瀏覽。</p></div>
         </div>
 
-        <h3>🏫 班級列表</h3>
+        <!-- 設定：發幣額度與建議攝取、商城、桶型皮重 -->
+        <div class="admin-pane hidden" id="adminPane-settings">
 
-        <button data-action="loadAdminClasses" class="secondary-btn">🔄 重新載入</button>
+            <section class="admin-section coin-rules-card">
+                <h3>⚙️ 可調參數</h3>
+                <p class="field-hint">
+                    學生拍餐盤後依剩餘量分四級發 ESG 幣：光盤 0–3%、剩一點 4–20%、剩不少 21–49%、剩一半以上 50% 以上。
+                    改了之後只影響之後的結果，已經發出的不會重算。
+                </p>
+                <div id="coinRulesForm">載入中...</div>
+                <div class="rules-actions">
+                    <button data-action="saveCoinRules">💾 儲存</button>
+                    <button data-action="resetCoinRules" class="danger-btn">↺ 還原出廠預設</button>
+                </div>
+                <p id="coinRulesResult" class="verify-result"></p>
+            </section>
 
-        <div id="adminClassList">載入中...</div>
+            <!-- 商城開關：面板是日常開關，SHOP_ENABLED 是營運層硬開關。
+                 兩層都開才開張，所以被環境變數鎖住時要明講，不能只顯示已開啟。 -->
+            <section class="admin-section shop-toggle-card">
+                <h3>🎁 商城開關</h3>
+                <p class="field-hint">
+                    暫停期間學生仍看得到獎品清單，但換不了，兌換端點也會一併擋下（不是只把按鈕藏起來）。
+                </p>
+                <label class="sync-opt">
+                    <input type="checkbox" id="shopToggle">
+                    開放兌換商城
+                </label>
+                <div class="form-row">
+                    <label for="shopMessage">暫停說明</label>
+                    <input type="text" id="shopMessage" maxlength="200" placeholder="例如：獎品盤點中，下週一恢復">
+                </div>
+                <p class="field-hint">留空會用預設說法。這段字會直接顯示給學生看。</p>
+                <div class="sync-actions">
+                    <button data-action="saveShopState">💾 儲存</button>
+                </div>
+                <p id="shopToggleResult" class="verify-result"></p>
+                <p id="shopToggleMeta" class="field-hint"></p>
+            </section>
 
-        <h3>👥 帳號列表</h3>
-
-        <div class="check-actions">
-            <select id="adminUserFilter">
-                <option value="">全部角色</option>
-                <option value="student">學生</option>
-                <option value="teacher">老師</option>
-                <option value="parent">家長</option>
-                <option value="admin">管理員</option>
-            </select>
-            <button data-action="loadAdminUsers" class="secondary-btn">🔄 載入帳號</button>
+            <!-- 桶型皮重：全校共用。量測時要指定用哪一台秤。 -->
+            <section class="admin-section tare-card">
+                <h3>⚖️ 桶型扣重（空桶重）</h3>
+                <p class="field-hint">
+                    一個班級一台秤，量測時一桶一桶輪流放上去。同款桶的空重一樣，
+                    所以皮重<strong>按桶型設定一次、全校共用</strong>，午餐長現場就不必歸零。
+                </p>
+                <div class="form-row">
+                    <label for="tareDevice">用哪一台秤量</label>
+                    <select id="tareDevice"></select>
+                    <button data-action="loadBucketTare" class="secondary-btn">🔄 重新整理</button>
+                </div>
+                <p class="field-hint">把空桶放到那台秤上，再按對應桶型的「量測」；也可以直接填數字後按「儲存」。</p>
+                <div id="tareRows"></div>
+                <p id="tareResult" class="verify-result"></p>
+            </section>
         </div>
 
-        <div id="adminUserList"></div>
+        <!-- 同步：Google 試算表 -->
+        <div class="admin-pane hidden" id="adminPane-sync">
 
+            <!-- 從 Google 試算表同步學生名冊。先試算再寫入，避免欄位對不上就動到資料。 -->
+            <section class="admin-section sync-card">
+                <h3>🔄 同步學生名冊</h3>
+                <p class="field-hint">
+                    從 Google 試算表抓取 Gmail、學號、班級、座號、姓名、性別、年齡、身高、體重，
+                    並自動計算 BMI 後存入。以 <strong>Gmail</strong> 認人，
+                    不會動到幣、角色，也不會動到試算表裡沒有的學生。
+                </p>
+                <div class="sync-actions">
+                    <button data-action="syncStudentsDryRun" class="secondary-btn">🧪 試算（不寫入）</button>
+                    <button data-action="syncStudents">🔄 開始同步</button>
+                </div>
+                <p id="syncStudentsResult" class="verify-result"></p>
+                <div id="syncStudentsReport"></div>
+            </section>
+
+            <!-- 每月菜單：一列一天、日期為主鍵，只處理表上出現的日期 -->
+            <section class="admin-section sync-card">
+                <h3>🍱 同步每月菜單</h3>
+                <p class="field-hint">
+                    從菜單試算表逐日寫入。<strong>只供餐週一到週五</strong>，
+                    週末出現在表上會報錯；「供餐」欄留空或填否代表那天不供餐。
+                    只會處理表上出現的日期，不影響其他月份。
+                </p>
+                <div class="form-row">
+                    <label for="menuSyncMonth">月份</label>
+                    <input type="month" id="menuSyncMonth">
+                    <span class="field-hint">留空＝整張表</span>
+                </div>
+                <label class="sync-opt">
+                    <input type="checkbox" id="menuCreateDishes">
+                    一併建立表上有、系統沒有的菜色
+                    <span class="field-hint">新菜色的份量會先用分類預設，建立後請複核</span>
+                </label>
+                <div class="sync-actions">
+                    <button data-action="syncMenusDryRun" class="secondary-btn">🧪 試算（不寫入）</button>
+                    <button data-action="syncMenus">🍱 開始同步</button>
+                </div>
+                <p id="syncMenusResult" class="verify-result"></p>
+                <div id="syncMenusReport"></div>
+            </section>
+        </div>
+
+        <!-- 資料檢查 -->
+        <div class="admin-pane hidden" id="adminPane-health">
+            <section class="admin-section">
+                <h3>🩺 資料一致性</h3>
+                <p class="field-hint">
+                    檢查存了兩份的資料有沒有對不上：帳號上的班名、導師與午餐長的指標、家長綁定、登入索引、秤的班級。
+                    能安全自動修的會提供「修正」，需要人判斷的只列出來。
+                </p>
+                <div class="sync-actions">
+                    <button data-action="runConsistency">🩺 執行檢查</button>
+                </div>
+                <div id="consistencyResult"></div>
+            </section>
+            <section class="admin-section">
+                <h3>💰 ESG 餘額對帳</h3>
+                <p class="field-hint">
+                    逐一核對學生的餘額與總帳加總。差額多半是改版前沒記帳的期初餘額；
+                    修正會補一筆「對帳」分錄，<strong>餘額不動</strong>。一班一班做。
+                </p>
+                <div class="form-row">
+                    <label for="balanceClass">班級</label>
+                    <select id="balanceClass"></select>
+                    <button data-action="checkBalances" class="secondary-btn">核對</button>
+                </div>
+                <div id="balanceResult"></div>
+            </section>
+        </div>
+
+    </div>
+
+    <!-- 帳號操作面板（依角色顯示能做的事） -->
+    <div id="userDrawer" class="drawer hidden" role="dialog" aria-modal="true" aria-labelledby="userDrawerTitle">
+        <div class="drawer-backdrop" data-action="closeUserDrawer"></div>
+        <aside class="drawer-panel">
+            <button class="drawer-close" data-action="closeUserDrawer" aria-label="關閉">✕</button>
+            <div id="userDrawerBody"></div>
+        </aside>
     </div>
 
         <!-- 技術員：稱重模組佈建與維護 -->
@@ -726,6 +721,7 @@
 
 <script src="firebase-config.js"></script>
 <script src="app.js"></script>
+<script src="admin.js"></script>
 
 </body>
 </html>

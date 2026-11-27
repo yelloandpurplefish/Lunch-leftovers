@@ -4,9 +4,8 @@ const { dishNameSet } = require('../lib/dailyMenu');
 
 /**
  * 每日菜色問卷（不發幣）。
- *  · 吃完一餐 → 由教師在 /api/meal-check 逐生勾選後發幣
+ *  · 吃得怎麼樣 → 學生在 /api/plate 拍自己的餐盤，結果決定 ESG 幣
  *  · 全班剩食量 → 由午餐長在 /api/record 依序稱重
- *  · 個人剩食 → 學生在 /api/plate 拍自己的餐盤
  */
 
 // 取得使用者某類任務的最新記錄

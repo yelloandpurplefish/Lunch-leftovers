@@ -33,8 +33,7 @@ const getProfile = async (req, res) => {
         seatNo: u.seatNo || null,
         esgCoin: holdsCoins ? Number(u.esgCoin || 0) : null,
         isLunchLeader: await isLunchLeader(req.user),
-        studentBinding: u.studentBinding || null,
-        parentUserId: u.parentUserId || null,
+        boundStudentId: u.boundStudentId || null,
       },
     });
   } catch (error) {

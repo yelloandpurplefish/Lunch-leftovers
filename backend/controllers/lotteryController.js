@@ -4,121 +4,97 @@ const { spendUser } = require('../lib/coins');
 /** 每抽一次的 ESG 幣。前端的「需要 40 ESG 幣」說明與這裡一致。 */
 const LOTTERY_COST = 40;
 
+const PRIZES = {
+  grand: [
+    { name: '🎁 豪華文具組', value: 240 },
+    { name: '🌟 特別獎勵包', value: 220 },
+    { name: '💎 稀有空氣清新劑', value: 200 },
+    { name: '🎧 無線藍牙耳機', value: 280 },
+    { name: '🎮 掌上遊戲機', value: 260 },
+    { name: '🎒 限量後背包', value: 232 },
+  ],
+  rare: [
+    { name: '📝 筆記本', value: 120 },
+    { name: '✏️ 鉛筆組', value: 100 },
+    { name: '📏 尺', value: 80 },
+    { name: '🔖 書籤', value: 60 },
+    { name: '🖊️ 原子筆', value: 72 },
+    { name: '🗂️ 資料夾', value: 88 },
+    { name: '🧃 果汁', value: 48 },
+    { name: '🍪 餅乾', value: 56 },
+  ],
+  small: [
+    { name: '🍬 糖果', value: 20 },
+    { name: '🧻 紙巾', value: 12 },
+    { name: '💧 飲用水', value: 8 },
+    { name: '🍭 棒棒糖', value: 16 },
+    { name: '🍫 巧克力', value: 24 },
+    { name: '🥠 幸運餅乾', value: 12 },
+    { name: '🧼 小肥皂', value: 8 },
+    { name: '🎈 氣球', value: 8 },
+  ],
+};
+
+/** 抽獎邏輯：大獎 2%、稀有 18%、小獎 80% */
+function drawPrize() {
+  const rand = Math.random() * 100;
+  const type = rand < 2 ? 'grand' : rand < 20 ? 'rare' : 'small';
+  const pool = PRIZES[type];
+  return { type, ...pool[Math.floor(Math.random() * pool.length)] };
+}
+
 // 進行抽獎
 const spinLottery = async (req, res) => {
   try {
     const userId = req.user.uid;
-    const lotteryCost = LOTTERY_COST;
+    const prize = drawPrize();
+    const now = admin.firestore.FieldValue.serverTimestamp();
 
-    const userDoc = await db.collection('users').doc(userId).get();
-    if (!userDoc.exists) {
-      return res.status(404).json({
-        success: false,
-        message: '使用者不存在'
-      });
-    }
-
-    const userData = userDoc.data();
-
-    // 扣幣一律走記帳層：會檢查角色（只有學生持幣）、餘額，並寫入總帳
+    // 扣幣、抽獎紀錄、大獎公告在同一個 transaction：不會扣了幣卻沒有紀錄
+    let spent;
     try {
-      await spendUser({
+      spent = await spendUser({
         userId,
-        amount: lotteryCost,
+        amount: LOTTERY_COST,
         reason: '幸運抽獎',
-        refType: 'lottery'
+        refType: 'lottery',
+        extra: (tx) => {
+          tx.set(db.collection('lottery_records').doc(), {
+            userId,
+            cost: LOTTERY_COST,
+            prizeType: prize.type,
+            prizeName: prize.name,
+            prizeValue: prize.value,
+            drawnAt: now,
+            isGrandPrize: prize.type === 'grand',
+          });
+          if (prize.type === 'grand') {
+            tx.set(db.collection('lottery_announcements').doc('latest'), {
+              userId,
+              displayName: req.user.displayName || '匿名使用者',
+              prizeName: prize.name,
+              createdAt: now,
+            });
+          }
+        },
       });
     } catch (err) {
       return res.status(err.status || 400).json({
         success: false,
         message: err.message || '扣款失敗',
-        required: lotteryCost,
-        current: Number(userData.esgCoin || 0)
+        required: LOTTERY_COST,
       });
     }
-
-    // 抽獎邏輯：大獎 2%、稀有 18%、小獎 80%
-    const rand = Math.random() * 100;
-    let prize, prizeType, prizeValue;
-
-    if (rand < 2) {
-      const grandPrizes = [
-        { name: '🎁 豪華文具組', value: 240 },
-        { name: '🌟 特別獎勵包', value: 220 },
-        { name: '💎 稀有空氣清新劑', value: 200 },
-        { name: '🎧 無線藍牙耳機', value: 280 },
-        { name: '🎮 掌上遊戲機', value: 260 },
-        { name: '🎒 限量後背包', value: 232 }
-      ];
-      const selected = grandPrizes[Math.floor(Math.random() * grandPrizes.length)];
-      prize = selected.name;
-      prizeValue = selected.value;
-      prizeType = 'grand';
-    } else if (rand < 20) {
-      const rarePrizes = [
-        { name: '📝 筆記本', value: 120 },
-        { name: '✏️ 鉛筆組', value: 100 },
-        { name: '📏 尺', value: 80 },
-        { name: '🔖 書籤', value: 60 },
-        { name: '🖊️ 原子筆', value: 72 },
-        { name: '🗂️ 資料夾', value: 88 },
-        { name: '🧃 果汁', value: 48 },
-        { name: '🍪 餅乾', value: 56 }
-      ];
-      const selected = rarePrizes[Math.floor(Math.random() * rarePrizes.length)];
-      prize = selected.name;
-      prizeValue = selected.value;
-      prizeType = 'rare';
-    } else {
-      const smallPrizes = [
-        { name: '🍬 糖果', value: 20 },
-        { name: '🧻 紙巾', value: 12 },
-        { name: '💧 飲用水', value: 8 },
-        { name: '🍭 棒棒糖', value: 16 },
-        { name: '🍫 巧克力', value: 24 },
-        { name: '🥠 幸運餅乾', value: 12 },
-        { name: '🧼 小肥皂', value: 8 },
-        { name: '🎈 氣球', value: 8 }
-      ];
-      const selected = smallPrizes[Math.floor(Math.random() * smallPrizes.length)];
-      prize = selected.name;
-      prizeValue = selected.value;
-      prizeType = 'small';
-    }
-
-    // 記錄抽獎
-    await db.collection('lottery_records').add({
-      userId,
-      cost: lotteryCost,
-      prizeType,
-      prizeName: prize,
-      prizeValue,
-      drawnAt: admin.firestore.FieldValue.serverTimestamp(),
-      isGrandPrize: prizeType === 'grand'
-    });
-
-    // 若為大獎，寫入全站公告
-    if (prizeType === 'grand') {
-      await db.collection('lottery_announcements').doc('latest').set({
-        userId,
-        displayName: userData.displayName || '匿名使用者',
-        prizeName: prize,
-        createdAt: admin.firestore.FieldValue.serverTimestamp()
-      });
-    }
-
-    const updatedUserDoc = await db.collection('users').doc(userId).get();
-    const updatedUserData = updatedUserDoc.data();
 
     res.status(200).json({
       success: true,
       prize: {
-        type: prizeType,
-        name: prize,
-        value: prizeValue,
-        isGrandPrize: prizeType === 'grand'
+        type: prize.type,
+        name: prize.name,
+        value: prize.value,
+        isGrandPrize: prize.type === 'grand',
       },
-      remainingCoin: updatedUserData.esgCoin
+      remainingCoin: spent.balanceAfter,
     });
   } catch (error) {
     console.error('抽獎失敗:', error);

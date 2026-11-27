@@ -9,6 +9,26 @@ const {
 } = require('./seedRoster');
 // 測試帳號密碼的來源（開發環境可自動產生並存檔）
 const { resolveTestPassword, shouldSeedTestAccounts, PASSWORD_FILE, isProduction } = require('./devCredentials');
+const { COL } = require('./schema');
+const { ledgerEntry } = require('../lib/coins');
+
+/**
+ * 建立一個測試帳號：帳號、登入索引、期初餘額的總帳分錄一起寫。
+ * 以前只寫帳號本身——沒有登入索引，有餘額卻沒有總帳，資料檢查會整批報錯。
+ */
+async function createSeedUser(userId, data) {
+  const batch = db.batch();
+  batch.set(db.collection(COL.users).doc(userId), data);
+  batch.set(db.collection(COL.accountIndex).doc(String(data.account).toLowerCase()), {
+    userId, role: data.role, createdAt: admin.firestore.FieldValue.serverTimestamp(),
+  });
+  if (Number(data.esgCoin) > 0) {
+    batch.set(db.collection(COL.coinTx).doc(), ledgerEntry({
+      ownerId: userId, amount: Number(data.esgCoin), source: 'admin', reason: '測試帳號期初餘額', refType: 'seed',
+    }));
+  }
+  await batch.commit();
+}
 
 // ============================================================
 // 基礎資料（master data）
@@ -90,7 +110,7 @@ const REWARD_ITEMS = [
 const TEST_ACCOUNTS = [
   { email: 'dev@lunch-leftovers.local', displayName: '開發人員', role: 'admin', classId: 'cls-302' },
   { email: 'qa@lunch-leftovers.local', displayName: '測試人員', role: 'admin', classId: 'cls-302' },
-  { email: 'teacher@lunch-leftovers.local', displayName: '測試老師', role: 'teacher', classId: 'cls-302' },
+  { email: 'teacher@lunch-leftovers.local', displayName: '測試老師', role: 'teacher', classId: 'cls-302', grade: '3', className: '302' },
   { email: 'student@lunch-leftovers.local', displayName: '測試學生', role: 'student', esgCoin: 500, classId: 'cls-302', grade: '3', className: '302', seatNo: '30' }
 ];
 
@@ -135,7 +155,7 @@ async function seedTestAccounts(password) {
       } else {
         const userId = db.collection('users').doc().id;
 
-        await db.collection('users').doc(userId).set({
+        await createSeedUser(userId, {
           userId,
           email: account.email,
           displayName: account.displayName,
@@ -200,13 +220,18 @@ async function seedExtraTestAccounts(count, password) {
       } else {
         const userId = db.collection('users').doc().id;
 
-        await db.collection('users').doc(userId).set({
+        // 放在 305 班、座號 51 起：以前的 class-extra 是不存在的班級，名冊與資料檢查都對不上
+        await createSeedUser(userId, {
           userId,
           email,
+          account: email,
           displayName,
           passwordHash,
           esgCoin: 200,
-          classId: 'class-extra',
+          classId: 'cls-305',
+          grade: '3',
+          className: '305',
+          seatNo: String(50 + i),
           role: 'student',
           isActive: true,
           isTestAccount: true,

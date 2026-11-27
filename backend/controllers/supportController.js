@@ -17,7 +17,7 @@
  * （schoolId + date 是 dish_leftovers 索引的前綴）。
  *
  * 資料來源是 dish_leftovers（午餐長每次辨識/微調就即時更新），所以是當餐即時狀況。
- * 本功能只提供資訊，不發幣（個人發幣只有「吃完一餐」與「家長簽到」兩項）。
+ * 本功能只提供資訊，不發幣（個人發幣只有「拍餐盤」與「家長簽到」兩項）。
  */
 const { db } = require('../config/firebase');
 const { COL, SUPPORT } = require('../config/schema');

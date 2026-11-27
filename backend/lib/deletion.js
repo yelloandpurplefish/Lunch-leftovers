@@ -39,31 +39,30 @@ async function countWhere(collection, field, value) {
 
 /**
  * 班級的依賴。
- * 注意 meal_sessions / dish_leftovers / meal_checks 的 doc id 以 classId 開頭，
+ * 注意 meal_sessions / dish_leftovers 的 doc id 以 classId 開頭，
  * 但這裡仍用欄位查詢——doc id 前綴查詢在 Firestore 要用 range，可讀性差且易錯。
  */
 async function classDependencies(classId) {
-  const [users, sessions, leftovers, checks, devices] = await Promise.all([
+  const [users, sessions, leftovers, plates, devices] = await Promise.all([
     countWhere(COL.users, 'classId', classId),
     countWhere(COL.mealSessions, 'classId', classId),
     countWhere(COL.dishLeftovers, 'classId', classId),
-    countWhere(COL.mealChecks, 'classId', classId),
+    countWhere(COL.plateScans, 'classId', classId),
     countWhere(COL.devices, 'classId', classId),
   ]);
   return [
     { label: '名下的使用者（學生／導師）', count: users, hint: '請先改到其他班或刪除' },
     { label: '量測場次', count: sessions, hint: '歷史紀錄，刪班會讓統計失去依據' },
     { label: '各菜剩餘量紀錄', count: leftovers, hint: '班際支援與剩餘量曲線的資料來源' },
-    { label: '用餐檢查紀錄', count: checks, hint: '教師勾選的歷史' },
+    { label: '餐盤紀錄', count: plates, hint: '學生拍餐盤的歷史' },
     { label: '綁定的稱重模組', count: devices, hint: '請先解除綁定或刪除裝置' },
   ].filter((d) => d.count > 0);
 }
 
 /** 使用者的依賴。幣的總帳是稽核資料，有紀錄就不該讓它無聲消失。 */
 async function userDependencies(userId) {
-  const [coinTx, checks, plates, tasks, exchanges, signIns, boundParents] = await Promise.all([
+  const [coinTx, plates, tasks, exchanges, signIns, boundParents] = await Promise.all([
     countWhere(COL.coinTx, 'ownerId', userId),
-    countWhere(COL.mealChecks, 'studentId', userId),
     countWhere(COL.plateScans, 'userId', userId),
     countWhere(COL.taskRecords, 'userId', userId),
     countWhere(COL.exchangeRecords, 'userId', userId),
@@ -72,7 +71,6 @@ async function userDependencies(userId) {
   ]);
   return [
     { label: '幣的總帳分錄', count: coinTx, hint: '稽核資料，建議改用「停用」保留歷史' },
-    { label: '用餐檢查紀錄', count: checks, hint: '老師勾選過的紀錄' },
     { label: '餐盤辨識紀錄', count: plates, hint: '' },
     { label: '任務／問卷紀錄', count: tasks, hint: '' },
     { label: '兌換紀錄', count: exchanges, hint: '' },

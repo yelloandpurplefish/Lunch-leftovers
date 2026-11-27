@@ -1,6 +1,7 @@
 const { db, admin } = require('../config/firebase');
-const { COL, COIN_HOLDER_ROLES, ESG } = require('../config/schema');
+const { COIN_HOLDER_ROLES } = require('../config/schema');
 const { getShopState, closedReason } = require('../lib/shop');
+const { applyInTx } = require('../lib/coins');
 
 // 兌換物品
 // 使用 Firestore transaction 確保「檢查餘額 → 扣款 → 扣庫存」為原子操作，
@@ -64,22 +65,14 @@ const redeemItem = async (req, res) => {
         };
       }
 
-      transaction.update(userRef, {
-        [coinField]: admin.firestore.FieldValue.increment(-item.cost)
-      });
-
-      // 寫入幣別總帳，餘額才有稽核依據（見 lib/coins.js 的記帳規則）
-      transaction.set(db.collection(COL.coinTx).doc(), {
-        ownerType: 'user',
-        ownerId: userId,
-        coin: ESG,
-        source: null,               // 消耗沒有來源
-        amount: -item.cost,
+      // 扣幣與總帳走記帳層（同一個 transaction，餘額與總帳不會對不上）
+      applyInTx(transaction, {
+        userRef,
+        user: userData,
+        delta: -item.cost,
         reason: `兌換「${item.name}」`,
         refType: 'exchange',
         refId: itemRef.id,
-        date: new Date().toLocaleDateString('sv'),
-        createdAt: admin.firestore.FieldValue.serverTimestamp()
       });
 
       if (item.stock !== null && item.stock !== undefined) {

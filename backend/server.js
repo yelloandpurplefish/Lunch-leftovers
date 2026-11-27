@@ -14,10 +14,9 @@ const exchangeRoutes = require('./routes/exchange');
 const menuRoutes = require('./routes/menu');
 const leaderboardRoutes = require('./routes/leaderboard');
 const debugRoutes = require('./routes/debug');
-// 全班剩食紀錄（午餐長依序稱重）、學生個人餐盤辨識、教師逐生檢查
+// 全班剩食紀錄（午餐長依序稱重）、學生個人餐盤辨識
 const recordRoutes = require('./routes/record');
 const plateRoutes = require('./routes/plate');
-const mealCheckRoutes = require('./routes/mealCheck');
 const parentRoutes = require('./routes/parent');
 const supportRoutes = require('./routes/support');
 const statsRoutes = require('./routes/stats');
@@ -123,7 +122,6 @@ app.use('/api/menu', menuRoutes);
 app.use('/api/leaderboard', leaderboardRoutes);
 app.use('/api/record', recordRoutes);
 app.use('/api/plate', plateRoutes);
-app.use('/api/meal-check', mealCheckRoutes);
 app.use('/api/parent', parentRoutes);
 app.use('/api/support', supportRoutes);
 app.use('/api/stats', statsRoutes);

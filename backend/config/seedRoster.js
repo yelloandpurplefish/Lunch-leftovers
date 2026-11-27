@@ -13,6 +13,7 @@ const { admin, db } = require('./firebase');
 const { COL, ROLES, ALL_ROLES, COIN_HOLDER_ROLES, MENU_SLOTS } = require('./schema');
 const { today } = require('../lib/dates');
 const menuSheet = require('../lib/menuSheet');
+const { bindParent } = require('../lib/roster');
 
 const SCHOOL_ID = 'school-demo';
 const serverTime = () => admin.firestore.FieldValue.serverTimestamp();
@@ -212,27 +213,16 @@ async function seedDemoRoster(password) {
     }
   }
 
-  // 家長：綁定示範學生，並在學生身上回寫 parentUserId
+  // 家長：綁定示範學生（兩邊一起寫，見 lib/roster.js 的 bindParent）
   const student = await findByAccount(DEMO_PARENT.studentAccount);
   if (student) {
     const { id: parentId, created: isNew } = await upsertUser(DEMO_PARENT, passwordHash);
     if (isNew) created.push(`${DEMO_PARENT.account}(parent)`);
-    await db.collection(COL.users).doc(parentId).set({
-      boundStudentId: student.id,
-      studentBinding: {
-        grade: student.grade,
-        className: student.className,
-        seatNo: student.seatNo,
-        account: student.account,
-        studentId: student.id,
-        studentName: student.displayName,
-        classId: student.classId,
-      },
-    }, { merge: true });
-    await db.collection(COL.users).doc(student.id).set(
-      { parentUserId: parentId, parentName: DEMO_PARENT.displayName },
-      { merge: true }
-    );
+    const parent = (await db.collection(COL.users).doc(parentId).get()).data();
+    // 已經綁好了就不動：管理員可能改過綁定，啟動時不該蓋回去
+    if (!parent.boundStudentId && (!student.parentUserId || student.parentUserId === parentId)) {
+      await bindParent(parentId, student.id, null);
+    }
   }
 
   if (created.length) console.log(`  ✓ 示範名冊已建立：${created.join('、')}`);

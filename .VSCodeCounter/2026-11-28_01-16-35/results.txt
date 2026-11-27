@@ -1,0 +1,118 @@
+Date : 2026-11-28 01:16:35
+Directory : c:\Users\andyw\OneDrive\文件\android app\lunch-leftovers
+Total : 78 files,  17156 codes, 2075 comments, 2908 blanks, all 22139 lines
+
+Languages
++------------+------------+------------+------------+------------+------------+
+| language   | files      | code       | comment    | blank      | total      |
++------------+------------+------------+------------+------------+------------+
+| JavaScript |         61 |      8,970 |      1,847 |      1,215 |     12,032 |
+| JSON       |          5 |      4,032 |          0 |          4 |      4,036 |
+| Markdown   |          7 |      1,845 |          0 |        473 |      2,318 |
+| PostCSS    |          1 |      1,748 |        177 |      1,026 |      2,951 |
+| HTML       |          1 |        523 |         30 |        179 |        732 |
+| YAML       |          1 |         15 |          8 |          0 |         23 |
+| Docker     |          1 |         14 |         12 |         10 |         36 |
+| Ignore     |          1 |          9 |          1 |          1 |         11 |
++------------+------------+------------+------------+------------+------------+
+
+Directories
++-----------------------------------------------------------------------------------------------------+------------+------------+------------+------------+------------+
+| path                                                                                                | files      | code       | comment    | blank      | total      |
++-----------------------------------------------------------------------------------------------------+------------+------------+------------+------------+------------+
+| .                                                                                                   |         78 |     17,156 |      2,075 |      2,908 |     22,139 |
+| . (Files)                                                                                           |         15 |      6,934 |        492 |      1,924 |      9,350 |
+| backend                                                                                             |         62 |     10,198 |      1,572 |        978 |     12,748 |
+| backend (Files)                                                                                     |          5 |      4,085 |         65 |         97 |      4,247 |
+| backend\config                                                                                      |          5 |        753 |        223 |        118 |      1,094 |
+| backend\controllers                                                                                 |         16 |      3,361 |        561 |        438 |      4,360 |
+| backend\lib                                                                                         |         18 |      1,646 |        619 |        235 |      2,500 |
+| backend\middleware                                                                                  |          2 |        174 |         61 |         30 |        265 |
+| backend\routes                                                                                      |         16 |        179 |         43 |         60 |        282 |
+| scripts                                                                                             |          1 |         24 |         11 |          6 |         41 |
++-----------------------------------------------------------------------------------------------------+------------+------------+------------+------------+------------+
+
+Files
++-----------------------------------------------------------------------------------------------------+------------+------------+------------+------------+------------+
+| filename                                                                                            | language   | code       | comment    | blank      | total      |
++-----------------------------------------------------------------------------------------------------+------------+------------+------------+------------+------------+
+| c:\Users\andyw\OneDrive\文件\android app\lunch-leftovers\.dockerignore                                | Ignore     |          9 |          1 |          1 |         11 |
+| c:\Users\andyw\OneDrive\文件\android app\lunch-leftovers\DEPLOYMENT.md                                | Markdown   |        178 |          0 |         65 |        243 |
+| c:\Users\andyw\OneDrive\文件\android app\lunch-leftovers\DEVICE_API.md                                | Markdown   |        151 |          0 |         51 |        202 |
+| c:\Users\andyw\OneDrive\文件\android app\lunch-leftovers\FIREBASE_SETUP.md                            | Markdown   |        108 |          0 |         29 |        137 |
+| c:\Users\andyw\OneDrive\文件\android app\lunch-leftovers\README.md                                    | Markdown   |        196 |          0 |         59 |        255 |
+| c:\Users\andyw\OneDrive\文件\android app\lunch-leftovers\TESTING.md                                   | Markdown   |        360 |          0 |        116 |        476 |
+| c:\Users\andyw\OneDrive\文件\android app\lunch-leftovers\app.js                                       | JavaScript |      2,656 |        273 |        301 |      3,230 |
+| c:\Users\andyw\OneDrive\文件\android app\lunch-leftovers\backend\Dockerfile                           | Docker     |         14 |         12 |         10 |         36 |
+| c:\Users\andyw\OneDrive\文件\android app\lunch-leftovers\backend\README.md                            | Markdown   |        159 |          0 |         60 |        219 |
+| c:\Users\andyw\OneDrive\文件\android app\lunch-leftovers\backend\config\devCredentials.js             | JavaScript |         72 |         18 |         13 |        103 |
+| c:\Users\andyw\OneDrive\文件\android app\lunch-leftovers\backend\config\firebase.js                   | JavaScript |         69 |         10 |         10 |         89 |
+| c:\Users\andyw\OneDrive\文件\android app\lunch-leftovers\backend\config\schema.js                     | JavaScript |        134 |        125 |         29 |        288 |
+| c:\Users\andyw\OneDrive\文件\android app\lunch-leftovers\backend\config\seed.js                       | JavaScript |        276 |         37 |         45 |        358 |
+| c:\Users\andyw\OneDrive\文件\android app\lunch-leftovers\backend\config\seedRoster.js                 | JavaScript |        202 |         33 |         21 |        256 |
+| c:\Users\andyw\OneDrive\文件\android app\lunch-leftovers\backend\controllers\adminController.js       | JavaScript |        926 |        159 |        121 |      1,206 |
+| c:\Users\andyw\OneDrive\文件\android app\lunch-leftovers\backend\controllers\authController.js        | JavaScript |        270 |         45 |         36 |        351 |
+| c:\Users\andyw\OneDrive\文件\android app\lunch-leftovers\backend\controllers\debugController.js       | JavaScript |         89 |          7 |         11 |        107 |
+| c:\Users\andyw\OneDrive\文件\android app\lunch-leftovers\backend\controllers\deviceController.js      | JavaScript |        141 |         39 |         16 |        196 |
+| c:\Users\andyw\OneDrive\文件\android app\lunch-leftovers\backend\controllers\exchangeController.js    | JavaScript |        171 |         10 |         26 |        207 |
+| c:\Users\andyw\OneDrive\文件\android app\lunch-leftovers\backend\controllers\leaderboardController.js | JavaScript |         78 |         14 |         13 |        105 |
+| c:\Users\andyw\OneDrive\文件\android app\lunch-leftovers\backend\controllers\lotteryController.js     | JavaScript |        154 |          6 |         15 |        175 |
+| c:\Users\andyw\OneDrive\文件\android app\lunch-leftovers\backend\controllers\menuController.js        | JavaScript |         60 |         24 |         13 |         97 |
+| c:\Users\andyw\OneDrive\文件\android app\lunch-leftovers\backend\controllers\parentController.js      | JavaScript |        152 |         25 |         18 |        195 |
+| c:\Users\andyw\OneDrive\文件\android app\lunch-leftovers\backend\controllers\plateController.js       | JavaScript |        148 |         28 |         18 |        194 |
+| c:\Users\andyw\OneDrive\文件\android app\lunch-leftovers\backend\controllers\recordController.js      | JavaScript |        364 |         49 |         45 |        458 |
+| c:\Users\andyw\OneDrive\文件\android app\lunch-leftovers\backend\controllers\statsController.js       | JavaScript |        112 |         15 |         16 |        143 |
+| c:\Users\andyw\OneDrive\文件\android app\lunch-leftovers\backend\controllers\supportController.js     | JavaScript |        153 |         47 |         19 |        219 |
+| c:\Users\andyw\OneDrive\文件\android app\lunch-leftovers\backend\controllers\taskController.js        | JavaScript |        106 |         19 |         16 |        141 |
+| c:\Users\andyw\OneDrive\文件\android app\lunch-leftovers\backend\controllers\technicianController.js  | JavaScript |        402 |         66 |         51 |        519 |
+| c:\Users\andyw\OneDrive\文件\android app\lunch-leftovers\backend\controllers\userController.js        | JavaScript |         35 |          8 |          4 |         47 |
+| c:\Users\andyw\OneDrive\文件\android app\lunch-leftovers\backend\lib\bmi.js                           | JavaScript |        107 |         43 |         17 |        167 |
+| c:\Users\andyw\OneDrive\文件\android app\lunch-leftovers\backend\lib\bucketTare.js                    | JavaScript |        107 |         39 |         16 |        162 |
+| c:\Users\andyw\OneDrive\文件\android app\lunch-leftovers\backend\lib\coins.js                         | JavaScript |         88 |         30 |         10 |        128 |
+| c:\Users\andyw\OneDrive\文件\android app\lunch-leftovers\backend\lib\dailyMenu.js                     | JavaScript |         52 |         19 |          8 |         79 |
+| c:\Users\andyw\OneDrive\文件\android app\lunch-leftovers\backend\lib\dates.js                         | JavaScript |         35 |         13 |          9 |         57 |
+| c:\Users\andyw\OneDrive\文件\android app\lunch-leftovers\backend\lib\deletion.js                      | JavaScript |         73 |         38 |          8 |        119 |
+| c:\Users\andyw\OneDrive\文件\android app\lunch-leftovers\backend\lib\indexCheck.js                    | JavaScript |        138 |         41 |         20 |        199 |
+| c:\Users\andyw\OneDrive\文件\android app\lunch-leftovers\backend\lib\menuSheet.js                     | JavaScript |        163 |         45 |         23 |        231 |
+| c:\Users\andyw\OneDrive\文件\android app\lunch-leftovers\backend\lib\plateModel.js                    | JavaScript |         60 |         42 |          9 |        111 |
+| c:\Users\andyw\OneDrive\文件\android app\lunch-leftovers\backend\lib\plates.js                        | JavaScript |        127 |         30 |         11 |        168 |
+| c:\Users\andyw\OneDrive\文件\android app\lunch-leftovers\backend\lib\rateLimit.js                     | JavaScript |         45 |         18 |          8 |         71 |
+| c:\Users\andyw\OneDrive\文件\android app\lunch-leftovers\backend\lib\roster.js                        | JavaScript |        139 |         49 |         19 |        207 |
+| c:\Users\andyw\OneDrive\文件\android app\lunch-leftovers\backend\lib\runtimeFlags.js                  | JavaScript |         20 |         26 |          5 |         51 |
+| c:\Users\andyw\OneDrive\文件\android app\lunch-leftovers\backend\lib\scaleReadings.js                 | JavaScript |        113 |         33 |         16 |        162 |
+| c:\Users\andyw\OneDrive\文件\android app\lunch-leftovers\backend\lib\scoring.js                       | JavaScript |         47 |         19 |          8 |         74 |
+| c:\Users\andyw\OneDrive\文件\android app\lunch-leftovers\backend\lib\settings.js                      | JavaScript |         99 |         43 |         15 |        157 |
+| c:\Users\andyw\OneDrive\文件\android app\lunch-leftovers\backend\lib\shop.js                          | JavaScript |         80 |         36 |         13 |        129 |
+| c:\Users\andyw\OneDrive\文件\android app\lunch-leftovers\backend\lib\studentSheet.js                  | JavaScript |        153 |         55 |         20 |        228 |
+| c:\Users\andyw\OneDrive\文件\android app\lunch-leftovers\backend\middleware\auth.js                   | JavaScript |        120 |         40 |         18 |        178 |
+| c:\Users\andyw\OneDrive\文件\android app\lunch-leftovers\backend\middleware\deviceAuth.js             | JavaScript |         54 |         21 |         12 |         87 |
+| c:\Users\andyw\OneDrive\文件\android app\lunch-leftovers\backend\package-lock.json                    | JSON       |      3,714 |          0 |          1 |      3,715 |
+| c:\Users\andyw\OneDrive\文件\android app\lunch-leftovers\backend\package.json                         | JSON       |         27 |          0 |          1 |         28 |
+| c:\Users\andyw\OneDrive\文件\android app\lunch-leftovers\backend\routes\admin.js                      | JavaScript |         39 |         11 |         10 |         60 |
+| c:\Users\andyw\OneDrive\文件\android app\lunch-leftovers\backend\routes\auth.js                       | JavaScript |          8 |          1 |          3 |         12 |
+| c:\Users\andyw\OneDrive\文件\android app\lunch-leftovers\backend\routes\debug.js                      | JavaScript |          6 |          2 |          3 |         11 |
+| c:\Users\andyw\OneDrive\文件\android app\lunch-leftovers\backend\routes\device.js                     | JavaScript |         19 |          6 |          5 |         30 |
+| c:\Users\andyw\OneDrive\文件\android app\lunch-leftovers\backend\routes\exchange.js                   | JavaScript |          9 |          1 |          3 |         13 |
+| c:\Users\andyw\OneDrive\文件\android app\lunch-leftovers\backend\routes\leaderboard.js                | JavaScript |          6 |          1 |          3 |         10 |
+| c:\Users\andyw\OneDrive\文件\android app\lunch-leftovers\backend\routes\lottery.js                    | JavaScript |          8 |          0 |          3 |         11 |
+| c:\Users\andyw\OneDrive\文件\android app\lunch-leftovers\backend\routes\menu.js                       | JavaScript |          6 |          1 |          3 |         10 |
+| c:\Users\andyw\OneDrive\文件\android app\lunch-leftovers\backend\routes\parent.js                     | JavaScript |          9 |          1 |          4 |         14 |
+| c:\Users\andyw\OneDrive\文件\android app\lunch-leftovers\backend\routes\plate.js                      | JavaScript |         11 |          1 |          4 |         16 |
+| c:\Users\andyw\OneDrive\文件\android app\lunch-leftovers\backend\routes\record.js                     | JavaScript |         13 |          5 |          3 |         21 |
+| c:\Users\andyw\OneDrive\文件\android app\lunch-leftovers\backend\routes\stats.js                      | JavaScript |          7 |          1 |          3 |         11 |
+| c:\Users\andyw\OneDrive\文件\android app\lunch-leftovers\backend\routes\support.js                    | JavaScript |          7 |          4 |          3 |         14 |
+| c:\Users\andyw\OneDrive\文件\android app\lunch-leftovers\backend\routes\task.js                       | JavaScript |          6 |          4 |          3 |         13 |
+| c:\Users\andyw\OneDrive\文件\android app\lunch-leftovers\backend\routes\technician.js                 | JavaScript |         19 |          4 |          4 |         27 |
+| c:\Users\andyw\OneDrive\文件\android app\lunch-leftovers\backend\routes\user.js                       | JavaScript |          6 |          0 |          3 |          9 |
+| c:\Users\andyw\OneDrive\文件\android app\lunch-leftovers\backend\server.js                            | JavaScript |        171 |         53 |         25 |        249 |
+| c:\Users\andyw\OneDrive\文件\android app\lunch-leftovers\firebase-config.js                           | JavaScript |          6 |          3 |          2 |         11 |
+| c:\Users\andyw\OneDrive\文件\android app\lunch-leftovers\firebase.json                                | JSON       |         10 |          0 |          1 |         11 |
+| c:\Users\andyw\OneDrive\文件\android app\lunch-leftovers\firestore.indexes.json                       | JSON       |        251 |          0 |          1 |        252 |
+| c:\Users\andyw\OneDrive\文件\android app\lunch-leftovers\index.html                                   | HTML       |        523 |         30 |        179 |        732 |
+| c:\Users\andyw\OneDrive\文件\android app\lunch-leftovers\package.json                                 | JSON       |         30 |          0 |          0 |         30 |
+| c:\Users\andyw\OneDrive\文件\android app\lunch-leftovers\render.yaml                                  | YAML       |         15 |          8 |          0 |         23 |
+| c:\Users\andyw\OneDrive\文件\android app\lunch-leftovers\scripts\seed-test-users.js                   | JavaScript |         24 |         11 |          6 |         41 |
+| c:\Users\andyw\OneDrive\文件\android app\lunch-leftovers\style.css                                    | PostCSS    |      1,748 |        177 |      1,026 |      2,951 |
+| c:\Users\andyw\OneDrive\文件\android app\lunch-leftovers\專案架構書.md                                     | Markdown   |        693 |          0 |         93 |        786 |
+| Total                                                                                               |            |     17,156 |      2,075 |      2,908 |     22,139 |
++-----------------------------------------------------------------------------------------------------+------------+------------+------------+------------+------------+

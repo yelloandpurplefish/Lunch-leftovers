@@ -573,7 +573,7 @@ async function apiRequest(endpoint, method = 'GET', body = null) {
 // ============================================================
 //
 // 排的是這段期間「獲得」的 ESG 幣（花掉不會掉名次），
-// 同一列附上各來源，看得出幣是從哪裡來的。
+// 同一列附上各來源（拍餐盤、家長簽到、管理員調整），看得出幣是從哪裡來的。
 
 async function loadHeroBoard() {
     const tbody = document.getElementById('heroBoardList');
@@ -595,8 +595,9 @@ async function loadHeroBoard() {
         }
 
         const medal = (r) => (r === 1 ? '🥇' : r === 2 ? '🥈' : r === 3 ? '🥉' : r);
-        const sources = (s) => [['營養', s.E], ['減碳', s.S], ['感謝', s.G]]
-            .filter(([, n]) => n > 0).map(([k, n]) => `${k} ${n}`).join('、') || '—';
+        const names = data.sources || {};
+        const sources = (s) => Object.entries(s)
+            .filter(([, n]) => n > 0).map(([k, n]) => `${escapeText(names[k] || k)} ${n}`).join('、') || '—';
         tbody.innerHTML = data.rows.map((r) => `
             <tr class="${r.me ? 'my-rank-row' : ''}">
                 <td>${medal(r.rank)}</td>
@@ -657,10 +658,7 @@ async function runStudentSync(dryRun) {
             result.textContent = (dryRun ? '🧪 ' : '✅ ') + data.message;
         }
         renderSyncReport(data);
-        if (!dryRun) {
-            await loadAdminOverview();
-            await loadAdminUsers();
-        }
+        if (!dryRun) await loadAdminHome();
     } catch (error) {
         if (result) {
             result.className = 'verify-result error';
@@ -975,6 +973,16 @@ async function loadWeighQueue() {
         if (!data.success) {
             box.innerHTML = `<p class="field-hint">${escapeText(data.message || '尚未開始今日紀錄')}</p>`;
             stopScalePolling();
+            return;
+        }
+        if (data.status === 'none') {
+            // 還沒開始：不輪詢秤，也不顯示即時讀數
+            box.innerHTML = `<p class="field-hint">${data.menuReady
+                ? '按「開始今日紀錄」後，這裡會依序列出要量的菜。'
+                : '今天沒有菜單（或不供餐），不需要稱重。'}</p>`;
+            stopScalePolling();
+            const live = document.getElementById('scaleLive');
+            if (live) live.classList.add('hidden');
             return;
         }
         renderWeighQueue(data);
@@ -1327,48 +1335,6 @@ function describeDeps(data) {
         + deps.map((d) => `· ${d.label}：${d.count} 筆`).join('\n');
 }
 
-async function deleteClassRow(el) {
-    const classId = el.dataset.classId;
-    const label = el.dataset.label || classId;
-    if (!classId) return;
-    if (!confirm(`確定刪除「${label}」？\n\nclassId：${classId}\n`
-        + '只有在這個班沒有任何學生與歷史紀錄時才刪得掉。')) return;
-    el.disabled = true;
-    try {
-        const data = await apiRequest(`/admin/classes/${encodeURIComponent(classId)}`, 'DELETE');
-        alert(data.success ? '✅ ' + data.message : '⚠️ ' + describeDeps(data));
-        if (data.success) await loadAdminClasses();
-    } catch (error) {
-        alert('刪除失敗：' + (error.message || '請稍後再試'));
-    } finally {
-        el.disabled = false;
-    }
-}
-
-async function deleteUserRow(el) {
-    const userId = el.dataset.userId;
-    const label = el.dataset.label || userId;
-    if (!userId) return;
-    if (!confirm(`確定刪除帳號「${label}」？\n\n`
-        + '有活動紀錄（幣的總帳、用餐檢查…）的帳號刪不掉，\n'
-        + '那種情況請改用「停用」，歷史資料才留得住。')) return;
-    el.disabled = true;
-    try {
-        const data = await apiRequest(`/admin/users/${encodeURIComponent(userId)}`, 'DELETE');
-        if (data.success) {
-            alert('✅ ' + data.message);
-            await loadAdminUsers();
-        } else {
-            alert('⚠️ ' + describeDeps(data)
-                + (data.suggestion === 'deactivate' ? '\n\n→ 建議改按「停用」' : ''));
-        }
-    } catch (error) {
-        alert('刪除失敗：' + (error.message || '請稍後再試'));
-    } finally {
-        el.disabled = false;
-    }
-}
-
 async function deleteDeviceRow(el) {
     const deviceId = el.dataset.deviceId;
     if (!deviceId) return;
@@ -1490,14 +1456,17 @@ function renderMenuReport(data) {
 }
 
 // ============================================================
-// 管理員面板：可調參數（感謝額度、建議攝取）
+// 管理員面板：可調參數（拍餐盤的 ESG 幣、建議攝取）
 // ============================================================
 
 let coinRulesState = { values: null, defaults: null };
 
 /** 參數說明：光看鍵名沒人知道要填什麼，一律附中文與單位。 */
 const RULE_LABELS = {
-    'gratitude.mealFinishedG': ['老師確認完食 → ESG（感謝來源）', '幣/人/餐'],
+    'plate.rewards.clean': ['光盤（剩 0–3%）', 'ESG'],
+    'plate.rewards.little': ['剩一點（4–20%）', 'ESG'],
+    'plate.rewards.half': ['剩不少（21–49%）', 'ESG'],
+    'plate.rewards.most': ['剩一半以上（50% 以上）', 'ESG'],
     'intake.normalKcal': ['體位正常的建議熱量（一餐）', 'kcal'],
     'intake.adjustKcal': ['過重往下／過輕往上調整', 'kcal'],
     'intake.fallbackUnderweightBmi': ['查無年齡性別時的過輕界線', 'BMI'],
@@ -1523,10 +1492,10 @@ function renderCoinRules() {
     const d = coinRulesState.defaults;
 
     const scalar = Object.keys(RULE_LABELS).map((path) => {
-        const [g, k] = path.split('.');
         // 取不到就退回預設值，否則面板會整塊炸掉
-        const cur = (v[g] || {})[k];
-        const def = (d[g] || {})[k];
+        const at = (obj) => path.split('.').reduce((o, k) => (o && typeof o === 'object' ? o[k] : undefined), obj);
+        const cur = at(v);
+        const def = at(d);
         return ruleInput(path, cur === undefined ? def : cur, def);
     }).join('');
 
@@ -1535,10 +1504,12 @@ function renderCoinRules() {
 
 /** 從表單讀回使用者填的值，組成後端要的巢狀結構。 */
 function collectCoinRules() {
-    const values = { gratitude: {}, intake: {} };
+    const values = {};
     document.querySelectorAll('#coinRulesForm input[data-rule]').forEach((el) => {
-        const [g, k] = el.dataset.rule.split('.');
-        values[g][k] = Number(el.value);
+        const keys = el.dataset.rule.split('.');
+        let node = values;
+        keys.slice(0, -1).forEach((k) => { node[k] = node[k] || {}; node = node[k]; });
+        node[keys[keys.length - 1]] = Number(el.value);
     });
     return values;
 }
@@ -1561,7 +1532,7 @@ async function loadCoinRules() {
 
 async function saveCoinRules() {
     const result = document.getElementById('coinRulesResult');
-    if (!confirm('確定儲存？之後老師勾選吃完時就用新的額度（已發出的幣不會重算）。')) return;
+    if (!confirm('確定儲存？之後的餐盤結果就用新的額度（已發出的幣不會重算）。')) return;
     try {
         const data = await apiRequest('/admin/coin-rules', 'PUT',
             { values: collectCoinRules() });
@@ -1991,15 +1962,17 @@ function applyRoleView() {
     });
 
     // 每個區塊由誰看得到。未登入時沒有任何標籤，全部都會被關掉。
+    // 管理員不再看午餐長／老師專區：任何班的稱重與餐盤都在管理員專區的「班級」裡操作。
     const panels = [
         ['home', ['student', 'teacher', 'admin']],
-        ['plateCard', ['student', 'admin']],
+        ['balanceStrip', ['student']],
+        ['plateCard', ['student']],
         ['ranking', ['student', 'teacher', 'admin']],
         ['trend', ['student', 'teacher', 'admin']],
-        ['shop', ['student', 'admin']],
-        ['survey', ['student', 'admin']],
-        ['leader', ['lunch_leader', 'admin']],
-        ['teacher', ['teacher', 'admin']],
+        ['shop', ['student']],
+        ['survey', ['student']],
+        ['leader', ['lunch_leader']],
+        ['teacher', ['teacher']],
         ['adminZone', ['admin']],
         ['parentZone', ['parent']],
         ['techZone', ['technician', 'admin']],
@@ -2042,14 +2015,13 @@ function applyRoleView() {
 const ROLE_PANEL_ORDER = {
     // 學生兼午餐長：紀錄 →（紀錄完最常接著找別班補菜）支援 → 其餘學生區塊
     lunch_leader: ['leader', 'supportTaskCard', 'home', 'shop', 'ranking', 'trend', 'survey'],
-    // 老師：逐生檢查是每天的固定動作
+    // 老師：先看本班今天的餐盤結果
     teacher: ['teacher', 'home', 'supportTaskCard', 'ranking', 'trend'],
     // 學生：看自己的幣與午餐狀況，然後才是兌換
     student: ['home', 'supportTaskCard', 'shop', 'ranking', 'trend', 'survey'],
     parent: ['parentZone'],
     technician: ['techZone'],
-    admin: ['adminZone', 'leader', 'teacher', 'supportTaskCard', 'techZone',
-            'home', 'ranking', 'trend', 'shop', 'survey'],
+    admin: ['adminZone', 'techZone', 'home', 'supportTaskCard', 'ranking', 'trend'],
 };
 
 /** 底部導覽也跟著同一套優先順序，避免畫面順序與導覽順序不一致。 */
@@ -2093,24 +2065,18 @@ async function loadRoleData() {
         return;   // 技術員只管硬體，不載入學生相關資料
     }
     if (role === 'admin') {
-        await loadAdminOverview();
-        await loadAdminClasses();
+        // 各分頁的資料在切到那一頁時才載入（見 admin.js）
+        await loadAdminHome();
         await loadDevices();
-        await loadCoinRules();
-        await loadShopState();
-        await loadBucketTare();
     }
-    if (role === 'teacher' || role === 'admin') {
-        await loadCheckRoster();
+    if (role === 'teacher') {
+        await loadClassPlates();
     }
-    if (isLeader || role === 'admin') {
+    if (isLeader) {
         await loadRecordToday();
         await loadWeighQueue();
     }
     if (role === 'student') {
-        await loadMyMealStatus();
-    }
-    if (role === 'student' || role === 'admin') {
         await loadPlateToday();
     }
     await loadSupportDishes();
@@ -2121,124 +2087,58 @@ async function loadRoleData() {
 }
 
 // ============================================================
-// 學生：今日午餐狀況（唯讀，吃完由老師確認）
+// 老師：本班餐盤結果（唯讀）
 // ============================================================
+//
+// 「今天吃得怎麼樣」以學生自己拍的餐盤為準，老師不再逐生勾選。
+// 這裡只讓老師看得到全班狀況；辨識錯了由管理員更正。
 
-async function loadMyMealStatus() {
-    const box = document.getElementById('myMealStatus');
-    if (!box) return;
-    try {
-        const data = await apiRequest('/meal-check/mine?range=week', 'GET');
-        // 獎勵額度由後端帶回。G 幣的額度在開發者面板可調，
-        // 寫死在 HTML 裡會在校方調整後變成錯的說明。
-        const hint = document.getElementById('mealRewardHint');
-        const rw = data && data.rewardPerStudent;
-        if (hint && rw) {
-            const total = (rw.E || 0) + (rw.S || 0) + (rw.G || 0);
-            hint.textContent = '吃完自己的部分由老師在「檢查清單」確認，確認後自動獲得 '
-                + `ESG 幣 +${total}（營養 ${rw.E || 0}、減碳 ${rw.S || 0}、感謝 ${rw.G || 0}）。`;
-        }
-        if (!data.success) {
-            box.innerHTML = '<p>無法載入用餐紀錄</p>';
-            return;
-        }
-        const todayStr = new Date().toLocaleDateString('sv');
-        const todayRow = (data.records || []).find((r) => r.date === todayStr);
-        const state = !todayRow
-            ? '<span class="status-pending">⏳ 老師尚未確認</span>'
-            : todayRow.finished
-                ? `<span class="status-ok">✅ 今天吃完了，已獲得 ESG 幣 +${((rw && (rw.E || 0) + (rw.S || 0) + (rw.G || 0)) || '')}</span>`
-                : '<span class="status-warn">⚠️ 今天記錄為沒吃完</span>';
-
-        box.innerHTML = `
-            <p>${state}</p>
-            <p class="field-hint">近 ${data.stats.days} 天吃完 ${data.stats.finishedDays} 天（${data.stats.rate}%）</p>
-        `;
-    } catch (error) {
-        box.innerHTML = '<p>無法載入用餐紀錄</p>';
-    }
+/** 級距 → 顏色標記（光盤綠、剩一點淺綠、剩不少與一半以上橘）。 */
+function plateBadge(scan) {
+    if (!scan) return '<span class="badge badge-muted">還沒拍</span>';
+    return `<span class="badge badge-${escapeAttr(scan.level)}">${escapeText(scan.label)}</span>`;
 }
 
-// ============================================================
-// 老師：每日逐生檢查「吃完他的部分」
-// ============================================================
-
-async function loadCheckRoster() {
-    const list = document.getElementById('checkRoster');
-    const summaryBox = document.getElementById('checkSummary');
+async function loadClassPlates() {
+    const list = document.getElementById('classPlateList');
+    const summary = document.getElementById('classPlateSummary');
+    const dateInput = document.getElementById('teacherPlateDate');
     if (!list) return;
-    list.innerHTML = '<p>載入中...</p>';
+    if (dateInput && !dateInput.value) dateInput.value = new Date().toLocaleDateString('sv');
+    const date = dateInput ? dateInput.value : '';
     try {
-        const data = await apiRequest('/meal-check/roster', 'GET');
+        const data = await apiRequest('/plate/class' + (date ? `?date=${encodeURIComponent(date)}` : ''), 'GET');
         if (!data.success) {
-            list.innerHTML = `<p>${data.message || '載入失敗'}</p>`;
+            list.innerHTML = `<p class="field-hint">${escapeText(data.message || '載入失敗')}</p>`;
+            if (summary) summary.innerHTML = '';
             return;
         }
-        renderCheckSummary(data.summary, data.className, data.date);
-
+        const s = data.summary || {};
+        const label = (lv) => ((data.tiers || []).find((t) => t.level === lv) || {}).label || lv;
+        if (summary) {
+            summary.innerHTML = `
+                <div class="stat"><span class="stat-n">${s.scanned || 0}<small>/${s.total || 0}</small></span><span>已拍</span></div>
+                ${['clean', 'little', 'half', 'most'].map((lv) => `
+                <div class="stat stat-${lv}"><span class="stat-n">${s[lv] || 0}</span><span>${escapeText(label(lv))}</span></div>`).join('')}`;
+        }
         if (!data.rows.length) {
-            list.innerHTML = '<p>這個班級還沒有學生註冊</p>';
+            list.innerHTML = '<p class="field-hint">這個班級還沒有學生</p>';
             return;
         }
-        list.innerHTML = data.rows.map((r) => `
-            <div class="check-row ${r.finished ? 'done' : ''}">
-                <span class="check-seat">${r.seatNo || '--'}</span>
-                <span class="check-name">${escapeText(r.displayName)}${r.isLunchLeader ? '（午餐長）' : ''}</span>
-                <button data-action="toggleCheck"
-                        data-student-id="${r.studentId}"
-                        data-finished="${r.finished ? 'false' : 'true'}"
-                        class="${r.finished ? 'check-btn done' : 'check-btn'}">
-                    ${r.finished ? '✅ 已吃完' : '勾選吃完'}
-                </button>
-            </div>
-        `).join('');
-        if (summaryBox) summaryBox.dataset.className = data.className || '';
+        list.innerHTML = `
+            <div class="table-scroll"><table class="data-table">
+                <thead><tr><th>座號</th><th>姓名</th><th>結果</th><th class="num">剩餘</th></tr></thead>
+                <tbody>${data.rows.map((r) => `
+                    <tr>
+                        <td>${escapeText(r.seatNo || '—')}</td>
+                        <td>${escapeText(r.displayName)}${r.isLunchLeader ? ' <span class="badge badge-leader">午餐長</span>' : ''}</td>
+                        <td>${plateBadge(r.scan)}</td>
+                        <td class="num">${r.scan ? r.scan.leftoverPct + '%' : '—'}</td>
+                    </tr>`).join('')}
+                </tbody>
+            </table></div>`;
     } catch (error) {
-        list.innerHTML = '<p>載入失敗，請稍後再試</p>';
-    }
-}
-
-function renderCheckSummary(summary, className, date) {
-    const box = document.getElementById('checkSummary');
-    if (!box || !summary) return;
-    box.innerHTML = `
-        <p><strong>${className || ''} 班</strong>　${date || ''}</p>
-        <p>已吃完 <strong>${summary.finished}</strong> / ${summary.total} 人
-           （完成率 ${summary.finishedRate}%）　未勾選 ${summary.unchecked} 人</p>
-    `;
-}
-
-async function toggleCheck(el) {
-    const studentId = el.dataset.studentId;
-    const finished = el.dataset.finished === 'true';
-    el.disabled = true;
-    try {
-        const data = await apiRequest('/meal-check/toggle', 'POST', { studentId, finished });
-        if (!data.success) {
-            alert(data.message || '勾選失敗');
-            return;
-        }
-        renderCheckSummary(data.summary);
-        await loadCheckRoster();
-    } catch (error) {
-        alert('勾選失敗：' + (error.message || '請稍後再試'));
-    } finally {
-        el.disabled = false;
-    }
-}
-
-async function finishAllChecks() {
-    if (!confirm('確定把全班都標記為吃完？（已勾選的不會重複發幣）')) return;
-    try {
-        const data = await apiRequest('/meal-check/finish-all', 'POST', {});
-        if (!data.success) {
-            alert(data.message || '操作失敗');
-            return;
-        }
-        alert(data.message);
-        await loadCheckRoster();
-    } catch (error) {
-        alert('操作失敗：' + (error.message || '請稍後再試'));
+        list.innerHTML = '<p class="field-hint">載入失敗，請稍後再試</p>';
     }
 }
 
@@ -2358,13 +2258,13 @@ function downscaleImage(file, maxSide = 1024) {
 }
 
 // ============================================================
-// 學生：拍自己的餐盤（一張照片 → 剩多少 → 回饋）
+// 學生：今日午餐（拍自己的餐盤 → 剩多少 → 回饋與 ESG 幣）
 // ============================================================
 //
 // 辨識在後端跑（模型端點見 backend/lib/plateModel.js）。照片只用來辨識，不會存下來。
-// 拍餐盤目前只給回饋、不發 ESG 幣。
+// 一天只能拍一次；結果有誤請找管理員更正。
 
-let plateState = { served: false, ready: false };
+let plateState = { served: false, ready: false, scanned: false };
 
 async function loadPlateToday() {
     const box = document.getElementById('plateResult');
@@ -2375,25 +2275,52 @@ async function loadPlateToday() {
             box.innerHTML = `<p class="field-hint">${escapeText(data.message || '載入失敗')}</p>`;
             return;
         }
-        plateState = { served: Boolean(data.served), ready: Boolean(data.model && data.model.ready) };
+        renderPlateTiers(data.tiers || []);
+        renderPlateRecent(data.stats);
         renderPlate(data.scan, data);
     } catch (error) {
         box.innerHTML = '<p class="field-hint">載入失敗</p>';
     }
 }
 
+/** 四級與各自的 ESG 幣，拍之前就看得到規則。 */
+function renderPlateTiers(tiers) {
+    const box = document.getElementById('plateTiers');
+    if (!box || !tiers.length) return;
+    box.innerHTML = tiers.map((t) => `
+        <div class="tier tier-${escapeAttr(t.level)}">
+            <span class="tier-label">${escapeText(t.label)}</span>
+            <span class="tier-range">${t.minPct}–${t.maxPct}%</span>
+            <span class="tier-reward">+${t.reward}</span>
+        </div>`).join('');
+}
+
+function renderPlateRecent(stats) {
+    const el = document.getElementById('plateRecent');
+    if (!el || !stats) return;
+    el.textContent = stats.scannedDays
+        ? `近 ${stats.days} 天拍了 ${stats.scannedDays} 天，光盤 ${stats.cleanDays} 天`
+        : '';
+}
+
 function renderPlate(scan, ctx) {
     const box = document.getElementById('plateResult');
     const btn = document.getElementById('plateBtn');
     if (!box) return;
+    plateState = {
+        served: Boolean(ctx.served),
+        ready: Boolean(ctx.model && ctx.model.ready),
+        scanned: Boolean(scan),
+    };
 
-    const blocked = !ctx.served
-        ? '今天沒有供餐，不需要拍餐盤。'
-        : (!ctx.model || !ctx.model.ready) ? `⚠️ ${(ctx.model && ctx.model.note) || '辨識模型尚未接上'}，暫時不能拍。` : '';
+    let blocked = '';
+    if (scan) blocked = '今天已經拍過了。結果有誤請找管理員更正。';
+    else if (!ctx.served) blocked = '今天沒有供餐，不需要拍餐盤。';
+    else if (!plateState.ready) blocked = `⚠️ ${(ctx.model && ctx.model.note) || '辨識模型尚未接上'}，暫時不能拍。`;
 
     if (btn) {
         btn.disabled = Boolean(blocked);
-        btn.textContent = scan ? '📷 重拍' : '📷 拍餐盤';
+        btn.textContent = scan ? '✅ 今天已拍' : '📷 拍餐盤';
     }
 
     if (!scan) {
@@ -2404,17 +2331,17 @@ function renderPlate(scan, ctx) {
     const f = scan.feedback || {};
     box.innerHTML = `
         <div class="plate-feedback ${escapeAttr(f.level || '')}">
-            <p class="plate-title">${escapeText(f.title || '')}</p>
+            <p class="plate-title">${escapeText(f.title || '')}
+                ${scan.coinsAwarded ? `<span class="plate-coins">ESG +${scan.coinsAwarded}</span>` : ''}</p>
             <p>${escapeText(f.message || '')}</p>
             <p class="field-hint">剩約 ${scan.leftoverPct}%（${escapeText(scan.label || '')}）
-                ${scan.attempts > 1 ? `　今天拍了 ${scan.attempts} 次` : ''}
+                ${scan.source === 'admin' ? '　管理員已更正' : ''}
                 ${scan.stub ? '　<strong>（開發用假結果，模型尚未接上）</strong>' : ''}</p>
-        </div>
-        ${blocked ? `<p class="field-hint">${escapeText(blocked)}</p>` : ''}`;
+        </div>`;
 }
 
 function capturePlate(el) {
-    if (!plateState.served || !plateState.ready) return;
+    if (!plateState.served || !plateState.ready || plateState.scanned) return;
     const input = document.createElement('input');
     input.type = 'file';
     input.accept = 'image/*';
@@ -2422,7 +2349,7 @@ function capturePlate(el) {
     input.addEventListener('change', async () => {
         const file = input.files && input.files[0];
         if (!file) return;
-        const original = el.textContent;
+        if (!confirm('一天只能拍一次，確定用這張照片嗎？')) return;
         el.disabled = true;
         el.textContent = '辨識中…';
         try {
@@ -2430,19 +2357,19 @@ function capturePlate(el) {
             const data = await apiRequest('/plate/scan', 'POST', { image });
             if (!data.success) {
                 alert(data.message || '辨識失敗');
+                await loadPlateToday();
                 return;
             }
             renderPlate(data.scan, { served: true, model: data.model });
+            await loadUserData();
+            await loadPlateToday();
         } catch (error) {
             alert('辨識失敗：' + (error.message || '請稍後再試'));
-        } finally {
-            el.disabled = false;
-            if (el.textContent === '辨識中…') el.textContent = original;
+            await loadPlateToday();
         }
     });
     input.click();
 }
-
 
 // ============================================================
 // 跨班支援：資料新鮮度與條件式輪詢
@@ -2630,22 +2557,23 @@ async function loadChildStatus() {
     try {
         const data = await apiRequest('/parent/child-status', 'GET');
         if (!data.success) {
-            box.innerHTML = `<p>${data.message || '無法載入孩子資料'}</p>`;
+            box.innerHTML = `<p>${escapeText(data.message || '無法載入孩子資料')}</p>`;
             return;
         }
         const c = data.child;
-        const state = data.todayFinished === null
-            ? '<span class="status-pending">⏳ 老師今天還沒確認</span>'
-            : data.todayFinished
-                ? '<span class="status-ok">✅ 今天吃完了</span>'
-                : '<span class="status-warn">⚠️ 今天沒有吃完</span>';
+        const p = data.todayPlate;
+        const state = p
+            ? `<span class="badge badge-${escapeAttr(p.level)}">${escapeText(p.label)}</span>　剩約 ${p.leftoverPct}%`
+                + (p.coinsAwarded ? `，得到 ESG +${p.coinsAwarded}` : '')
+            : '<span class="status-pending">⏳ 孩子今天還沒拍餐盤</span>';
+        const s = data.stats || {};
 
         box.innerHTML = `
-            <p><strong>${c.displayName}</strong>　${c.grade} 年 ${c.className} 班 ${c.seatNo} 號</p>
-            <p>${state}</p>
+            <p><strong>${escapeText(c.displayName)}</strong>　${escapeText(c.className || '')} 班 ${escapeText(c.seatNo || '')} 號</p>
+            <p>今天：${state}</p>
             <p>孩子目前 ESG 幣 ${c.coins.ESG}</p>
-            <p class="field-hint">近 ${data.stats.range}：有紀錄 ${data.stats.recordedDays} 天，吃完 ${data.stats.finishedDays} 天（${data.stats.finishedRate}%）</p>
-            ${data.classDishesToday.length ? `<p class="field-hint">今天全班剩餘：${data.classDishesToday.map((d) => `${d.dishName} ${d.remainingPct}%`).join('、')}</p>` : ''}
+            <p class="field-hint">近 ${s.days || 7} 天拍了 ${s.scannedDays || 0} 天，光盤 ${s.cleanDays || 0} 天</p>
+            ${data.classDishesToday.length ? `<p class="field-hint">今天全班剩餘：${data.classDishesToday.map((d) => `${escapeText(d.dishName)} ${d.remainingPct}%`).join('、')}</p>` : ''}
         `;
         const btn = document.getElementById('parentSignInBtn');
         if (btn && data.signedInToday) {
@@ -2656,195 +2584,6 @@ async function loadChildStatus() {
         box.innerHTML = '<p>無法載入孩子資料</p>';
     }
 }
-
-
-// ============================================================
-// 管理員 / 開發者：手動維護班級與帳號
-// ============================================================
-
-/** 依角色顯示班級與座號欄位（管理員帳號不需班級、老師不需座號）。 */
-function syncAdminUserFields() {
-    const role = (document.getElementById('adminUserRole') || {}).value || 'student';
-    const classFields = document.getElementById('adminUserClassFields');
-    const seatGroup = document.getElementById('adminUserSeatGroup');
-    if (classFields) classFields.classList.toggle('hidden', role === 'admin');
-    if (seatGroup) seatGroup.classList.toggle('hidden', role !== 'student');
-}
-
-async function loadAdminOverview() {
-    const box = document.getElementById('adminOverview');
-    if (!box) return;
-    try {
-        const data = await apiRequest('/admin/overview', 'GET');
-        if (!data.success) { box.textContent = data.message || '載入失敗'; return; }
-        const roles = Object.entries(data.usersByRole || {})
-            .map(([r, n]) => `${ROLE_LABEL[r] || r} ${n}`).join('　');
-        box.innerHTML = `
-            <p><strong>${data.date}</strong>　班級 ${data.classes} 個　帳號 ${data.users} 個</p>
-            <p>${roles}</p>
-            <p>今日已紀錄 ${data.todaySessions.length} 班　吃完勾選 ${data.todayChecks.finished}/${data.todayChecks.total}</p>
-        `;
-    } catch (error) {
-        box.textContent = '載入總覽失敗';
-    }
-}
-
-async function createClass() {
-    const result = document.getElementById('adminClassResult');
-    const payload = {
-        grade: (document.getElementById('adminClassGrade').value || '').trim(),
-        name: (document.getElementById('adminClassName').value || '').trim(),
-        headcount: Number(document.getElementById('adminClassHeadcount').value)
-    };
-    if (!payload.grade || !payload.name || !payload.headcount) {
-        result.className = 'verify-result error';
-        result.textContent = '請填寫年級、班級名稱與人數';
-        return;
-    }
-    try {
-        const data = await apiRequest('/admin/classes', 'POST', payload);
-        result.className = 'verify-result ' + (data.success ? 'ok' : 'error');
-        result.textContent = (data.success ? '✅ ' : '⚠️ ') + (data.message || '');
-        if (data.success) {
-            document.getElementById('adminClassGrade').value = '';
-            document.getElementById('adminClassName').value = '';
-            document.getElementById('adminClassHeadcount').value = '';
-            await loadAdminClasses();
-            await loadAdminOverview();
-        }
-    } catch (error) {
-        result.className = 'verify-result error';
-        result.textContent = '建立失敗：' + (error.message || '請稍後再試');
-    }
-}
-
-async function createUserByAdmin() {
-    const result = document.getElementById('adminUserResult');
-    const role = document.getElementById('adminUserRole').value;
-    const payload = {
-        role,
-        account: (document.getElementById('adminUserAccount').value || '').trim(),
-        displayName: (document.getElementById('adminUserName').value || '').trim(),
-        password: document.getElementById('adminUserPassword').value || '',
-        grade: (document.getElementById('adminUserGrade').value || '').trim(),
-        className: (document.getElementById('adminUserClassName').value || '').trim(),
-        seatNo: (document.getElementById('adminUserSeat').value || '').trim()
-    };
-    if (!payload.account || !payload.displayName || !payload.password) {
-        result.className = 'verify-result error';
-        result.textContent = '請填寫帳號、姓名與密碼';
-        return;
-    }
-    try {
-        const data = await apiRequest('/admin/users', 'POST', payload);
-        result.className = 'verify-result ' + (data.success ? 'ok' : 'error');
-        result.textContent = (data.success ? '✅ ' : '⚠️ ') + (data.message || '');
-        if (data.success) {
-            ['adminUserAccount', 'adminUserName', 'adminUserPassword', 'adminUserSeat']
-                .forEach((id) => { document.getElementById(id).value = ''; });
-            await loadAdminUsers();
-            await loadAdminOverview();
-        }
-    } catch (error) {
-        result.className = 'verify-result error';
-        result.textContent = '建立失敗：' + (error.message || '請稍後再試');
-    }
-}
-
-async function loadAdminClasses() {
-    const box = document.getElementById('adminClassList');
-    if (!box) return;
-    box.innerHTML = '<p>載入中...</p>';
-    try {
-        const data = await apiRequest('/admin/classes', 'GET');
-        if (!data.success) { box.innerHTML = `<p>${data.message || '載入失敗'}</p>`; return; }
-        if (!data.classes.length) { box.innerHTML = '<p>還沒有任何班級，請先新增。</p>'; return; }
-
-        box.innerHTML = data.classes.map((c) => `
-            <div class="admin-row">
-                <div class="admin-row-main">
-                    <strong>${c.grade} 年 ${c.name} 班</strong>
-                    <code class="row-id" title="綁定裝置、同步名冊時要用的 classId">${escapeText(c.classId)}</code>
-                    <span class="field-hint">人數 ${c.headcount}　已註冊 ${c.registered}</span>
-                    <span class="field-hint">導師：${c.teacher ? escapeText(c.teacher.displayName) : '未指定'}　午餐長：${c.lunchLeader
-                        ? escapeText(c.lunchLeader.displayName) + (c.lunchLeader.account ? `（${escapeText(c.lunchLeader.account)}）` : '')
-                        : '未指定'}</span>
-                </div>
-                <div class="admin-row-actions">
-                    <input type="text" placeholder="本班學生帳號" data-role="leader-account" data-class-id="${c.classId}" class="inline-input">
-                    <button data-action="setLunchLeader" data-class-id="${c.classId}" class="check-btn">設為午餐長</button>
-                    <button data-action="deleteClassRow" data-class-id="${escapeAttr(c.classId)}"
-                            data-label="${escapeAttr(c.grade + ' 年 ' + c.name + ' 班')}"
-                            class="danger-btn">刪除</button>
-                </div>
-            </div>
-        `).join('');
-    } catch (error) {
-        box.innerHTML = '<p>載入失敗</p>';
-    }
-}
-
-async function setLunchLeader(el) {
-    const classId = el.dataset.classId;
-    const input = document.querySelector(`input[data-role="leader-account"][data-class-id="${classId}"]`);
-    const account = input ? input.value.trim() : '';
-    if (!account) { alert('請先填入要指派的學生帳號（必須是這個班的學生）'); return; }
-    try {
-        const data = await apiRequest(`/admin/classes/${classId}/lunch-leader`, 'POST', { account });
-        alert((data.success ? '✅ ' : '⚠️ ') + (data.message || ''));
-        if (data.success) await loadAdminClasses();
-    } catch (error) {
-        alert('指派失敗：' + (error.message || '請稍後再試'));
-    }
-}
-
-async function loadAdminUsers() {
-    const box = document.getElementById('adminUserList');
-    if (!box) return;
-    const role = (document.getElementById('adminUserFilter') || {}).value || '';
-    box.innerHTML = '<p>載入中...</p>';
-    try {
-        const data = await apiRequest('/admin/users' + (role ? `?role=${role}` : ''), 'GET');
-        if (!data.success) { box.innerHTML = `<p>${data.message || '載入失敗'}</p>`; return; }
-        if (!data.users.length) { box.innerHTML = '<p>沒有符合的帳號</p>'; return; }
-
-        box.innerHTML = `<p class="field-hint">共 ${data.total} 個帳號</p>` + data.users.map((u) => `
-            <div class="admin-row ${u.isActive ? '' : 'inactive'}">
-                <div class="admin-row-main">
-                    <strong>${u.displayName}</strong>
-                    <span class="field-hint">${ROLE_LABEL[u.role] || u.role}　${u.account || u.email || ''}
-                        ${u.className ? `　${u.grade}年${u.className}班 ${u.seatNo || ''}號` : ''}
-                        ${u.coins ? `　ESG ${u.coins.ESG}` : ''}
-                        ${u.isActive ? '' : '　（已停用）'}</span>
-                </div>
-                <div class="admin-row-actions">
-                    <button data-action="toggleUserActive" data-user-id="${u.userId}" data-active="${u.isActive ? 'false' : 'true'}" class="check-btn">
-                        ${u.isActive ? '停用' : '啟用'}
-                    </button>
-                    <button data-action="deleteUserRow" data-user-id="${escapeAttr(u.userId)}"
-                            data-label="${escapeAttr(u.displayName || u.userId)}"
-                            class="danger-btn">刪除</button>
-                </div>
-            </div>
-        `).join('');
-    } catch (error) {
-        box.innerHTML = '<p>載入失敗</p>';
-    }
-}
-
-async function toggleUserActive(el) {
-    const userId = el.dataset.userId;
-    const isActive = el.dataset.active === 'true';
-    if (!confirm(isActive ? '確定啟用這個帳號？' : '確定停用這個帳號？停用後無法登入。')) return;
-    try {
-        const data = await apiRequest(`/admin/users/${userId}`, 'PATCH', { isActive });
-        if (!data.success) { alert(data.message || '操作失敗'); return; }
-        await loadAdminUsers();
-    } catch (error) {
-        alert('操作失敗：' + (error.message || '請稍後再試'));
-    }
-}
-
 
 /** 密碼欄位顯示/隱藏切換。 */
 function togglePassword(el) {
@@ -3112,10 +2851,8 @@ const ACTION_HANDLERS = {
     openLottery,
     closeLottery,
     spinLottery,
-    // 老師：逐生檢查
-    loadCheckRoster,
-    toggleCheck: (el) => toggleCheck(el),
-    finishAllChecks,
+    // 老師：本班餐盤結果（唯讀）
+    loadClassPlates: () => loadClassPlates(),
     // 午餐長：全班剩食紀錄
     startRecord,
     finalizeRecord,
@@ -3139,8 +2876,6 @@ const ACTION_HANDLERS = {
     syncStudents: () => syncStudents(),
     syncStudentsDryRun: () => syncStudentsDryRun(),
     saveShopState: () => saveShopState(),
-    deleteClassRow: (el) => deleteClassRow(el),
-    deleteUserRow: (el) => deleteUserRow(el),
     deleteDeviceRow: (el) => deleteDeviceRow(el),
     loadWeighQueue: () => loadWeighQueue(),
     weighDish: (el) => weighDish(el),
@@ -3154,13 +2889,7 @@ const ACTION_HANDLERS = {
     loadCoinRules: () => loadCoinRules(),
     saveCoinRules: () => saveCoinRules(),
     resetCoinRules: () => resetCoinRules(),
-    // 管理員：手動維護班級與帳號
-    createClass,
-    createUserByAdmin,
-    loadAdminClasses,
-    loadAdminUsers,
-    setLunchLeader: (el) => setLunchLeader(el),
-    toggleUserActive: (el) => toggleUserActive(el)
+    // 管理員的班級、帳號、資料檢查在 admin.js 補進來
 };
 
 // 使用事件委派，一次綁定處理所有 data-action 元素
@@ -3199,6 +2928,8 @@ document.addEventListener('change', (event) => {
     const sel = event.target && event.target.closest
         ? event.target.closest('select[data-action]')
         : null;
+    const changeEl = event.target && event.target.closest ? event.target.closest('[data-change]') : null;
+    if (changeEl) runAction(changeEl.dataset.change, changeEl);
     if (sel) {
         const handler = ACTION_HANDLERS[sel.dataset.action];
         if (handler) {
@@ -3211,10 +2942,28 @@ document.addEventListener('change', (event) => {
     if (event.target && event.target.name === 'registerRole') {
         syncRegisterFields();
     }
-    // 管理員新增帳號：角色改變時切換需要的欄位
-    if (event.target && event.target.id === 'adminUserRole') {
-        syncAdminUserFields();
-    }
+});
+
+/** 用名稱執行一個 ACTION_HANDLERS 裡的動作（給 data-change / data-input / data-enter 共用）。 */
+function runAction(name, el) {
+    const handler = ACTION_HANDLERS[name];
+    if (!handler) return;
+    Promise.resolve(handler(el)).catch((error) => console.error(`執行 ${name} 失敗:`, error));
+}
+
+// 輸入時即時動作（例如班級清單篩選）
+document.addEventListener('input', (event) => {
+    const el = event.target && event.target.closest ? event.target.closest('[data-input]') : null;
+    if (el) runAction(el.dataset.input, el);
+});
+
+// 在搜尋框按 Enter 等於按搜尋
+document.addEventListener('keydown', (event) => {
+    if (event.key !== 'Enter') return;
+    const el = event.target && event.target.closest ? event.target.closest('[data-enter]') : null;
+    if (!el) return;
+    event.preventDefault();
+    runAction(el.dataset.enter, el);
 });
 
 // 若已跳過開場影片，直接隱藏（連 iframe 都不要留，省掉一次 YouTube 載入）

@@ -4,13 +4,13 @@
  *  GET /api/leaderboard?period=week|month|term&within=school|class&limit=
  *
  * 排的是週期內**獲得**的 ESG（只算正向增減）：把幣花掉不該掉名次。
- * 同一列附上各來源的拆解，餘額只有一個數字，但「ESG 從哪裡來」仍看得到。
+ * 同一列附上各來源（拍餐盤、家長簽到、管理員調整）的拆解。
  *
  * 用 coin_transactions 依日期區間查（索引 ownerType, coin, date），
  * 不把 users 全表撈回 Node 端排序。
  */
 const { db } = require('../config/firebase');
-const { COL, COIN_HOLDER_ROLES, ESG } = require('../config/schema');
+const { COL, COIN_HOLDER_ROLES, COIN_SOURCES, ESG } = require('../config/schema');
 const { daysAgo } = require('../lib/dates');
 
 const bad = (res, status, message) => res.status(status).json({ success: false, message });
@@ -29,10 +29,11 @@ async function earnedSince(since) {
   snap.docs.forEach((d) => {
     const t = d.data();
     const amount = Number(t.amount || 0);
-    if (amount <= 0) return;
-    const cur = agg.get(t.ownerId) || { ESG: 0, E: 0, S: 0, G: 0 };
+    // 對帳補登只是讓總帳與餘額一致，不是這段期間「賺到」的
+    if (amount <= 0 || t.refType === 'reconcile') return;
+    const cur = agg.get(t.ownerId) || { ESG: 0, bySource: {} };
     cur.ESG += amount;
-    if (t.source && cur[t.source] !== undefined) cur[t.source] += amount;
+    if (t.source && COIN_SOURCES[t.source]) cur.bySource[t.source] = (cur.bySource[t.source] || 0) + amount;
     agg.set(t.ownerId, cur);
   });
   return agg;
@@ -76,7 +77,7 @@ const getLeaderboard = async (req, res) => {
         displayName: u.displayName || '匿名',
         className: u.className || null,
         ESG: Math.round(a.ESG),
-        bySource: { E: Math.round(a.E), S: Math.round(a.S), G: Math.round(a.G) },
+        bySource: Object.fromEntries(Object.entries(a.bySource).map(([k, v]) => [k, Math.round(v)])),
         me: id === req.user.uid,
       }))
       .filter((r) => r.ESG > 0)
@@ -92,6 +93,7 @@ const getLeaderboard = async (req, res) => {
       total: rows.length,
       rows: rows.slice(0, limit),
       me: rows.find((r) => r.me) || null,
+      sources: COIN_SOURCES,
     });
   } catch (error) {
     console.error('取得排行榜失敗:', error);
