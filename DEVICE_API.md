@@ -162,31 +162,32 @@ loop():
 
 ## 讀數怎麼進到剩食紀錄
 
-裝置只管推送，**不需要知道紀錄流程**。午餐長按下「量測」時，後端才反向去取：
+裝置只管推送，**不需要知道紀錄流程**。一個班級一台秤；午餐長依序把每道菜的桶子放上去、
+按下「讀取並記錄」時，後端才反向去取：
 
 ```
 ESP32 ──push──> POST /api/device/measure ──> device_readings
                                                    │
-午餐長拍照 ──> POST /api/record/bucket/:id/measure │
+午餐長按「讀取並記錄」──> POST /api/record/weigh     │
                        │                           │
-                       └── lib/scaleReadings.js ───┘  取該班該桶最新一筆
+                       └── lib/scaleReadings.js ───┘  取這個班級的秤最新一筆
                        │
-                       └── 連同影像送辨識服務 ──> 影像估計 vs 秤重交叉比對
+                       └── 扣掉該桶型的皮重 ──> 這道菜剩多少（純紀錄，不發幣）
 ```
 
-取讀數是**兩步查詢**（先 `devices(classId,bucketId)` 找裝置，再
-`device_readings(deviceId,receivedAt)` 找最新一筆），沿用既有的兩個索引，
-不必為此多開一個。分兩步也才能分辨「沒綁裝置」與「綁了但沒上傳」。
+取讀數是**兩步查詢**（先 `devices(classId)` 找這班的秤，再
+`device_readings(deviceId,receivedAt)` 找最新一筆）。分兩步才能分辨「沒綁裝置」與「綁了但沒上傳」。
 
 ### 狀態判定
 
 | 情況 | 回報狀態 | 記錄流程的反應 |
 |---|---|---|
-| 讀數在 20 秒內、穩定 | `ok` | 與影像估計交叉比對，差異大才提示 |
+| 讀數在 20 秒內、穩定 | `ok` | 記錄這一筆 |
+| 讀數還在晃 | `unstable` | 請等讀數穩定再按 |
 | 毛重遠低於盆重 | `no_load` | 提示「餐盆可能不在秤上」 |
 | 毛重 ≈ 盆重 | `ok`，淨重 0 | **正常記為吃光**，不跳確認 |
-| 讀數超過 20 秒 | `offline` | 降級純影像，標記 `image_only` |
-| 此桶未綁裝置 | `disabled` | 降級純影像，不視為故障 |
+| 讀數超過 20 秒 | `offline` | 不記錄；可改用手動輸入 |
+| 這班沒綁裝置 | `disabled` | 不記錄；請洽技術員 |
 | 裝置被停用 | `offline` | 附上「請洽技術員」 |
 
 「毛重 ≈ 盆重 → 記為吃光」是刻意的：區網直連時只拿得到一個數字，無法分辨
@@ -196,14 +197,5 @@ ESP32 ──push──> POST /api/device/measure ──> device_readings
 
 裝置若還沒設定盆體扣重（`tareG = 0`）就無從分辨，會退回保守判定並提示技術員歸零。
 
-### 給影像模組用的出口
-
-校正資料收集階段會在筆電上直接跑影像模組的 CLI / Web UI，那邊沒有 Firestore 憑證：
-
-```
-GET /api/record/scale/latest?classId=cls-302&bucketId=soup
-→ { "reading": { "state": "ok", "value_g": 850, "grossG": 2350, "tareG": 1500, "ageSec": 2 } }
-```
-
-影像模組設定 `LV_SCALE_DRIVER=cloud` 即可接上（見模組的 `.env.example`）。
-正式紀錄流程不走這支——`measureBucket` 直接讀 Firestore，少一次往返。
+> 舊的四桶影像辨識（`/api/record/bucket/...`、`/api/record/scale/latest`）已移除。
+> 個人的剩食改由學生拍自己的餐盤（`/api/plate/scan`），與稱重模組無關。

@@ -151,10 +151,6 @@
                         <span class="stat-label">ESG幣</span>
                         <span class="stat-value" id="userEsgCoin">0</span>
                     </div>
-                    <div class="stat-item">
-                        <span class="stat-label">積分</span>
-                        <span class="stat-value" id="userScore">0</span>
-                    </div>
                 </div>
             </div>
             <button data-action="startApp" class="start-btn">開始使用</button>
@@ -165,11 +161,12 @@
 
 <nav class="bottom-nav" id="bottomNav">
 
-    <button data-action="scrollToSection" data-arg="home" data-roles="student,lunch_leader,teacher,admin">🏠<br>首頁</button>
+    <!-- data-roles 是身分標籤：lunch_leader 不是帳號角色，而是學生被指定為午餐長後多出的標籤（見 app.js viewTags） -->
+    <button data-action="scrollToSection" data-arg="home" data-roles="student,teacher,admin">🏠<br>首頁</button>
 
     <button data-action="scrollToSection" data-arg="teacher" data-roles="teacher,admin">📋<br>檢查</button>
 
-    <button data-action="scrollToSection" data-arg="ranking" data-roles="student,lunch_leader,teacher,admin">🏆<br>排行</button>
+    <button data-action="scrollToSection" data-arg="ranking" data-roles="student,teacher,admin">🏆<br>排行</button>
 
     <button data-action="scrollToSection" data-arg="shop" data-roles="student,admin">🎁<br>兌換</button>
 
@@ -191,13 +188,8 @@
 <div class="coin">
 
             <div class="card">
-                <h3>ESG幣 <small>（營養＋減碳＋感謝）</small></h3>
+                <h3>ESG幣</h3>
                 <span id="esgcoin">0</span>
-            </div>
-
-            <div class="card">
-                <h3>積分</h3>
-                <span id="score">0</span>
             </div>
 
         </div>
@@ -233,6 +225,19 @@
 
         </div>
 
+        <!-- 學生拍自己的餐盤：一張照片 → 剩多少 → 回饋（午餐長也是學生，一樣看得到） -->
+        <div class="task hidden" id="plateCard">
+
+            <h2>📷 拍我的餐盤</h2>
+
+            <p class="field-hint">吃完後拍一張自己的餐盤，系統會看看你剩多少。照片只用來辨識，不會存下來；目前只給回饋，不發 ESG 幣。</p>
+
+            <div id="plateResult">載入中...</div>
+
+            <button data-action="capturePlate" id="plateBtn" disabled>📷 拍餐盤</button>
+
+        </div>
+
 </section>
 
 <!-- 跨班支援：頂層區塊，不巢狀於 #home。
@@ -243,7 +248,7 @@
     <h2>🤝 今日各菜品剩餘量</h2>
 
     <p class="field-hint">每道菜都會顯示其他班的狀況：本班快沒了就告訴你去哪一班拿，
-        本班還有而別班缺就提醒可以提供。午餐長在紀錄畫面也看得到同一份資訊。</p>
+        本班還有而別班缺就提醒可以提供。資料來自各班午餐長的稱重紀錄。</p>
 
     <div id="supportDishList">載入中...</div>
 
@@ -258,7 +263,7 @@
     <h2>🏆 個人英雄榜</h2>
 
     <p class="field-hint">
-        ESG幣有三個來源：E 營養（吃下去的蛋白質與膳食纖維）、S 減碳（比全校平均少浪費的部分換算成的樹）、G 感謝（老師確認你吃完）。
+        排的是這段期間獲得的 ESG 幣（花掉不會掉名次）。目前 ESG 幣來自老師確認你吃完自己的部分，以及家長每日簽到。
     </p>
 
     <div class="hero-controls">
@@ -275,12 +280,6 @@
                 <option value="class">本班</option>
             </select>
         </label>
-        <label>排序
-            <select id="heroSort" data-action="loadHeroBoard">
-                <option value="trees">種樹數</option>
-                <option value="ESG">ESG幣</option>
-            </select>
-        </label>
     </div>
 
     <div id="heroMine" class="hero-mine"></div>
@@ -292,41 +291,13 @@
                 <th>名次</th>
                 <th>姓名</th>
                 <th>ESG幣</th>
-                <th>🌳 種樹</th>
+                <th>來源</th>
             </tr>
         </thead>
         <tbody id="heroBoardList">
             <tr><td colspan="4">載入中...</td></tr>
         </tbody>
     </table>
-    </div>
-
-<h2>🏆 班級排行榜</h2>
-
-    <div class="table-scroll">
-
-    <table class="class-rank-table">
-
-        <thead>
-
-            <tr>
-                <th>名次</th>
-                <th>姓名</th>
-                <th>積分</th>
-            </tr>
-
-        </thead>
-
-        <tbody id="classRankingList">
-
-            <tr>
-                <td colspan="3">載入中...</td>
-            </tr>
-
-        </tbody>
-
-    </table>
-
     </div>
 
 </section>
@@ -412,15 +383,14 @@
 <h2>👨‍🍳 午餐長專區</h2>
 <div class="reward" id="recordPanel">
 
-    <h2>⚖️ 依序稱重紀錄</h2>
+    <h2>⚖️ 全班剩食紀錄（依序稱重）</h2>
 
     <p class="field-hint">
         一個班級一台秤。照下面的順序，<strong>一桶一桶放上去</strong>，
         每放一桶按一次「讀取並記錄」——桶子的空重系統已經知道，不必歸零。
         順序是主食桶 → 四個菜桶 → 湯桶，換桶次數最少。
+        這是全班的剩食紀錄，不發幣。
     </p>
-
-    <p id="recordVisionStatus" class="verify-result"></p>
 
     <div id="recordStatus">載入中...</div>
 
@@ -468,22 +438,19 @@
 
         <h2>🛠 管理員專區</h2>
 
-        <p class="field-hint">學生自助註冊前，班級必須先存在；老師、午餐長、管理員帳號一律由這裡建立。</p>
+        <p class="field-hint">學生自助註冊前，班級必須先存在；老師、管理員帳號一律由這裡建立。午餐長是班上的一位學生，在下方「班級列表」指定。</p>
 
         <div id="adminOverview" class="check-summary"></div>
 
-        <!-- 發幣公式的可調常數。這裡改的值會影響全校發幣，因此附上試算預覽。 -->
+        <!-- 可調參數：老師確認完食的感謝額度、建議攝取熱量。 -->
         <div class="admin-card coin-rules-card">
-            <h3>⚙️ 發幣公式參數</h3>
+            <h3>⚙️ 可調參數</h3>
             <p class="field-hint">
-                E＝人均蛋白質×kProtein＋人均膳食纖維×kFiber；
-                S＝round(樹×放大常數)，樹＝人均少浪費(kg)×每公斤廚餘碳排÷每棵樹每年吸碳量。
-                兩者皆人均計算後全額加給班上每位學生。
+                老師勾選「吃完」時，學生得到 ESG 幣：營養 1＋減碳 1＋感謝（下方可調）。
+                稱重紀錄與拍餐盤目前都不發幣。
             </p>
             <div id="coinRulesForm">載入中...</div>
-            <div id="coinRulesPreview" class="rules-preview"></div>
             <div class="rules-actions">
-                <button data-action="previewCoinRules">🧮 試算</button>
                 <button data-action="saveCoinRules">💾 儲存</button>
                 <button data-action="resetCoinRules" class="danger-btn">↺ 還原出廠預設</button>
             </div>
@@ -626,7 +593,6 @@
                     <label>角色：</label>
                     <select id="adminUserRole">
                         <option value="student">學生</option>
-                        <option value="lunch_leader">午餐長</option>
                         <option value="teacher">老師（導師）</option>
                         <option value="admin">管理員</option>
                     </select>
@@ -678,7 +644,6 @@
             <select id="adminUserFilter">
                 <option value="">全部角色</option>
                 <option value="student">學生</option>
-                <option value="lunch_leader">午餐長</option>
                 <option value="teacher">老師</option>
                 <option value="parent">家長</option>
                 <option value="admin">管理員</option>

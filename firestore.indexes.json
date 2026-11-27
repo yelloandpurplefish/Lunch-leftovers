@@ -2,7 +2,7 @@
   "//": "複合索引。Firestore 單一欄位會自動建索引，這裡只列需要手動建立的組合查詢。部署：firebase deploy --only firestore:indexes",
   "indexes": [
     {
-      "//": "班級加幣：找出班上所有持幣成員（classId + role in [student, lunch_leader]）",
+      "//": "教師勾選名冊：某班的學生（classId + role）",
       "collectionGroup": "users",
       "queryScope": "COLLECTION",
       "fields": [
@@ -28,44 +28,6 @@
         {
           "fieldPath": "seatNo",
           "order": "ASCENDING"
-        }
-      ]
-    },
-    {
-      "//": "個人排行榜：同校學生依 E幣 / S幣 排序",
-      "collectionGroup": "users",
-      "queryScope": "COLLECTION",
-      "fields": [
-        {
-          "fieldPath": "schoolId",
-          "order": "ASCENDING"
-        },
-        {
-          "fieldPath": "role",
-          "order": "ASCENDING"
-        },
-        {
-          "fieldPath": "eCoin",
-          "order": "DESCENDING"
-        }
-      ]
-    },
-    {
-      "//": "個人排行榜（S幣）",
-      "collectionGroup": "users",
-      "queryScope": "COLLECTION",
-      "fields": [
-        {
-          "fieldPath": "schoolId",
-          "order": "ASCENDING"
-        },
-        {
-          "fieldPath": "role",
-          "order": "ASCENDING"
-        },
-        {
-          "fieldPath": "sCoin",
-          "order": "DESCENDING"
         }
       ]
     },
@@ -161,25 +123,6 @@
       ]
     },
     {
-      "//": "基準線：該班該菜近 N 餐移動平均",
-      "collectionGroup": "dish_leftovers",
-      "queryScope": "COLLECTION",
-      "fields": [
-        {
-          "fieldPath": "classId",
-          "order": "ASCENDING"
-        },
-        {
-          "fieldPath": "dishId",
-          "order": "ASCENDING"
-        },
-        {
-          "fieldPath": "date",
-          "order": "DESCENDING"
-        }
-      ]
-    },
-    {
       "//": "教師頁：某班某日的逐生勾選清單",
       "collectionGroup": "meal_checks",
       "queryScope": "COLLECTION",
@@ -221,21 +164,6 @@
         {
           "fieldPath": "date",
           "order": "DESCENDING"
-        }
-      ]
-    },
-    {
-      "//": "全校某日各班場次（班際比較）",
-      "collectionGroup": "meal_sessions",
-      "queryScope": "COLLECTION",
-      "fields": [
-        {
-          "fieldPath": "schoolId",
-          "order": "ASCENDING"
-        },
-        {
-          "fieldPath": "date",
-          "order": "ASCENDING"
         }
       ]
     },

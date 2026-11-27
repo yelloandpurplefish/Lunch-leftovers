@@ -1,13 +1,14 @@
 const { db, admin } = require('../config/firebase');
-const { esgFactor } = require('../config/schema');
 const { spendUser } = require('../lib/coins');
+
+/** 每抽一次的 ESG 幣。前端的「需要 40 ESG 幣」說明與這裡一致。 */
+const LOTTERY_COST = 40;
 
 // 進行抽獎
 const spinLottery = async (req, res) => {
   try {
     const userId = req.user.uid;
-    // 原本 10 E（約 2 天份），換算成 ESG 仍是 2 天份 → 40（見 schema.js 的 ESG_CONVERSION）
-    const lotteryCost = 40;
+    const lotteryCost = LOTTERY_COST;
 
     const userDoc = await db.collection('users').doc(userId).get();
     if (!userDoc.exists) {
@@ -19,11 +20,10 @@ const spinLottery = async (req, res) => {
 
     const userData = userDoc.data();
 
-    // 扣幣一律走記帳層：會檢查角色（午餐長不可消耗）、餘額，並寫入總帳
+    // 扣幣一律走記帳層：會檢查角色（只有學生持幣）、餘額，並寫入總帳
     try {
       await spendUser({
         userId,
-        coin: 'ESG',
         amount: lotteryCost,
         reason: '幸運抽獎',
         refType: 'lottery'
@@ -43,12 +43,12 @@ const spinLottery = async (req, res) => {
 
     if (rand < 2) {
       const grandPrizes = [
-        { name: '🎁 豪華文具組', value: 60 },
-        { name: '🌟 特別獎勵包', value: 55 },
-        { name: '💎 稀有空氣清新劑', value: 50 },
-        { name: '🎧 無線藍牙耳機', value: 70 },
-        { name: '🎮 掌上遊戲機', value: 65 },
-        { name: '🎒 限量後背包', value: 58 }
+        { name: '🎁 豪華文具組', value: 240 },
+        { name: '🌟 特別獎勵包', value: 220 },
+        { name: '💎 稀有空氣清新劑', value: 200 },
+        { name: '🎧 無線藍牙耳機', value: 280 },
+        { name: '🎮 掌上遊戲機', value: 260 },
+        { name: '🎒 限量後背包', value: 232 }
       ];
       const selected = grandPrizes[Math.floor(Math.random() * grandPrizes.length)];
       prize = selected.name;
@@ -56,14 +56,14 @@ const spinLottery = async (req, res) => {
       prizeType = 'grand';
     } else if (rand < 20) {
       const rarePrizes = [
-        { name: '📝 筆記本', value: 30 },
-        { name: '✏️ 鉛筆組', value: 25 },
-        { name: '📏 尺', value: 20 },
-        { name: '🔖 書籤', value: 15 },
-        { name: '🖊️ 原子筆', value: 18 },
-        { name: '🗂️ 資料夾', value: 22 },
-        { name: '🧃 果汁', value: 12 },
-        { name: '🍪 餅乾', value: 14 }
+        { name: '📝 筆記本', value: 120 },
+        { name: '✏️ 鉛筆組', value: 100 },
+        { name: '📏 尺', value: 80 },
+        { name: '🔖 書籤', value: 60 },
+        { name: '🖊️ 原子筆', value: 72 },
+        { name: '🗂️ 資料夾', value: 88 },
+        { name: '🧃 果汁', value: 48 },
+        { name: '🍪 餅乾', value: 56 }
       ];
       const selected = rarePrizes[Math.floor(Math.random() * rarePrizes.length)];
       prize = selected.name;
@@ -71,24 +71,20 @@ const spinLottery = async (req, res) => {
       prizeType = 'rare';
     } else {
       const smallPrizes = [
-        { name: '🍬 糖果', value: 5 },
-        { name: '🧻 紙巾', value: 3 },
-        { name: '💧 飲用水', value: 2 },
-        { name: '🍭 棒棒糖', value: 4 },
-        { name: '🍫 巧克力', value: 6 },
-        { name: '🥠 幸運餅乾', value: 3 },
-        { name: '🧼 小肥皂', value: 2 },
-        { name: '🎈 氣球', value: 2 }
+        { name: '🍬 糖果', value: 20 },
+        { name: '🧻 紙巾', value: 12 },
+        { name: '💧 飲用水', value: 8 },
+        { name: '🍭 棒棒糖', value: 16 },
+        { name: '🍫 巧克力', value: 24 },
+        { name: '🥠 幸運餅乾', value: 12 },
+        { name: '🧼 小肥皂', value: 8 },
+        { name: '🎈 氣球', value: 8 }
       ];
       const selected = smallPrizes[Math.floor(Math.random() * smallPrizes.length)];
       prize = selected.name;
       prizeValue = selected.value;
       prizeType = 'small';
     }
-
-    // 獎品「價值」原本以 E 幣標示；抽獎成本換算成 ESG 後，價值也要用同一個係數，
-    // 否則「花 10 抽中價值 60」的 6 倍關係會變成「花 40 抽中 60」的 1.5 倍。
-    prizeValue = Math.round(prizeValue * esgFactor('E'));
 
     // 記錄抽獎
     await db.collection('lottery_records').add({
@@ -122,8 +118,7 @@ const spinLottery = async (req, res) => {
         value: prizeValue,
         isGrandPrize: prizeType === 'grand'
       },
-      remainingCoin: updatedUserData.esgCoin,
-      remainingECoin: updatedUserData.esgCoin   // 舊欄位名，前端更新前的相容
+      remainingCoin: updatedUserData.esgCoin
     });
   } catch (error) {
     console.error('抽獎失敗:', error);

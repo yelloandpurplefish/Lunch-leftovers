@@ -21,8 +21,7 @@ const REWARD_ITEMS = [
     itemId: 'eco_cup',
     name: '環保杯',
     description: '可重複使用的環保杯，減少一次性餐具浪費',
-    costType: 'ESG',
-    cost: 200,   // 原 50 E
+    cost: 200,
     category: 'exchange',
     stock: 5,
     isActive: true
@@ -31,8 +30,7 @@ const REWARD_ITEMS = [
     itemId: 'eco_utensils',
     name: '環保餐具',
     description: '不鏽鋼環保餐具組，包含湯匙、叉子、筷子',
-    costType: 'ESG',
-    cost: 320,   // 原 80 E
+    cost: 320,
     category: 'exchange',
     stock: 3,
     isActive: true
@@ -41,8 +39,7 @@ const REWARD_ITEMS = [
     itemId: 'stationery_set',
     name: '文具禮包',
     description: '實用文具組合，包含筆記本與鉛筆',
-    costType: 'ESG',
-    cost: 60,   // 原 30 S
+    cost: 60,
     category: 'exchange',
     stock: 8,
     isActive: true
@@ -51,8 +48,7 @@ const REWARD_ITEMS = [
     itemId: 'eco_bag',
     name: '環保購物袋',
     description: '耐用環保購物袋，減少塑膠袋使用',
-    costType: 'ESG',
-    cost: 5,   // 原 20 G
+    cost: 5,
     category: 'exchange',
     stock: 10,
     isActive: true
@@ -61,8 +57,7 @@ const REWARD_ITEMS = [
     itemId: 'reusable_straw',
     name: '不鏽鋼吸管組',
     description: '便攜不鏽鋼吸管，附清潔刷',
-    costType: 'ESG',
-    cost: 180,   // 原 45 E
+    cost: 180,
     category: 'exchange',
     stock: 6,
     isActive: true
@@ -71,8 +66,7 @@ const REWARD_ITEMS = [
     itemId: 'recycled_notebook',
     name: '再生紙筆記本',
     description: '100% 再生紙製成，環保又實用',
-    costType: 'ESG',
-    cost: 50,   // 原 25 S
+    cost: 50,
     category: 'exchange',
     stock: 7,
     isActive: true
@@ -81,40 +75,11 @@ const REWARD_ITEMS = [
     itemId: 'seed_pencil',
     name: '種子鉛筆',
     description: '用完後可種植的環保鉛筆',
-    costType: 'ESG',
-    cost: 3,   // 原 15 G
+    cost: 3,
     category: 'exchange',
     stock: 12,
     isActive: true
   }
-];
-
-const SYSTEM_CONFIG = [
-  { key: 'lottery_cost', value: 40, description: '每次抽獎消耗的 ESG 幣（原 10 E，換算後仍是約 2 天份）' },
-  { key: 'task_cooldown_hours', value: 24, description: '任務冷卻時間（小時）' },
-  {
-    key: 'light_disc_rewards',
-    value: { eCoin: 10, sCoin: 5, score: 30 },
-    description: '光盤行動完成獎勵'
-  },
-  {
-    key: 'leftover_reward_tiers',
-    value: [
-      { maxGrams: 10, eCoin: 20, sCoin: 10 },
-      { maxGrams: 30, eCoin: 15, sCoin: 8 },
-      { maxGrams: 50, eCoin: 10, sCoin: 5 },
-      { maxGrams: null, eCoin: 5, sCoin: 2 }
-    ],
-    description: '剩食獎勵級距（依剩食克數）'
-  }
-];
-
-const DEFAULT_MENU_ITEMS = [
-  { name: '香酥雞腿', category: 'main' },
-  { name: '高麗菜', category: 'side' },
-  { name: '蒸蛋', category: 'side' },
-  { name: '蘋果', category: 'fruit' },
-  { name: '玉米濃湯', category: 'soup' }
 ];
 
 // ============================================================
@@ -123,10 +88,10 @@ const DEFAULT_MENU_ITEMS = [
 // ============================================================
 
 const TEST_ACCOUNTS = [
-  { email: 'dev@lunch-leftovers.local', displayName: '開發人員', role: 'admin', esgCoin: 5047, score: 10000, classId: 'cls-302' },
-  { email: 'qa@lunch-leftovers.local', displayName: '測試人員', role: 'admin', esgCoin: 5047, score: 10000, classId: 'cls-302' },
-  { email: 'teacher@lunch-leftovers.local', displayName: '測試老師', role: 'teacher', esgCoin: 2623, score: 5000, classId: 'cls-302' },
-  { email: 'student@lunch-leftovers.local', displayName: '測試學生', role: 'student', esgCoin: 507, score: 1000, classId: 'cls-302', grade: '3', className: '302', seatNo: '30' }
+  { email: 'dev@lunch-leftovers.local', displayName: '開發人員', role: 'admin', classId: 'cls-302' },
+  { email: 'qa@lunch-leftovers.local', displayName: '測試人員', role: 'admin', classId: 'cls-302' },
+  { email: 'teacher@lunch-leftovers.local', displayName: '測試老師', role: 'teacher', classId: 'cls-302' },
+  { email: 'student@lunch-leftovers.local', displayName: '測試學生', role: 'student', esgCoin: 500, classId: 'cls-302', grade: '3', className: '302', seatNo: '30' }
 ];
 
 // ============================================================
@@ -152,43 +117,6 @@ async function seedRewardItems() {
   console.log(`  ✓ reward_items：${REWARD_ITEMS.length} 筆（新建 ${created}，既有的不覆寫）`);
 }
 
-async function seedSystemConfig() {
-  const batch = db.batch();
-
-  SYSTEM_CONFIG.forEach(({ key, value, description }) => {
-    const ref = db.collection('system_config').doc(key);
-    batch.set(ref, {
-      key,
-      value,
-      description,
-      updatedAt: admin.firestore.FieldValue.serverTimestamp()
-    }, { merge: true });
-  });
-
-  await batch.commit();
-  console.log(`  ✓ system_config：${SYSTEM_CONFIG.length} 筆`);
-}
-
-async function seedTodayMenu() {
-  // 日期作為文件 ID，同一天重複執行不會產生重複資料
-  const today = new Date().toISOString().slice(0, 10);
-  const ref = db.collection('daily_menu').doc(today);
-
-  const existing = await ref.get();
-  if (existing.exists) {
-    console.log(`  ✓ daily_menu：${today} 已存在，跳過`);
-    return;
-  }
-
-  await ref.set({
-    date: today,
-    items: DEFAULT_MENU_ITEMS,
-    isActive: true,
-    createdAt: admin.firestore.FieldValue.serverTimestamp()
-  });
-  console.log(`  ✓ daily_menu：已建立 ${today}`);
-}
-
 // ============================================================
 // 測試帳號建立
 // ============================================================
@@ -212,8 +140,7 @@ async function seedTestAccounts(password) {
           email: account.email,
           displayName: account.displayName,
           passwordHash,
-          esgCoin: account.esgCoin || 0,
-          score: account.score,
+          ...(account.role === 'student' ? { esgCoin: account.esgCoin || 0 } : {}),
           classId: account.classId || null,
           grade: account.grade || null,
           className: account.className || null,
@@ -278,8 +205,7 @@ async function seedExtraTestAccounts(count, password) {
           email,
           displayName,
           passwordHash,
-          esgCoin: 242,   // 原 50 E / 20 S / 10 G
-          score: 100,
+          esgCoin: 200,
           classId: 'class-extra',
           role: 'student',
           isActive: true,
@@ -326,9 +252,7 @@ async function initializeDatabase() {
 
   try {
     await seedRewardItems();
-    await seedSystemConfig();
-    await seedTodayMenu();
-    // 名冊為必要基礎資料：沒有班級就無法註冊學生、也算不出班級幣
+    // 名冊為必要基礎資料：沒有班級就無法註冊學生、也算不出供餐份數
     await seedClasses();
     await seedDishes();
     await seedTodayMenuSlots();
@@ -408,8 +332,8 @@ function printCredentialTable(password) {
     ['管理員/開發者', 'dev@lunch-leftovers.local', '建班級、建帳號、指定午餐長'],
     ['管理員/開發者', 'qa@lunch-leftovers.local', '同上（測試用）'],
     ['老師', 'teacher302', '每日逐生檢查「吃完他的部分」'],
-    ['午餐長', 'leader302', '四桶剩食紀錄（不可兌換抽獎）'],
-    ['學生', 'stu302-02', '觀看、兌換、抽獎'],
+    ['學生・午餐長', 'leader302', '學生的全部功能＋本班依序稱重紀錄'],
+    ['學生', 'stu302-02', '拍餐盤、兌換、抽獎'],
     ['學生', 'stu302-03', '同上（已綁定家長）'],
     ['學生', 'stu301-01', '301 班，用來測跨班支援'],
     ['家長', 'parent302@example.com', '簽到（孩子 +1 ESG 幣）、看孩子狀況'],

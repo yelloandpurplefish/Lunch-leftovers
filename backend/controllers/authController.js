@@ -48,7 +48,7 @@ function buildUserResponse(u) {
   if (u.role === ROLES.PARENT) {
     return { ...base, studentBinding: u.studentBinding || null, boundStudentId: u.boundStudentId || null };
   }
-  return { ...base, esgCoin: Number(u.esgCoin || 0), score: Number(u.score || 0) };
+  return { ...base, esgCoin: Number(u.esgCoin || 0) };
 }
 
 const bad = (res, status, message, extra = {}) =>
@@ -142,7 +142,7 @@ const register = async (req, res) => {
 
       const student = await findUserByIdentifier(binding.account);
       if (!student) return bad(res, 404, '查無此學生帳號，請確認孩子的帳號');
-      if (student.role !== ROLES.STUDENT && student.role !== ROLES.LUNCH_LEADER) {
+      if (student.role !== ROLES.STUDENT) {
         return bad(res, 400, '綁定的帳號必須是學生');
       }
 
@@ -166,7 +166,7 @@ const register = async (req, res) => {
         email,
         passwordHash,
         isActive: true,
-        // 家長沒有幣系統：不建立 esgCoin/score 欄位
+        // 家長沒有幣系統：不建立 esgCoin 欄位
         boundStudentId: student.id,
         studentBinding: {
           ...binding,
@@ -214,7 +214,6 @@ const register = async (req, res) => {
         passwordHash,
         isActive: true,
         esgCoin: 0,
-        score: 0,
         schoolId: klass.schoolId || null,
         classId: klass.id,
         grade,
@@ -312,7 +311,7 @@ const verifyStudent = async (req, res) => {
     const student = await findUserByIdentifier(account);
     const matched =
       student &&
-      (student.role === ROLES.STUDENT || student.role === ROLES.LUNCH_LEADER) &&
+      student.role === ROLES.STUDENT &&
       norm(student.grade) === grade &&
       norm(student.className) === className &&
       norm(student.seatNo) === seatNo;

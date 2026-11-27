@@ -2,7 +2,6 @@ require('dotenv').config();
 const express = require('express');
 const cors = require('cors');
 const helmet = require('helmet');
-const rateLimit = require('express-rate-limit');
 const path = require('path');
 const net = require('net');
 
@@ -15,8 +14,9 @@ const exchangeRoutes = require('./routes/exchange');
 const menuRoutes = require('./routes/menu');
 const leaderboardRoutes = require('./routes/leaderboard');
 const debugRoutes = require('./routes/debug');
-// 新：剩食紀錄（四桶影像辨識）與教師逐生檢查
+// 全班剩食紀錄（午餐長依序稱重）、學生個人餐盤辨識、教師逐生檢查
 const recordRoutes = require('./routes/record');
+const plateRoutes = require('./routes/plate');
 const mealCheckRoutes = require('./routes/mealCheck');
 const parentRoutes = require('./routes/parent');
 const supportRoutes = require('./routes/support');
@@ -30,9 +30,16 @@ const technicianRoutes = require('./routes/technician');
 // 資料庫初始化
 const { initializeDatabase } = require('./config/seed');
 const { checkIndexesOnStartup } = require('./lib/indexCheck');
+const { createApiLimiter, createLoginLimiter } = require('./lib/rateLimit');
+const { debugRoutesEnabled, parseTrustProxy } = require('./lib/runtimeFlags');
 
 const app = express();
 const PORT = process.env.PORT || 3000;
+
+// 在反向代理（Caddy、Render）後面時設 TRUST_PROXY=1，
+// 否則 req.ip 全是代理的位址，以 IP 計次的限制會變成大家共用一份。
+const trustProxy = parseTrustProxy(process.env.TRUST_PROXY);
+if (trustProxy !== undefined) app.set('trust proxy', trustProxy);
 
 // 安全中介軟體
 // 註：前端不使用任何內聯 script/onclick，因此 script-src 無需 'unsafe-inline'。
@@ -97,23 +104,14 @@ if (process.env.NODE_ENV !== 'production') {
 }
 
 // 解析 JSON
-// 四桶辨識要上傳照片（base64），預設的 100kb 會直接擋掉 —— 一張降取樣後的
-// 照片約 100~400KB，base64 再膨脹約 1.37 倍，因此放寬到 8mb。
+// 學生拍餐盤要上傳照片（base64），預設的 100kb 會直接擋掉 —— 前端縮圖後
+// 約 100~400KB，base64 再膨脹約 1.37 倍，因此放寬到 8mb。
 app.use(express.json({ limit: process.env.JSON_BODY_LIMIT || '8mb' }));
 
-// API 速率限制
-const apiLimiter = rateLimit({
-  windowMs: 15 * 60 * 1000, // 15 分鐘
-  max: process.env.NODE_ENV === 'production' ? 100 : 1000, // 生產環境 100，開發 1000
-  message: {
-    success: false,
-    message: '請求過於頻繁，請稍後再試'
-  },
-  standardHeaders: true,
-  legacyHeaders: false
-});
-
-app.use('/api/', apiLimiter);
+// API 速率限制：登入後以使用者計次，未登入以 IP 計次（細節見 lib/rateLimit.js）
+app.use('/api/', createApiLimiter());
+// 登入失敗另外依帳號計次：總量放寬後仍擋得住對單一帳號猜密碼
+app.use('/api/auth/login', createLoginLimiter());
 
 // API 路由
 app.use('/api/auth', authRoutes);
@@ -124,6 +122,7 @@ app.use('/api/exchange', exchangeRoutes);
 app.use('/api/menu', menuRoutes);
 app.use('/api/leaderboard', leaderboardRoutes);
 app.use('/api/record', recordRoutes);
+app.use('/api/plate', plateRoutes);
 app.use('/api/meal-check', mealCheckRoutes);
 app.use('/api/parent', parentRoutes);
 app.use('/api/support', supportRoutes);
@@ -132,10 +131,12 @@ app.use('/api/admin', adminRoutes);
 app.use('/api/device', deviceRoutes);
 app.use('/api/tech', technicianRoutes);
 
-// 開發/測試端點（僅在非生產環境啟用）
-if (process.env.NODE_ENV !== 'production') {
+// 開發/測試端點：不需登入就能建帳號，所以預設只在連模擬器時開（見 lib/runtimeFlags.js）
+if (debugRoutesEnabled()) {
   app.use('/api/debug', debugRoutes);
   console.log('🔧 開發/測試端點已啟用: /api/debug');
+} else if (process.env.NODE_ENV !== 'production') {
+  console.log('🔒 開發/測試端點未啟用：沒有連模擬器（真的要開請設 ENABLE_DEBUG_ROUTES=true）');
 }
 
 // 健康檢查

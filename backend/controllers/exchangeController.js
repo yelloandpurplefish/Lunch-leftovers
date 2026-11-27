@@ -1,5 +1,5 @@
 const { db, admin } = require('../config/firebase');
-const { COL, ROLES, COIN_SPENDER_ROLES, ESG } = require('../config/schema');
+const { COL, COIN_HOLDER_ROLES, ESG } = require('../config/schema');
 const { getShopState, closedReason } = require('../lib/shop');
 
 // 兌換物品
@@ -37,16 +37,9 @@ const redeemItem = async (req, res) => {
       const item = itemDoc.data();
       const userData = userDoc.data();
 
-      // 午餐長只累積不消耗（家長沒有幣系統）——擋在扣款的同一個 transaction 內
-      if (!COIN_SPENDER_ROLES.includes(userData.role)) {
-        return {
-          error: {
-            status: 403,
-            message: userData.role === ROLES.LUNCH_LEADER
-              ? '午餐長專區不提供兌換與抽獎'
-              : '此身份沒有兌換功能'
-          }
-        };
+      // 只有學生持幣（家長、教師沒有幣系統）——擋在扣款的同一個 transaction 內
+      if (!COIN_HOLDER_ROLES.includes(userData.role)) {
+        return { error: { status: 403, message: '此身份沒有兌換功能' } };
       }
 
       if (!item.isActive) {
@@ -56,13 +49,8 @@ const redeemItem = async (req, res) => {
         return { error: { status: 400, message: '物品庫存不足' } };
       }
 
-      // 已整合為單一 ESG 幣。商品若仍是舊的 E/S/G 計價，代表還沒跑遷移——
-      // 那個數字是舊單位，直接當 ESG 扣會扣錯價，所以寧可擋下。
-      if (item.costType !== ESG) {
-        return { error: { status: 409, message: '此商品尚未轉換為 ESG 幣計價，請聯絡管理員' } };
-      }
+      // 只有一種幣：價格就是 ESG 幣
       const coinField = 'esgCoin';
-
       const balance = userData[coinField] || 0;
 
       if (balance < item.cost) {
@@ -105,7 +93,6 @@ const redeemItem = async (req, res) => {
         userId,
         itemId,
         itemName: item.name,
-        itemType: item.costType,
         cost: item.cost,
         exchangedAt: admin.firestore.FieldValue.serverTimestamp(),
         status: 'completed'
@@ -114,7 +101,6 @@ const redeemItem = async (req, res) => {
       return {
         itemName: item.name,
         cost: item.cost,
-        costType: item.costType,
         remainingCoin: balance - item.cost,
         remainingStock: item.stock !== null && item.stock !== undefined ? item.stock - 1 : null
       };
@@ -130,7 +116,6 @@ const redeemItem = async (req, res) => {
       message: '兌換成功！',
       remainingCoin: result.remainingCoin,
       remainingStock: result.remainingStock,
-      costType: result.costType,
       exchangeRecord: {
         recordId: recordRef.id,
         itemName: result.itemName,
@@ -162,7 +147,6 @@ const getExchangeItems = async (req, res) => {
           itemId: doc.id,
           name: data.name,
           description: data.description,
-          costType: data.costType,
           cost: data.cost,
           stock: data.stock,
           imageUrl: data.imageUrl,
@@ -170,7 +154,7 @@ const getExchangeItems = async (req, res) => {
         };
       })
       .filter(item => item.isActive && (item.stock === null || item.stock === undefined || item.stock > 0))
-      .sort((a, b) => (a.costType || '').localeCompare(b.costType || ''))
+      .sort((a, b) => Number(a.cost || 0) - Number(b.cost || 0))
       .slice(0, limit);
 
     // 關閉期間仍回商品清單（學生看得到獎品才有動機），
@@ -207,7 +191,6 @@ const getExchangeHistory = async (req, res) => {
       const data = doc.data();
       return {
         itemName: data.itemName,
-        itemType: data.itemType,
         cost: data.cost,
         exchangedAt: data.exchangedAt.toDate().toISOString(),
         status: data.status

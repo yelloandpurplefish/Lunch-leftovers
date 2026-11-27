@@ -16,7 +16,7 @@
  * 從「那天沒有列」去推斷不供餐是不安全的，整列不見也可能只是忘了填。
  */
 const { db } = require('../config/firebase');
-const { COL, MENU_SLOTS, SLOT_LABEL, SLOT_CATEGORY, TUNABLE_DEFAULTS } = require('../config/schema');
+const { COL, MENU_SLOTS, SLOT_LABEL, SLOT_CATEGORY } = require('../config/schema');
 
 const SHEET_URL = process.env.MENU_SHEET_URL || '';
 const SHEET_TOKEN = process.env.MENU_SHEET_TOKEN || '';
@@ -197,22 +197,17 @@ const dishKey = (name) => norm(name).replace(/\s+/g, '');
 /**
  * 新菜色的起始資料。
  *
- * 營養值取分類預設（與 E 幣公式用的是同一份），份量取上面的起始值，
- * 並標記 needsReview —— 這些數字會直接影響供應量與發幣，
- * 自動建立只是為了不讓排菜卡住，不是說它們已經正確。
+ * 份量取上面的起始值，並標記 needsReview —— 份量會直接影響供應量與剩食比例，
+ * 自動建立只是為了不讓排菜卡住，不是說它已經正確。
  */
 function newDishData(name, slot) {
   const category = SLOT_CATEGORY[slot] || '主菜';
-  const nut = (TUNABLE_DEFAULTS.nutrition.byCategory || {})[category]
-    || TUNABLE_DEFAULTS.nutrition.fallback;
   return {
     name: norm(name),
     category,
     portionG: DEFAULT_PORTION_G[category] || 90,
     unitCost: 0,
     emissionFactor: 0,
-    proteinPerKg: nut.proteinPerKg,
-    fiberPerKg: nut.fiberPerKg,
     needsReview: true,
     createdFrom: 'menu_sync',
   };

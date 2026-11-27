@@ -73,6 +73,19 @@ async function authenticate(req, res, next) {
   }
 }
 
+/**
+ * 只驗簽、不查資料庫，取出 token 裡的 uid；無效或過期回 null。
+ * 給速率限制用（以使用者而不是 IP 計次），**不能**拿來做授權——授權一律走 authenticate。
+ */
+function uidFromToken(token) {
+  try {
+    const decoded = jwt.verify(String(token || ''), JWT_SECRET);
+    return decoded && decoded.uid ? String(decoded.uid) : null;
+  } catch (_) {
+    return null;
+  }
+}
+
 /** 限定角色。管理員永遠通行。*/
 function requireRole(...roles) {
   const allowed = new Set([...roles, ROLES.ADMIN]);
@@ -94,18 +107,71 @@ function requireClass(req, res, next) {
   return next();
 }
 
-// ── 向後相容：原有路由仍使用這些名稱 ────────────────────────────────
-const verifyFirebaseToken = authenticate;
-const verifyAdmin = requireRole(ROLES.ADMIN);
-const verifyTeacherOrAdmin = requireRole(ROLES.TEACHER);
+// ── 午餐長（附加在學生帳號上的身分）────────────────────────────────
+
+/**
+ * 這位使用者是不是本班的午餐長。
+ *
+ * 午餐長不是角色，而是 classes/{classId}.lunchLeaderUserId 指向的那位學生。
+ * 判斷時同時要求「他還在這個班」：學生轉班（名冊同步會改 classId）後，
+ * 舊班級的指標可能還沒清，那時不能讓他繼續替舊班紀錄。
+ *
+ * @param {{uid:string, role:string, classId:string|null}} user req.user
+ * @param {object} [classData] 已經讀過的班級資料，省一次讀取
+ */
+async function isLunchLeader(user, classData) {
+  if (!user || user.role !== ROLES.STUDENT || !user.classId) return false;
+  let c = classData;
+  if (!c) {
+    const snap = await db.collection(COL.classes).doc(user.classId).get();
+    c = snap.exists ? snap.data() : null;
+  }
+  return Boolean(c && c.lunchLeaderUserId === user.uid);
+}
+
+/**
+ * 這次請求操作的是哪一班。
+ * 管理員可以用 classId（query 或 body）指定；其他人一律是自己的班，
+ * 指定別班回 null（越權）。
+ */
+function targetClassId(req) {
+  const asked = String((req.query && req.query.classId) || (req.body && req.body.classId) || '').trim();
+  if (req.user.role === ROLES.ADMIN) return asked || req.user.classId || '';
+  if (asked && asked !== req.user.classId) return null;
+  return req.user.classId || '';
+}
+
+/**
+ * 稱重紀錄的寫入權限：導師、管理員，或本班午餐長。
+ * 通過後 req.classId 是要操作的班級（非管理員一律是自己的班）。
+ */
+async function requireRecorder(req, res, next) {
+  try {
+    if (!req.user) return fail(res, 401, '未登入');
+    const denied = () => fail(res, 403, '只有本班午餐長、導師或管理員可以紀錄');
+    const { role } = req.user;
+    if (![ROLES.ADMIN, ROLES.TEACHER, ROLES.STUDENT].includes(role)) return denied();
+
+    const classId = targetClassId(req);
+    if (classId === null) return fail(res, 403, '只能紀錄自己班級');
+    if (!classId) return fail(res, 400, '此帳號尚未編入班級，請聯絡老師');
+    if (role === ROLES.STUDENT && !(await isLunchLeader(req.user))) return denied();
+
+    req.classId = classId;
+    return next();
+  } catch (error) {
+    console.error('檢查紀錄權限失敗:', error);
+    return fail(res, 500, '伺服器錯誤');
+  }
+}
 
 module.exports = {
   authenticate,
   requireRole,
   requireClass,
+  requireRecorder,
+  isLunchLeader,
+  targetClassId,
+  uidFromToken,
   ROLES,
-  // 相容別名
-  verifyFirebaseToken,
-  verifyAdmin,
-  verifyTeacherOrAdmin,
 };

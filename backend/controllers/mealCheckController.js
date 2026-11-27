@@ -1,8 +1,9 @@
 /**
  * 教師每日逐生檢查「是否吃完他的部分」。
  *
- * 這個動作就是規則裡的「吃完一餐」：勾選 → 該學生 +1 E幣、+1 S幣、+G幣（每人每日一次）。
- * G 幣（感謝）的額度由開發者面板調整（gratitude.mealFinishedG，預設 86），
+ * 這個動作就是規則裡的「吃完一餐」：勾選 → 該學生 ESG 幣
+ * 營養 +1、減碳 +1、感謝 +G（每人每日一次）。
+ * 感謝的額度由管理員面板調整（gratitude.mealFinishedG，預設 5），
  * 因為它不是算出來的，而是「老師看見你吃完了」這件事的份量，屬於學校政策。
  * 以 `meal_checks/{日期_學生id}` 為決定性 doc id，重複勾選不會重複發幣；
  * 取消勾選會沖銷當日這筆（在餘額 0 處夾住，見 lib/coins.js reverseAward）。
@@ -11,40 +12,22 @@
  * 前端不需要再拉一次整份名冊。
  */
 const { db, admin } = require('../config/firebase');
-const { COL, ids, ROLES, COIN_RULES, COIN_HOLDER_ROLES, esgFactor } = require('../config/schema');
+const { COL, ids, ROLES, COIN_RULES, COIN_HOLDER_ROLES } = require('../config/schema');
 const { today, isYmd, daysAgo } = require('../lib/dates');
 const { awardUser, reverseAward } = require('../lib/coins');
 const { getSettings } = require('../lib/settings');
+const { targetClassId } = require('../middleware/auth');
+
+/** 某筆檢查紀錄當初發出了多少 ESG（各來源）。沖銷要用當初的額度，不是現在的設定。 */
+function awardedOf(prev) {
+  const a = (prev && prev.awardedESG) || {};
+  return { E: Number(a.E || 0), S: Number(a.S || 0), G: Number(a.G || 0) };
+}
 
 /**
  * 這一餐的發幣額度：E/S 來自 COIN_RULES（固定），G 來自可調參數。
  * 每次請求都讀一次；settings 自己有 60 秒快取，不會每次都打資料庫。
  */
-/**
- * 某筆檢查紀錄當初發出了多少 ESG（各來源）。
- *
- * 新紀錄存的是 awardedESG（已經是 ESG 單位）。
- * 合併前的舊紀錄只有 awardedG（舊 G 單位），E、S 固定各 1（舊單位）；
- * 學生的餘額在遷移時是用同一組係數換算的，所以沖銷也必須換算——
- * 不換算的話一筆舊紀錄會扣 1+1+86 = 88 ESG，但它當初只換到約 26 ESG。
- * 沒有 awardedG 的舊紀錄是 G 幣出現之前的，那時沒有發 G。
- */
-function awardedOf(prev) {
-  if (!prev) return { E: 0, S: 0, G: 0 };
-  if (prev.awardedESG) {
-    return {
-      E: Number(prev.awardedESG.E || 0),
-      S: Number(prev.awardedESG.S || 0),
-      G: Number(prev.awardedESG.G || 0),
-    };
-  }
-  return {
-    E: COIN_RULES.MEAL_FINISHED.E * esgFactor('E'),
-    S: COIN_RULES.MEAL_FINISHED.S * esgFactor('S'),
-    G: Number(prev.awardedG || 0) * esgFactor('G'),
-  };
-}
-
 async function finishedReward() {
   const s = await getSettings();
   const g = Number((s.gratitude || {}).mealFinishedG || 0);
@@ -58,19 +41,15 @@ async function finishedReward() {
 const serverTime = () => admin.firestore.FieldValue.serverTimestamp();
 const bad = (res, status, message, extra = {}) => res.status(status).json({ success: false, message, ...extra });
 
-/** 教師只能操作自己的班；管理員可用 classId 指定。*/
-function targetClassId(req) {
-  const asked = String(req.query.classId || req.body.classId || '');
-  if (req.user.role === ROLES.ADMIN) return asked || req.user.classId || '';
-  if (asked && asked !== req.user.classId) return null; // 越權
-  return req.user.classId || '';
-}
-
-/** 班上持幣成員（學生與午餐長），依座號排序。*/
-async function getRoster(classId) {
+/**
+ * 班上的學生，依座號排序。
+ * 教師只能操作自己的班、管理員可用 classId 指定（middleware/auth.js 的 targetClassId）。
+ * @param {string|null} leaderId 班級的 lunchLeaderUserId，用來在名冊上標出午餐長
+ */
+async function getRoster(classId, leaderId = null) {
   const snap = await db.collection(COL.users)
     .where('classId', '==', classId)
-    .where('role', 'in', COIN_HOLDER_ROLES)
+    .where('role', '==', ROLES.STUDENT)
     .get();
   return snap.docs
     .map((d) => ({
@@ -78,6 +57,7 @@ async function getRoster(classId) {
       displayName: d.data().displayName || '',
       seatNo: d.data().seatNo || '',
       role: d.data().role,
+      isLunchLeader: Boolean(leaderId) && d.id === leaderId,
       account: d.data().account || null,
     }))
     .sort((a, b) => String(a.seatNo).localeCompare(String(b.seatNo), 'zh-Hant', { numeric: true }));
@@ -116,10 +96,11 @@ const getRoster_ = async (req, res) => {
     if (!classId) return bad(res, 400, '此帳號尚未編入班級');
     const date = isYmd(req.query.date) ? req.query.date : today();
 
-    const [roster, checks, classSnap] = await Promise.all([
-      getRoster(classId),
+    const classSnap = await db.collection(COL.classes).doc(classId).get();
+    const leaderId = classSnap.exists ? classSnap.data().lunchLeaderUserId || null : null;
+    const [roster, checks] = await Promise.all([
+      getRoster(classId, leaderId),
       getChecks(classId, date),
-      db.collection(COL.classes).doc(classId).get(),
     ]);
 
     const rows = roster.map((r) => {
@@ -349,7 +330,7 @@ const getMyChecks = async (req, res) => {
       success: true,
       studentId,
       range: `${days}d`,
-      // 讓前端的說明文字能顯示實際額度（G 幣可在開發者面板調整）
+      // 讓前端的說明文字能顯示實際額度（感謝的額度可在管理員面板調整）
       rewardPerStudent: await finishedReward(),
       records,
       stats: { days: records.length, finishedDays, rate: records.length ? Math.round((finishedDays / records.length) * 100) : 0 },

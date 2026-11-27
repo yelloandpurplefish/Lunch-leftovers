@@ -1,12 +1,13 @@
 /**
  * 管理員 / 開發者專區：手動維護名冊。
  *
- * 學生可以自助註冊，但**前提是班級已經存在**；老師、午餐長、管理員帳號
+ * 學生可以自助註冊，但**前提是班級已經存在**；老師、管理員帳號
  * 也不該讓人自行註冊。這些「開學前要先建好」與「臨時要補資料」的情況，
  * 全部走這裡：
  *
  *   班級：新增 / 修改（年級、班名、人數）、指定導師與午餐長
- *   帳號：新增（學生 / 午餐長 / 老師 / 管理員）、改角色、改班級座號、
+ *         （午餐長是班上的一位學生，不是另一種帳號）
+ *   帳號：新增（學生 / 老師 / 管理員）、改角色、改班級座號、
  *         停用啟用、重設密碼
  *
  * 全部端點都要 admin 角色（middleware/auth.js 的 requireRole 會讓 admin 通行）。
@@ -17,11 +18,10 @@ const { db, admin } = require('../config/firebase');
 const { COL, ROLES, ALL_ROLES, COIN_HOLDER_ROLES, MENU_SLOTS, SLOT_LABEL, DEVICE } = require('../config/schema');
 const { createUserWithAccount, findClass, findUserByIdentifier } = require('./authController');
 const { today } = require('../lib/dates');
-const { getSettings, saveSettings, validateTunables, deepMerge } = require('../lib/settings');
+const { getSettings, saveSettings } = require('../lib/settings');
 const sheet = require('../lib/studentSheet');
 const menu = require('../lib/menuSheet');
 const { TUNABLE_DEFAULTS } = require('../config/schema');
-const { computeNutrition, computeEnergyCoins, computeSdg } = require('../lib/scoring');
 const shop = require('../lib/shop');
 const bucketTare = require('../lib/bucketTare');
 const scaleReadings = require('../lib/scaleReadings');
@@ -31,11 +31,14 @@ const serverTime = () => admin.firestore.FieldValue.serverTimestamp();
 const norm = (v) => String(v == null ? '' : v).trim();
 const bad = (res, status, message, extra = {}) => res.status(status).json({ success: false, message, ...extra });
 
-/** 管理員可以建立的角色（家長仍走自助註冊，因為需要驗證孩子資料）。*/
-const CREATABLE_ROLES = [ROLES.STUDENT, ROLES.LUNCH_LEADER, ROLES.TEACHER, ROLES.ADMIN];
+/**
+ * 管理員可以建立的角色（家長仍走自助註冊，因為需要驗證孩子資料）。
+ * 午餐長不在這裡：先建學生帳號，再到班級列表指定（setLunchLeader）。
+ */
+const CREATABLE_ROLES = [ROLES.STUDENT, ROLES.TEACHER, ROLES.ADMIN];
 
 /** 需要班級與座號的角色。*/
-const NEEDS_SEAT = [ROLES.STUDENT, ROLES.LUNCH_LEADER];
+const NEEDS_SEAT = [ROLES.STUDENT];
 
 const BCRYPT_ROUNDS = 10;
 
@@ -91,26 +94,32 @@ const listClasses = async (req, res) => {
     ]);
 
     const members = new Map();
-    const nameOf = new Map();
+    const userById = new Map();
     usersSnap.docs.forEach((d) => {
       const u = d.data();
-      nameOf.set(d.id, u.displayName || d.id);
-      if (!u.classId || !COIN_HOLDER_ROLES.includes(u.role)) return;
+      userById.set(d.id, u);
+      if (!u.classId || u.role !== ROLES.STUDENT) return;
       members.set(u.classId, (members.get(u.classId) || 0) + 1);
     });
+    const nameOf = (id) => (userById.get(id) || {}).displayName || null;
 
     const classes = classesSnap.docs
       .map((d) => {
         const c = d.data();
+        // 午餐長轉班或改角色後，舊班級的指標可能還沒清；那種情況顯示為「未指定」，
+        // 與實際權限（middleware/auth.js 的 isLunchLeader）一致
+        const leader = c.lunchLeaderUserId ? userById.get(c.lunchLeaderUserId) : null;
+        const leaderValid = leader && leader.role === ROLES.STUDENT && leader.classId === d.id;
         return {
           classId: d.id,
           grade: c.grade || null,
           name: c.name || null,
           headcount: Number(c.headcount || 0),
           registered: members.get(d.id) || 0,
-          teacher: c.teacherUserId ? { userId: c.teacherUserId, displayName: nameOf.get(c.teacherUserId) || null } : null,
-          lunchLeader: c.lunchLeaderUserId ? { userId: c.lunchLeaderUserId, displayName: nameOf.get(c.lunchLeaderUserId) || null } : null,
-          classCoins: { ESG: Number(c.esgCoin || 0) },
+          teacher: c.teacherUserId ? { userId: c.teacherUserId, displayName: nameOf(c.teacherUserId) } : null,
+          lunchLeader: leaderValid
+            ? { userId: c.lunchLeaderUserId, displayName: leader.displayName || null, account: leader.account || null }
+            : null,
         };
       })
       .sort((a, b) => String(a.grade).localeCompare(String(b.grade)) || String(a.name).localeCompare(String(b.name)));
@@ -152,7 +161,6 @@ const createClass = async (req, res) => {
       grade,
       name,
       headcount,
-      esgCoin: 0,
       createdBy: req.user.uid,
       createdAt: serverTime(),
       updatedAt: serverTime(),
@@ -207,7 +215,10 @@ const updateClass = async (req, res) => {
 /**
  * POST /api/admin/classes/:classId/lunch-leader — 指定午餐長。
  * body: { userId } 或 { account }
- * 原本的午餐長會自動降回學生（一班只有一位）。
+ *
+ * 午餐長是附加在學生帳號上的身分：只改班級的 lunchLeaderUserId，
+ * 學生的角色不變（仍然是 student，學生的功能全部保留）。
+ * 一班只有一位，指定新的人就等於換掉原本那位。
  */
 const setLunchLeader = async (req, res) => {
   try {
@@ -220,32 +231,20 @@ const setLunchLeader = async (req, res) => {
       ? await db.collection(COL.users).doc(String(req.body.userId)).get().then((s) => (s.exists ? { id: s.id, ...s.data() } : null))
       : await findUserByIdentifier(req.body.account);
     if (!target) return bad(res, 404, '查無此使用者');
-    if (target.classId !== classId) return bad(res, 400, '該使用者不屬於這個班級');
-    if (!COIN_HOLDER_ROLES.includes(target.role)) return bad(res, 400, '只能指派學生擔任午餐長');
+    if (target.role !== ROLES.STUDENT) return bad(res, 400, '只能指派學生擔任午餐長');
+    if (target.classId !== classId) return bad(res, 400, '該學生不屬於這個班級');
 
-    const batch = db.batch();
-    const previousId = classSnap.data().lunchLeaderUserId;
-
-    // 舊午餐長降回學生（避免一班出現兩位有紀錄權限的人）
-    if (previousId && previousId !== target.id) {
-      batch.set(db.collection(COL.users).doc(previousId), {
-        role: ROLES.STUDENT,
-        updatedBy: req.user.uid,
-        updatedAt: serverTime(),
-      }, { merge: true });
-    }
-    batch.set(db.collection(COL.users).doc(target.id), {
-      role: ROLES.LUNCH_LEADER,
+    const previousId = classSnap.data().lunchLeaderUserId || null;
+    await classRef.set({
+      lunchLeaderUserId: target.id,
       updatedBy: req.user.uid,
       updatedAt: serverTime(),
     }, { merge: true });
-    batch.set(classRef, { lunchLeaderUserId: target.id, updatedAt: serverTime() }, { merge: true });
-    await batch.commit();
 
     return res.status(200).json({
       success: true,
       message: `已指定 ${target.displayName} 為午餐長`,
-      demoted: previousId && previousId !== target.id ? previousId : null,
+      replaced: previousId && previousId !== target.id ? previousId : null,
     });
   } catch (error) {
     console.error('指定午餐長失敗:', error);
@@ -335,7 +334,7 @@ const listUsers = async (req, res) => {
  * POST /api/admin/users — 手動新增帳號。
  * body: { role, account, password, displayName, email?, grade?, className?, seatNo? }
  *
- * 學生/午餐長需要年級班級座號（會核對 classes 名冊、檢查座號重複）；
+ * 學生需要年級班級座號（會核對 classes 名冊、檢查座號重複）；
  * 老師只需要指定班級（可用 grade+className 或直接給 classId）；管理員不需班級。
  */
 const createUser = async (req, res) => {
@@ -367,7 +366,7 @@ const createUser = async (req, res) => {
       createdBy: req.user.uid,
       createdAt: serverTime(),
       lastLoginAt: serverTime(),
-      ...(COIN_HOLDER_ROLES.includes(role) ? { esgCoin: 0, score: 0 } : {}),
+      ...(COIN_HOLDER_ROLES.includes(role) ? { esgCoin: 0 } : {}),
     };
 
     // 需要班級的角色：核對名冊
@@ -393,7 +392,7 @@ const createUser = async (req, res) => {
 
       if (NEEDS_SEAT.includes(role)) {
         const seatNo = norm(req.body.seatNo);
-        if (!seatNo) return bad(res, 400, '學生與午餐長需要座號');
+        if (!seatNo) return bad(res, 400, '學生需要座號');
         const taken = await db.collection(COL.users)
           .where('classId', '==', klass.id)
           .where('seatNo', '==', seatNo)
@@ -405,12 +404,6 @@ const createUser = async (req, res) => {
     }
 
     const extraWrites = [];
-    if (role === ROLES.LUNCH_LEADER && userData.classId) {
-      extraWrites.push({
-        ref: db.collection(COL.classes).doc(userData.classId),
-        data: { lunchLeaderUserId: userId, updatedAt: serverTime() },
-      });
-    }
     if (role === ROLES.TEACHER && userData.classId) {
       extraWrites.push({
         ref: db.collection(COL.classes).doc(userData.classId),
@@ -467,7 +460,6 @@ const updateUser = async (req, res) => {
       // 升成持幣角色但還沒有幣欄位時補 0，避免 undefined 進運算
       if (COIN_HOLDER_ROLES.includes(req.body.role) && current.esgCoin === undefined) {
         updates.esgCoin = 0;
-        updates.score = 0;
       }
     }
 
@@ -507,20 +499,15 @@ const updateUser = async (req, res) => {
 
     await ref.set(updates, { merge: true });
 
-    // 角色改動要同步班級的午餐長欄位，避免名冊與角色對不上
-    if (updates.role) {
-      const classId = updates.classId || current.classId;
-      if (classId) {
-        const classRef = db.collection(COL.classes).doc(classId);
-        const classSnap = await classRef.get();
-        if (classSnap.exists) {
-          const c = classSnap.data();
-          if (updates.role === ROLES.LUNCH_LEADER) {
-            await classRef.set({ lunchLeaderUserId: req.params.userId }, { merge: true });
-          } else if (c.lunchLeaderUserId === req.params.userId) {
-            await classRef.set({ lunchLeaderUserId: null }, { merge: true });
-          }
-        }
+    // 午餐長不再是學生（改了角色）或換了班 → 清掉原班級的午餐長指標。
+    // 權限判斷本來就會檢查這兩件事，這裡清掉是為了讓班級列表與實際一致。
+    const leftStudent = updates.role && updates.role !== ROLES.STUDENT;
+    const changedClass = updates.classId && updates.classId !== current.classId;
+    if ((leftStudent || changedClass) && current.classId) {
+      const classRef = db.collection(COL.classes).doc(current.classId);
+      const classSnap = await classRef.get();
+      if (classSnap.exists && classSnap.data().lunchLeaderUserId === req.params.userId) {
+        await classRef.set({ lunchLeaderUserId: null, updatedAt: serverTime() }, { merge: true });
       }
     }
 
@@ -537,15 +524,14 @@ const updateUser = async (req, res) => {
 };
 
 
-// ── 發幣公式的可調常數 ──────────────────────────────────────────────
+// ── 可調參數（感謝額度、建議攝取）──────────────────────────────────
 
 /**
  * GET /api/admin/coin-rules
- * 回傳目前採用值、出廠預設值，以及一組試算範例。
+ * 回傳目前採用值與出廠預設值。
  *
  * 同時回傳預設值是刻意的：調參數的人需要知道「原廠是多少」才敢動，
- * 也才有辦法還原。試算範例則讓人在存檔前就看得出這次調整會發出多少幣，
- * 不必真的去結算一餐才知道改壞了。
+ * 也才有辦法還原。
  */
 const getCoinRules = async (req, res) => {
   try {
@@ -554,13 +540,6 @@ const getCoinRules = async (req, res) => {
       success: true,
       values: current,
       defaults: TUNABLE_DEFAULTS,
-      preview: previewWith(current),
-      explain: {
-        E: '營養來源 = 人均蛋白質(g) × kProtein + 人均膳食纖維(g) × kFiber',
-        S: '減碳來源 = round(樹 × sCoinPerTree)，樹 = 人均少浪費(kg) × co2PerKgWaste ÷ treeAnnualCo2Kg',
-        G: '感謝來源 = 老師確認完食時發 mealFinishedG',
-        note: '三個來源都發 ESG 幣。營養與減碳以人均計算，再全額加給班上每位學生。',
-      },
     });
   } catch (error) {
     console.error('讀取發幣參數失敗:', error);
@@ -577,10 +556,9 @@ const updateCoinRules = async (req, res) => {
     const result = await saveSettings(req.body && req.body.values, { uid: req.user.uid });
     return res.status(200).json({
       success: true,
-      message: '已更新，下一次結算即生效（已結算的紀錄不會重算）',
+      message: '已更新，之後的勾選與建議值即生效（已發出的幣不會重算）',
       values: result.current,
       defaults: TUNABLE_DEFAULTS,
-      preview: previewWith(result.current),
     });
   } catch (error) {
     if (error.status === 400) return bad(res, 400, error.message);
@@ -589,73 +567,6 @@ const updateCoinRules = async (req, res) => {
   }
 };
 
-/**
- * POST /api/admin/coin-rules/preview
- * 不存檔，只用送來的參數試算一次，供面板即時預覽。
- */
-const previewCoinRules = async (req, res) => {
-  try {
-    const { values, errors } = validateTunables((req.body && req.body.values) || {});
-    if (errors.length) return bad(res, 400, errors.join('；'));
-    const merged = deepMerge(await getSettings(), values);
-    return res.status(200).json({ success: true, preview: previewWith(merged) });
-  } catch (error) {
-    console.error('試算失敗:', error);
-    return bad(res, 500, error.message || '試算失敗');
-  }
-};
-
-/**
- * 以一份固定的示範菜單試算，讓面板上的數字有比較基準。
- * 用固定範例而不是當天真實資料，是為了讓「改參數前後」的差異只來自參數本身。
- */
-const SAMPLE_SERVINGS = 30;
-const SAMPLE_DISHES = [
-  { dishId: 's1', name: '糙米飯', category: '主食', portionG: 120 },
-  { dishId: 's2', name: '紅燒雞腿', category: '主菜', portionG: 90 },
-  { dishId: 's3', name: '滷豆腐', category: '副菜', portionG: 70 },
-  { dishId: 's4', name: '炒高麗菜', category: '蔬菜', portionG: 80 },
-  { dishId: 's5', name: '玉米濃湯', category: '湯品', portionG: 200 },
-];
-
-function previewWith(settings) {
-  const dishMap = new Map(SAMPLE_DISHES.map((d) => [d.dishId, d]));
-  const build = (remainRatio) => SAMPLE_DISHES.map((d) => ({
-    dishId: d.dishId,
-    dishName: d.name,
-    category: d.category,
-    suppliedG: d.portionG * SAMPLE_SERVINGS,
-    leftoverG: d.portionG * SAMPLE_SERVINGS * remainRatio,
-  }));
-
-  const scenario = (label, remainRatio, classWastePerCapitaG, schoolAvgPerCapitaG) => {
-    const nutrition = computeNutrition(build(remainRatio), dishMap, SAMPLE_SERVINGS, settings);
-    const energy = computeEnergyCoins(nutrition, settings);
-    const sdg = computeSdg({
-      classWastePerCapitaG, schoolAvgPerCapitaG,
-      servings: SAMPLE_SERVINGS, settings,
-    });
-    return {
-      label,
-      perCapita: nutrition.perCapita,
-      E: energy.coins,
-      S: sdg.coins,
-      treesPerCapita: sdg.treesPerCapita,
-      treesClass: sdg.treesClass,
-      savedPerCapitaG: sdg.savedPerCapitaG,
-    };
-  };
-
-  return {
-    servings: SAMPLE_SERVINGS,
-    menu: SAMPLE_DISHES.map((d) => `${d.name}(${d.category} ${d.portionG}g)`),
-    scenarios: [
-      scenario('吃光光（殘餘 0%）', 0, 0, 120),
-      scenario('一般（殘餘 20%）', 0.2, 112, 120),
-      scenario('剩很多（殘餘 50%）', 0.5, 280, 120),
-    ],
-  };
-}
 
 
 // ── 學生名冊同步（Google 試算表 → Firestore）────────────────────────
@@ -753,7 +664,7 @@ const syncStudents = async (req, res) => {
       };
 
       if (existing) {
-        if (existing.role !== ROLES.STUDENT && existing.role !== ROLES.LUNCH_LEADER) {
+        if (existing.role !== ROLES.STUDENT) {
           errors.push({ row: row.rowNumber, name: s.displayName,
             reason: `這個 Gmail 已是「${existing.role}」帳號，同步不會改動非學生角色` });
           continue;
@@ -792,7 +703,7 @@ const syncStudents = async (req, res) => {
             isActive: true,
             schoolId: klass.schoolId || null,
             createdAt: serverTime(),
-            esgCoin: 0, score: 0,
+            esgCoin: 0,
             // 沒有 passwordHash：帳密登入會被擋（回 401），
             // 要等 Google 登入上線這些帳號才真正可用
             authProvider: 'google',
@@ -808,7 +719,7 @@ const syncStudents = async (req, res) => {
     // 掃完整份使用者清單，而不是只掃有 email 的——
     // 沒填 Gmail 的學生同樣要被列出來，他們反而最需要被注意到。
     const notInSheet = allUsers
-      .filter((u) => (u.role === ROLES.STUDENT || u.role === ROLES.LUNCH_LEADER)
+      .filter((u) => u.role === ROLES.STUDENT
         && u.isActive !== false
         && !seenEmails.has(String(u.email || '').toLowerCase()))
       .map((u) => ({
@@ -1282,7 +1193,6 @@ module.exports = {
   syncStudents,
   getCoinRules,
   updateCoinRules,
-  previewCoinRules,
   listClasses,
   createClass,
   updateClass,

@@ -1338,142 +1338,6 @@ td{
 
 }
 
-/* ── 午餐長：四桶紀錄 ── */
-
-.bucket-card{
-
-    max-width:700px;
-
-    margin:16px auto;
-
-    padding:16px;
-
-    background:#f7fbf7;
-
-    border:2px solid #e8f5e9;
-
-    border-radius:16px;
-
-    text-align:left;
-
-}
-
-.bucket-card.measured{
-
-    border-color:#43a047;
-
-}
-
-.bucket-card h3{
-
-    margin:0 0 8px;
-
-    color:#2e7d32;
-
-    font-size:19px;
-
-}
-
-.bucket-actions{
-
-    display:flex;
-
-    gap:10px;
-
-    flex-wrap:wrap;
-
-    margin:10px 0;
-
-}
-
-.bucket-actions button{
-
-    padding:10px 18px;
-
-    font-size:15px;
-
-}
-
-.bucket-warning{
-
-    font-size:14px;
-
-    color:#f57c00;
-
-    margin:4px 0;
-
-}
-
-.dish-row{
-
-    display:flex;
-
-    align-items:center;
-
-    gap:10px;
-
-    padding:8px 10px;
-
-    background:#fff;
-
-    border-radius:10px;
-
-    margin:6px 0;
-
-    flex-wrap:wrap;
-
-}
-
-.dish-row.needs-review{
-
-    background:#fff8e1;
-
-    border:1px solid #ff9800;
-
-}
-
-.dish-name{
-
-    flex:1;
-
-    min-width:120px;
-
-    font-size:16px;
-
-}
-
-.dish-name small{
-
-    color:#f57c00;
-
-    font-weight:bold;
-
-}
-
-.dish-value{
-
-    font-size:15px;
-
-    color:#2e7d32;
-
-    font-weight:bold;
-
-    min-width:130px;
-
-    text-align:right;
-
-}
-
-.ratio-slider{
-
-    flex:1;
-
-    min-width:140px;
-
-    accent-color:#43a047;
-
-}
-
 .record-summary{
 
     max-width:700px;
@@ -2119,14 +1983,6 @@ body{
     font-size:11px;
 }
 
-/* 試算預覽：存檔前就看得出這次調整會發多少幣 */
-.rules-preview{
-    margin-top:14px;
-    padding:12px;
-    background:#f7f9fb;
-    border-radius:12px;
-}
-
 .rules-actions{
     display:flex;
     flex-wrap:wrap;
@@ -2253,7 +2109,6 @@ img, iframe, video, canvas, svg{
    會留下兩側不等寬的空白，看起來像沒對齊。改為填滿父層內距邊界。 */
 .check-summary,
 .check-row,
-.bucket-card,
 .record-summary,
 .dish-status,
 .admin-row,
@@ -2291,7 +2146,7 @@ table th{
     margin:0;
 }
 
-.hero-table{ min-width:420px; }       /* 名次/姓名/E/S/樹 共 5 欄 */
+.hero-table{ min-width:420px; }       /* 名次/姓名/ESG/來源 共 4 欄 */
 .rule-table{ min-width:360px; }
 .reading-table{ min-width:420px; }
 /* 用明確的 class 而不是 `.ranking .table-scroll > table`：後者的特異度
@@ -2511,21 +2366,6 @@ body{
     margin:8px 0 0;
     font-size:12px;
     color:#8a8f98;
-}
-
-/* 紀錄面板裡接在滑桿下方的那一行 */
-.dish-row-cross{
-    margin:-2px 0 10px;
-    padding-left:4px;
-    border-left:3px solid #e8f5e9;
-}
-
-.dish-row-cross.shortage{
-    border-left-color:#e74c3c;
-}
-
-.dish-row-cross p{
-    margin:4px 0 0;
 }
 
 @media (max-width:420px){
@@ -3078,4 +2918,33 @@ body{
     font-family:ui-monospace, SFMono-Regular, Menlo, Consolas, monospace;
     font-size:12px;
     user-select:all;          /* 點一下就全選，方便複製 */
+}
+
+/* ── 學生：拍自己的餐盤 ──────────────────────────────────────
+   回饋的顏色只分「吃光／還好／剩不少」，不做紅色警告：
+   這是給孩子看的鼓勵，不是糾正。 */
+.plate-feedback{
+    margin:12px 0;
+    padding:12px 16px;
+    border-radius:14px;
+    background:#f7fbf7;
+    border:2px solid #e8f5e9;
+    text-align:left;
+}
+
+.plate-feedback.clean{ border-color:#43a047; background:#e8f5e9; }
+.plate-feedback.little{ border-color:#9ccc65; }
+.plate-feedback.half,
+.plate-feedback.most{ border-color:#ffb74d; background:#fff8e1; }
+
+.plate-title{
+    margin:0 0 4px;
+    font-size:20px;
+    font-weight:bold;
+    color:#2e7d32;
+}
+
+#plateBtn:disabled{
+    opacity:0.5;
+    cursor:not-allowed;
 }

@@ -2,17 +2,17 @@
  * 名冊與紀錄管線所需的基礎資料（本檔為新增，與原本的 seed.js 並存）。
  *
  *  · classes：班級名冊。**沒有名冊就無法註冊學生**（年級/班級要對得上），
- *    也無法算班級幣與班際排行，所以列為基礎資料，每次啟動都確保存在。
- *  · dishes：菜色資料庫（每份份量/單價/碳排係數），紀錄管線靠它把殘餘比例換成克數。
- *  · daily_menu 的 slot 對應：在原本的 items 之外補上 6 個欄位 → dishId，
- *    供四桶辨識把桶內菜色對回菜單（不動原有的 items，前端照舊）。
+ *    也無法換算供餐份數，所以列為基礎資料，每次啟動都確保存在。
+ *  · dishes：菜色資料庫（每份份量/單價/碳排係數），稱重靠它算供應量、成本與碳排。
+ *  · daily_menu 的 slot 對應：6 個欄位 → dishId，稱重清單照這個順序列出菜色。
  *
  * 全部 idempotent：以固定 doc id 寫入，重複執行不會產生重複資料。
  */
 const bcrypt = require('bcryptjs');
 const { admin, db } = require('./firebase');
-const { COL, ROLES, MENU_SLOTS } = require('./schema');
+const { COL, ROLES, ALL_ROLES, COIN_HOLDER_ROLES, MENU_SLOTS } = require('./schema');
 const { today } = require('../lib/dates');
+const menuSheet = require('../lib/menuSheet');
 
 const SCHOOL_ID = 'school-demo';
 const serverTime = () => admin.firestore.FieldValue.serverTimestamp();
@@ -23,22 +23,18 @@ const CLASSES = [
   { classId: 'cls-305', grade: '3', name: '305', headcount: 26 },
 ];
 
-/**
- * unitCost 元/kg、emissionFactor kgCO2e/kg、portionG 每人份量。
- * proteinPerKg / fiberPerKg 為每公斤食物的營養含量（公克），E 幣公式用。
- * 沒填的菜色會退回 TUNABLE_DEFAULTS.nutrition 的分類預設值。
- */
+/** unitCost 元/kg、emissionFactor kgCO2e/kg、portionG 每人份量。 */
 const DISHES = [
-  { dishId: 'dish-rice-brown', name: '糙米飯', category: '主食', portionG: 120, unitCost: 60, emissionFactor: 1.2, proteinPerKg: 26, fiberPerKg: 18 },
-  { dishId: 'dish-rice-white', name: '白米飯', category: '主食', portionG: 120, unitCost: 55, emissionFactor: 1.2, proteinPerKg: 26, fiberPerKg: 4 },
-  { dishId: 'dish-chicken-leg', name: '紅燒雞腿', category: '主菜', portionG: 90, unitCost: 180, emissionFactor: 6.1, proteinPerKg: 190, fiberPerKg: 0 },
-  { dishId: 'dish-pork-cabbage', name: '香菇炒肉', category: '主菜', portionG: 85, unitCost: 160, emissionFactor: 7.2, proteinPerKg: 150, fiberPerKg: 15 },
-  { dishId: 'dish-tofu', name: '滷豆腐', category: '副菜', portionG: 70, unitCost: 70, emissionFactor: 2.0, proteinPerKg: 88, fiberPerKg: 4 },
-  { dishId: 'dish-egg', name: '滷蛋', category: '副菜', portionG: 60, unitCost: 95, emissionFactor: 4.7, proteinPerKg: 125, fiberPerKg: 0 },
-  { dishId: 'dish-cabbage', name: '炒高麗菜', category: '蔬菜', portionG: 80, unitCost: 45, emissionFactor: 0.5, proteinPerKg: 13, fiberPerKg: 18 },
-  { dishId: 'dish-bokchoy', name: '炒青江菜', category: '蔬菜', portionG: 80, unitCost: 48, emissionFactor: 0.5, proteinPerKg: 15, fiberPerKg: 22 },
-  { dishId: 'dish-corn-soup', name: '玉米濃湯', category: '湯品', portionG: 200, unitCost: 35, emissionFactor: 0.9, proteinPerKg: 20, fiberPerKg: 8 },
-  { dishId: 'dish-radish-soup', name: '蘿蔔湯', category: '湯品', portionG: 200, unitCost: 30, emissionFactor: 0.4, proteinPerKg: 6, fiberPerKg: 6 },
+  { dishId: 'dish-rice-brown', name: '糙米飯', category: '主食', portionG: 120, unitCost: 60, emissionFactor: 1.2 },
+  { dishId: 'dish-rice-white', name: '白米飯', category: '主食', portionG: 120, unitCost: 55, emissionFactor: 1.2 },
+  { dishId: 'dish-chicken-leg', name: '紅燒雞腿', category: '主菜', portionG: 90, unitCost: 180, emissionFactor: 6.1 },
+  { dishId: 'dish-pork-cabbage', name: '香菇炒肉', category: '主菜', portionG: 85, unitCost: 160, emissionFactor: 7.2 },
+  { dishId: 'dish-tofu', name: '滷豆腐', category: '副菜', portionG: 70, unitCost: 70, emissionFactor: 2.0 },
+  { dishId: 'dish-egg', name: '滷蛋', category: '副菜', portionG: 60, unitCost: 95, emissionFactor: 4.7 },
+  { dishId: 'dish-cabbage', name: '炒高麗菜', category: '蔬菜', portionG: 80, unitCost: 45, emissionFactor: 0.5 },
+  { dishId: 'dish-bokchoy', name: '炒青江菜', category: '蔬菜', portionG: 80, unitCost: 48, emissionFactor: 0.5 },
+  { dishId: 'dish-corn-soup', name: '玉米濃湯', category: '湯品', portionG: 200, unitCost: 35, emissionFactor: 0.9 },
+  { dishId: 'dish-radish-soup', name: '蘿蔔湯', category: '湯品', portionG: 200, unitCost: 30, emissionFactor: 0.4 },
 ];
 
 /** 今日菜單的 slot → dishId（示範用固定一組）。*/
@@ -57,7 +53,7 @@ async function seedClasses() {
     batch.set(
       db.collection(COL.classes).doc(classId),
       { classId, schoolId: SCHOOL_ID, ...data, updatedAt: serverTime() },
-      // 只覆寫名冊欄位，保留班級幣池等累積值
+      // 只覆寫名冊欄位，保留導師、午餐長等指派
       { mergeFields: ['classId', 'schoolId', 'grade', 'name', 'headcount', 'updatedAt'] }
     );
   });
@@ -74,14 +70,38 @@ async function seedDishes() {
   console.log(`  ✓ dishes：${DISHES.length} 道`);
 }
 
-/** 在今天的 daily_menu 文件補上四桶辨識需要的 slot 對應。*/
+/**
+ * 沒有真正的菜單時，給今天放一份示範菜色，讓稱重流程在開發環境走得通。
+ *
+ * **絕不覆寫**：原本每次啟動都以 merge 寫入，會把從試算表同步來的今日菜色逐欄蓋掉，
+ * 不供餐日也會被改成供餐。現在：
+ *  · 設定了菜單試算表（MENU_SHEET_URL＋TOKEN）→ 菜單以試算表為準，完全不放示範
+ *  · 今天已有任何菜色，或已標記不供餐 → 不動
+ *  · 只有今天完全沒有菜色時才補上示範的一組
+ */
 async function seedTodayMenuSlots() {
   const date = today();
-  await db.collection(COL.dailyMenu).doc(date).set(
+  if (menuSheet.configured()) {
+    console.log(`  ⏭️  daily_menu ${date}：已設定菜單試算表，不放示範菜色`);
+    return;
+  }
+  const ref = db.collection(COL.dailyMenu).doc(date);
+  const snap = await ref.get();
+  const menu = snap.exists ? snap.data() : null;
+  if (menu && menu.isActive === false) {
+    console.log(`  ⏭️  daily_menu ${date}：今天標記不供餐，不放示範菜色`);
+    return;
+  }
+  const hasDishes = Boolean(menu && menu.dishes && MENU_SLOTS.some((s) => menu.dishes[s]));
+  if (hasDishes) {
+    console.log(`  ✓ daily_menu ${date}：已有菜色，不覆寫`);
+    return;
+  }
+  await ref.set(
     { menuId: date, date, dishes: TODAY_SLOTS, isActive: true, updatedAt: serverTime() },
     { merge: true }
   );
-  console.log(`  ✓ daily_menu ${date}：補上 ${MENU_SLOTS.length} 個欄位對應`);
+  console.log(`  ✓ daily_menu ${date}：今天沒有菜色，放入示範的 ${MENU_SLOTS.length} 道`);
 }
 
 // ── 示範帳號（含名冊欄位），需 SEED_TEST_ACCOUNTS=true ──────────────
@@ -91,8 +111,10 @@ const DEMO_USERS = [
     classId: 'cls-302', grade: '3', className: '302',
   },
   {
-    account: 'leader302', displayName: '302・午餐長', role: ROLES.LUNCH_LEADER,
+    // 午餐長就是一位學生，另外被指定為 302 班的午餐長（classes.lunchLeaderUserId）
+    account: 'leader302', displayName: '302・午餐長', role: ROLES.STUDENT,
     classId: 'cls-302', grade: '3', className: '302', seatNo: '01',
+    lunchLeaderOf: 'cls-302',
   },
   {
     account: 'stu302-02', displayName: '302・王小明', role: ROLES.STUDENT,
@@ -127,10 +149,21 @@ async function findByAccount(account) {
 
 async function upsertUser(spec, passwordHash) {
   const existing = await findByAccount(spec.account);
-  if (existing) return { id: existing.id, created: false };
+  if (existing) {
+    // 示範帳號的角色若已不是有效角色（例如改版前的 lunch_leader），改回規格裡的角色；
+    // 有效角色一律不動，管理員手動改過的不會被啟動蓋回去
+    if (!ALL_ROLES.includes(existing.role)) {
+      await db.collection(COL.users).doc(existing.id).set({
+        role: spec.role,
+        ...(COIN_HOLDER_ROLES.includes(spec.role) && existing.esgCoin === undefined ? { esgCoin: 0 } : {}),
+      }, { merge: true });
+      console.log(`  ✓ ${spec.account}：角色 ${existing.role} 已不存在，改為 ${spec.role}`);
+    }
+    return { id: existing.id, created: false };
+  }
 
   const userId = db.collection(COL.users).doc().id;
-  const isCoinHolder = spec.role === ROLES.STUDENT || spec.role === ROLES.LUNCH_LEADER;
+  const isCoinHolder = COIN_HOLDER_ROLES.includes(spec.role);
   const data = {
     userId,
     account: spec.account,
@@ -147,7 +180,7 @@ async function upsertUser(spec, passwordHash) {
     seatNo: spec.seatNo || null,
     createdAt: serverTime(),
     lastLoginAt: serverTime(),
-    ...(isCoinHolder ? { esgCoin: 0, score: 0 } : {}),
+    ...(isCoinHolder ? { esgCoin: 0 } : {}),
   };
 
   const batch = db.batch();
@@ -160,8 +193,8 @@ async function upsertUser(spec, passwordHash) {
 }
 
 /**
- * 建立示範名冊帳號（教師 / 午餐長 / 學生 / 家長）。
- * 午餐長也會被寫回 classes.lunchLeaderUserId、導師寫回 teacherUserId。
+ * 建立示範名冊帳號（教師 / 學生 / 家長 / 技術員）。
+ * 導師寫回 classes.teacherUserId；被指定為午餐長的學生寫回 lunchLeaderUserId。
  */
 async function seedDemoRoster(password) {
   const passwordHash = await bcrypt.hash(password, 10);
@@ -174,8 +207,8 @@ async function seedDemoRoster(password) {
     if (spec.role === ROLES.TEACHER && spec.classId) {
       await db.collection(COL.classes).doc(spec.classId).set({ teacherUserId: id }, { merge: true });
     }
-    if (spec.role === ROLES.LUNCH_LEADER && spec.classId) {
-      await db.collection(COL.classes).doc(spec.classId).set({ lunchLeaderUserId: id }, { merge: true });
+    if (spec.lunchLeaderOf) {
+      await db.collection(COL.classes).doc(spec.lunchLeaderOf).set({ lunchLeaderUserId: id }, { merge: true });
     }
   }
 
@@ -206,7 +239,7 @@ async function seedDemoRoster(password) {
   else console.log('  ✓ 示範名冊已存在');
 
   console.log('  📋 名冊示範帳號（密碼同 TEST_USER_PASSWORD）：');
-  [...DEMO_USERS.map((u) => `${u.role.padEnd(12)} ${u.account}`),
+  [...DEMO_USERS.map((u) => `${u.role.padEnd(12)} ${u.account}${u.lunchLeaderOf ? '（午餐長）' : ''}`),
    `${'parent'.padEnd(12)} ${DEMO_PARENT.account}`].forEach((line) => console.log(`     ${line}`));
 }
 

@@ -18,8 +18,9 @@ const COL = {
   dailyMenu: 'daily_menu',
   parentSignIns: 'parent_sign_ins',
 
-  // 新增：名冊與菜色
-  classes: 'classes',            // 班級名冊（年級/班名/人數/午餐長/導師/班級幣池）
+  // 名冊與菜色
+  /** 班級名冊（年級/班名/人數/導師/午餐長）。午餐長＝lunchLeaderUserId 指向的那位學生。 */
+  classes: 'classes',
   dishes: 'dishes',              // 菜色資料庫（每份份量、單價、碳排係數）
   /**
    * 帳號保留表：doc id = 小寫後的帳號或 email，內容 { userId }。
@@ -35,22 +36,25 @@ const COL = {
    */
   deviceReadings: 'device_readings',
 
-  // 新增：紀錄管線（取代原本的 leftover_analysis）
-  mealSessions: 'meal_sessions', // 一班一天一場四桶量測
+  // 紀錄
+  mealSessions: 'meal_sessions', // 一班一天一場：午餐長依序稱重的全班剩食量
   dishLeftovers: 'dish_leftovers', // 每班每天每道菜的剩餘量（支援跨班查詢）
   mealChecks: 'meal_checks',     // 教師逐生勾選「吃完一餐」
-  coinTx: 'coin_transactions',   // 幣別總帳（個人與班級）
+  /** 學生拍自己餐盤的辨識結果：一人一天一筆（照片不存）。 */
+  plateScans: 'plate_scans',
+  coinTx: 'coin_transactions',   // ESG 幣總帳
 };
 
-/** 已移除的集合：改用 dish_leftovers + meal_sessions（見 README「紀錄流程」）。*/
-const REMOVED_COL = ['leftover_analysis'];
-
 // ── 角色 ────────────────────────────────────────────────────────────
+/**
+ * 帳號的角色。**午餐長不是角色**：它是附加在某位學生身上的身分，
+ * 由 classes/{classId}.lunchLeaderUserId 指定（見 middleware/auth.js 的 isLunchLeader）。
+ * 午餐長仍是學生，學生能做的事他都能做，另外多了本班稱重紀錄的權限。
+ */
 const ROLES = {
-  STUDENT: 'student',           // 觀看、兌換、抽獎
-  LUNCH_LEADER: 'lunch_leader', // 午餐長：負責紀錄（四桶辨識），不可兌換/抽獎
+  STUDENT: 'student',           // 觀看、兌換、抽獎、拍餐盤（午餐長另加稱重紀錄）
   PARENT: 'parent',             // 簽到、查看孩子午餐狀況（無幣系統）
-  TEACHER: 'teacher',           // 每日逐生勾選是否吃完
+  TEACHER: 'teacher',           // 每日逐生勾選是否吃完；也能做本班稱重紀錄
   /**
    * 技術員：只管硬體，不碰學生資料與幣。
    * 能做的事：註冊/綁定稱重模組、設定盆體扣重與校正、看裝置健康狀態。
@@ -64,133 +68,49 @@ const ALL_ROLES = Object.values(ROLES);
 /** 可自行註冊的角色（教師/管理員由管理者建立或 seed 產生）。*/
 const SELF_REGISTER_ROLES = [ROLES.STUDENT, ROLES.PARENT];
 
-/** 擁有幣餘額的角色（家長沒有幣系統）。*/
-const COIN_HOLDER_ROLES = [ROLES.STUDENT, ROLES.LUNCH_LEADER];
+/** 擁有 ESG 幣（累積與消耗）的角色。家長、教師都沒有幣系統。*/
+const COIN_HOLDER_ROLES = [ROLES.STUDENT];
 
-/** 可以消耗幣（兌換/抽獎）的角色 —— 午餐長只累積不消耗。*/
-const COIN_SPENDER_ROLES = [ROLES.STUDENT];
-
-/** 可以做紀錄（四桶辨識）的角色。*/
-const RECORDER_ROLES = [ROLES.LUNCH_LEADER, ROLES.TEACHER, ROLES.ADMIN];
-
-// ── 發幣規則（使用者指定，勿擅自加項）──────────────────────────────
-// ── E／S／G 三幣合併為 ESG 幣 ────────────────────────────────────────
+// ── ESG 幣 ──────────────────────────────────────────────────────────
 /**
- * ESG = E（Energy，吃進去的營養）＋ S（SDGs，少浪費換成的樹）＋ G（Gratitude，老師確認完食）。
+ * 只有一種幣：ESG 幣。餘額只有 users.esgCoin 一個欄位。
  *
- * 三者不再是三種錢，而是 **ESG 幣的三個來源**：
- *   · 餘額只有一個欄位 esgCoin（使用者與班級池都是）
- *   · 總帳每一筆記 coin:'ESG'，再用 source:'E'|'S'|'G' 標出來源
- * 呼叫端照樣傳 { E, S, G }，意思變成「從各來源各得多少 ESG」——
- * 所以「你的 ESG 從哪裡來」的拆解不會因為合併而消失。
+ * 總帳每一筆記 coin:'ESG'，獲得類再用 source 標出來源：
+ *   E 營養、S 減碳、G 感謝
+ * 呼叫端傳 { E, S, G }，意思是「從各來源各得多少 ESG」，
+ * 餘額是一個數字，而「ESG 從哪裡來」仍查得到。
  *
- * ## 舊幣怎麼換算
- *
- * 舊制三種幣的發放速度差很多，直接 1:1 相加的話 G（每次 86）會占八成以上。
- * 換算原則是「**代表幾天的努力不變**」：
- *
- *   每位學生每天約可得（舊制，依發幣規則推算）  E ≈ 5、S ≈ 10、G = 86
- *   每位學生每天約可得（新制）                  ESG ≈ 5 + 10 + 5 = 20
- *                                              （E、S 規則不變；G 由 86 調為 5）
- *
- *   1 枚舊幣 = 新制每天收入 ÷ 舊制該幣每天收入 枚 ESG
- *            → E × 4、S × 2、G × 0.2326
- *
- * **餘額與商品價格用同一組係數**——兩邊只換一邊的話購買力會跟著變。
- * 例如環保杯原本 50 E（約 10 天份），換算後 200 ESG（仍是 10 天份），
- * 而學生手上的 105 E 也換成 420 ESG，換得起的數量不變。
- *
- * 每天的收入是由發幣規則推算的估計值，不是實測；改動時要連同遷移一起重想。
+ * 目前的發幣只有下面兩項（使用者指定，勿擅自加項）。
+ * 稱重紀錄是單純的全班剩食紀錄，不發幣；拍餐盤的發幣下一輪定義。
  */
-const ESG_CONVERSION = {
-  dailyOld: { E: 5, S: 10, G: 86 },
-  dailyNew: 20,
-};
-
-/** 一枚舊幣（'E'|'S'|'G'）等於幾枚 ESG。未知幣別回 1。 */
-function esgFactor(legacyCoin) {
-  const d = ESG_CONVERSION.dailyOld[legacyCoin];
-  return d ? ESG_CONVERSION.dailyNew / d : 1;
-}
-
-/** 唯一的幣別代號。 */
 const ESG = 'ESG';
 
 const COIN_RULES = {
   /**
-   * 教師勾選「吃完他的部分」→ 個人得 ESG：營養來源 1、減碳來源 1、感謝來源見下。
+   * 教師勾選「吃完他的部分」→ 個人得 ESG：營養 1、減碳 1、感謝見下。
    * 感謝（G 來源）的額度不在這裡，而在 TUNABLE_DEFAULTS.gratitude.mealFinishedG，
    * 因為那是學校會想調的政策數字，不該要改程式重新部署。
    */
   MEAL_FINISHED: { E: 1, S: 1 },
-  /** 家長簽到 → **綁定的學生** +1 S（每位家長每日一次）*/
+  /** 家長簽到 → **綁定的學生** +1（減碳來源；每位家長每日一次）*/
   PARENT_SIGN_IN: { E: 0, S: 1 },
-  /**
-   * @deprecated 紀錄結算的 E/S 已改為營養攝取與減碳樹數公式（見 TUNABLE_DEFAULTS）。
-   * 這兩個舊常數保留僅為讀取舊資料時的相容，新的結算不再使用。
-   */
-  k_E: 100,
-  FULL_SESSION_CLASS_S: 1,
-  /** 基準線移動平均餐數 */
-  baselineWindow: 10,
-  /** 無歷史時的起步基準：供應量 × 此比例 */
-  fallbackBaselineRatio: 0.35,
 };
 
 
-// ── 發幣公式的可調參數 ────────────────────────────────────────────────
+// ── 可調參數 ─────────────────────────────────────────────────────────
 /**
  * **這裡是預設值，不是實際採用值。**
  *
- * 實際採用值存在 Firestore 的 `system_config/coin_rules`，由開發者面板調整，
- * 讀取時與這份預設值深度合併（見 lib/settings.js）。這樣做的理由：
- * 營養係數與碳排常數會隨著實測、教材版本、學校政策而變，
- * 每次都要改程式重新部署並不合理。
- *
- * 兩種幣的語意：
- *   E = Energy —— 學生實際**吃下去**的營養（蛋白質 + 膳食纖維）
- *   S = SDGs   —— 比全校歷史平均**少浪費**的部分，換算成碳排，再換算成樹
- *
- * 兩者都以**人均**計算，再依 CLASS_COIN_TO_MEMBER 全額加給班上每位學生。
- * 班級人數不同（28/30/26），不人均的話人多的班天生佔優。
+ * 實際採用值存在 Firestore 的 `system_config/coin_rules`，由管理員面板調整，
+ * 讀取時與這份預設值深度合併（見 lib/settings.js）。
  */
 const TUNABLE_DEFAULTS = {
-  /** E 幣：攝取營養 → 幣 */
-  energy: {
-    /** 每公克蛋白質換算的 E 幣 */
-    kProtein: 0.05,
-    /** 每公克膳食纖維換算的 E 幣（纖維攝取量遠低於蛋白質，係數相應提高） */
-    kFiber: 0.5,
-  },
-
   /**
-   * 每公斤食物的營養含量（公克/公斤）。
-   * 依菜色分類給預設值；個別菜品可在 dishes 上以 proteinPerKg / fiberPerKg 覆寫。
-   * 使用者特別提到的「每公斤蔬菜的膳食纖維」就是 蔬菜.fiberPerKg。
-   */
-  nutrition: {
-    byCategory: {
-      主食: { proteinPerKg: 26, fiberPerKg: 4 },
-      主菜: { proteinPerKg: 200, fiberPerKg: 0 },
-      副菜: { proteinPerKg: 120, fiberPerKg: 5 },
-      蔬菜: { proteinPerKg: 15, fiberPerKg: 20 },
-      湯品: { proteinPerKg: 10, fiberPerKg: 3 },
-    },
-    /** 分類不在上表時的保底值 */
-    fallback: { proteinPerKg: 30, fiberPerKg: 5 },
-  },
-
-  /**
-   * G 幣：感謝 —— 教師確認「吃完他的部分」時發給該學生。
-   *
-   * 與 E/S 的語意差別：E 衡量吃進多少營養、S 衡量少浪費多少碳，
-   * 兩者都是算出來的；G 是**老師的人工確認**，數字大是刻意的——
-   * 它要讓學生明顯感覺到「有人看見我吃完了」。
+   * 感謝 —— 教師確認「吃完他的部分」時發給該學生的 ESG。
+   * 它不是算出來的，而是「老師看見你吃完了」這件事的份量，屬於學校政策。
    */
   gratitude: {
     /** 教師確認完食 → 該學生 +G（每人每日一次，取消勾選會沖銷）*/
-    // 合併為 ESG 後由 86 調為 5：86 是 G 還是獨立貨幣時訂的，
-    // 合併後若維持 86，ESG 有八成五會來自這一項，營養與減碳就看不見了。
     mealFinishedG: 5,
   },
 
@@ -207,36 +127,30 @@ const TUNABLE_DEFAULTS = {
     fallbackUnderweightBmi: 18.5,
     fallbackOverweightBmi: 24,
   },
-
-  /** S 幣：少浪費 → 碳排 → 樹 → 幣 */
-  sdg: {
-    /** 每公斤廚餘的碳排放（kgCO2e/kg）*/
-    co2PerKgWaste: 2.06,
-    /** 一棵樹每年吸收的二氧化碳（kg）*/
-    treeAnnualCo2Kg: 21.8,
-    /**
-     * 樹 → S 幣的放大常數。
-     * 人均每餐約省下 0.003 棵樹，直接當幣會全部進位成 0，
-     * 因此樹數負責「展示」、S 幣另外乘上這個常數負責「可用」。
-     */
-    sCoinPerTree: 1000,
-    /** 全校歷史平均取最近幾場已結算的紀錄 */
-    schoolBaselineWindow: 30,
-    /** 全校還沒有足夠歷史時的起步基準（每人每餐廚餘公克）*/
-    fallbackSchoolWastePerCapitaG: 120,
-    /** 少於這麼多場歷史就用上面的起步基準，避免頭幾天被極端值主導 */
-    minSchoolSamples: 3,
-  },
 };
 
 /** 可調參數存放的位置：system_config 集合下的這份文件。*/
 const TUNABLE_DOC_ID = 'coin_rules';
 
+// ── 個人餐盤辨識 ────────────────────────────────────────────────────
 /**
- * 班級幣如何進個人：'full' = 班級增長全額加給每位學生（使用者選定）。
- * 班級池本身仍獨立記帳，供班際排行與展示。
+ * 學生吃完拍一張自己的餐盤 → 模型判斷剩多少 → 依剩餘量給回饋。
+ * 模型端點見 lib/plateModel.js；ESG 幣怎麼發、模型回傳格式下一輪定義。
  */
-const CLASS_COIN_TO_MEMBER = 'full';
+const PLATE = {
+  /** 解碼後的照片上限。前端會先縮到長邊 1024px，正常只有一兩百 KB。 */
+  maxImageBytes: 3 * 1024 * 1024,
+  /**
+   * 回饋級距：leftoverRatio（0＝吃光、1＝原封不動）≤ maxRatio 就落在這一級。
+   * 依序比對，最後一級要涵蓋到 1。
+   */
+  feedback: [
+    { level: 'clean', maxRatio: 0.05, title: '🌟 全部吃光！', message: '盤子乾乾淨淨，謝謝你把今天的午餐吃完。' },
+    { level: 'little', maxRatio: 0.25, title: '👍 只剩一點點', message: '差一點就吃光了，下次挑戰全部吃完！' },
+    { level: 'half', maxRatio: 0.5, title: '🙂 剩下約一半', message: '吃不完的話，打菜時可以先跟同學說少一點。' },
+    { level: 'most', maxRatio: 1, title: '🤔 剩下不少', message: '今天胃口不太好嗎？下次可以先盛少一點，不夠再添。' },
+  ],
+};
 
 // ── 跨班支援：門檻 ──────────────────────────────────────────────────
 const SUPPORT = {
@@ -275,22 +189,24 @@ const DEVICE = {
   configVersionField: 'configVersion',
 };
 
-// ── 四桶配置（與影像辨識服務的桶別一致）────────────────────────────
+/**
+ * 稱重模組的「桶別」綁定選項（技術員面板與裝置設定會帶出桶別名稱）。
+ *
+ * 這是「一桶一台秤」時代留下的欄位：現在一個班級一台秤、依序稱重，
+ * 量哪一道菜由操作者在稱重清單上決定，紀錄流程不再看裝置綁的桶別。
+ * 保留它只因為韌體與技術員面板仍會顯示。
+ */
 const BUCKET_LAYOUT = [
-  { id: 'staple', label: '主食桶', dishSlots: ['staple'] },
-  { id: 'sideA', label: '配菜桶 A', dishSlots: ['main', 'side1'] },
-  { id: 'sideB', label: '配菜桶 B', dishSlots: ['side2', 'veg'] },
-  { id: 'soup', label: '湯桶', dishSlots: ['soup'] },
+  { id: 'staple', label: '主食桶' },
+  { id: 'sideA', label: '配菜桶 A' },
+  { id: 'sideB', label: '配菜桶 B' },
+  { id: 'soup', label: '湯桶' },
 ];
 
 /**
  * 桶型。**一個班級一台秤**，量測時一桶一桶輪流放上去，
  * 所以皮重按桶型登錄一次、全校共用（同款桶空重一樣）。
- *
- * 與 BUCKET_LAYOUT（四桶，影像時代的分區）不同：
- * BUCKET_LAYOUT 是「一次拍一桶、桶內有幾道菜」的分組；
- * BUCKET_TYPES 是「這道菜裝在哪一種容器裡」，只為了扣皮重。
- * 影像停用後，實際流程走 BUCKET_TYPES。
+ * 這道菜裝在哪一種容器裡，只為了扣皮重。
  */
 const BUCKET_TYPES = [
   { id: 'staple', label: '主食桶', slots: ['staple'] },
@@ -307,6 +223,7 @@ const SLOT_BUCKET_TYPE = BUCKET_TYPES.reduce((acc, t) => {
 /** 桶型皮重存放的位置：system_config 下的這份文件。 */
 const BUCKET_TARE_DOC_ID = 'bucket_tare';
 
+/** 菜單的六個欄位，也是稱重順序：主食桶 → 四個菜桶 → 湯桶，換桶次數最少。 */
 const MENU_SLOTS = ['staple', 'main', 'side1', 'side2', 'veg', 'soup'];
 
 const SLOT_LABEL = {
@@ -327,6 +244,8 @@ const ids = {
   mealSession: (classId, date) => `${classId}_${date}`,
   /** 一班一天一道菜（以菜單欄位為鍵，同一餐不會重複）*/
   dishLeftover: (classId, date, slot) => `${classId}_${date}_${slot}`,
+  /** 一位學生一天一筆餐盤辨識（重拍會覆蓋） */
+  plateScan: (date, userId) => `${date}_${userId}`,
   /**
    * 一台裝置的一筆讀數。裝置離線補傳時會用同一個 readingId 重試，
    * 決定性 id 讓重試自然覆蓋，不會變成兩筆。
@@ -336,21 +255,16 @@ const ids = {
 
 module.exports = {
   ESG,
-  ESG_CONVERSION,
-  esgFactor,
   TUNABLE_DEFAULTS,
   TUNABLE_DOC_ID,
   COL,
   DEVICE,
-  REMOVED_COL,
   ROLES,
   ALL_ROLES,
   SELF_REGISTER_ROLES,
   COIN_HOLDER_ROLES,
-  COIN_SPENDER_ROLES,
-  RECORDER_ROLES,
   COIN_RULES,
-  CLASS_COIN_TO_MEMBER,
+  PLATE,
   SUPPORT,
   BUCKET_LAYOUT,
   BUCKET_TYPES,

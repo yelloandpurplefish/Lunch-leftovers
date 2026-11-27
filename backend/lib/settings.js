@@ -1,10 +1,9 @@
 /**
- * 發幣公式的可調參數：讀取、合併、快取、寫回。
+ * 可調參數（老師確認完食的感謝額度、建議攝取熱量）：讀取、合併、快取、寫回。
  *
  * ## 為什麼要有這一層
  *
- * 營養係數（每公斤蔬菜多少膳食纖維）、碳排常數（每公斤廚餘 2.06 kgCO2e）、
- * 每棵樹每年吸收多少二氧化碳 —— 這些都會隨實測資料、教材版本與學校政策而變，
+ * 感謝額度是學校政策、建議熱量的界線會被主管機關更新，
  * 不該每次調整都要改程式重新部署。因此：
  *
  *   預設值   config/schema.js 的 TUNABLE_DEFAULTS（進版控，是文件也是保底）
@@ -16,7 +15,7 @@
  *
  * ## 快取
  *
- * 結算一次會讀好幾處參數，每次都打 Firestore 太浪費。
+ * 老師勾選、首頁菜單每次都會讀參數，每次都打 Firestore 太浪費。
  * 快取 60 秒，面板寫入時立即失效——調完馬上就能看到效果，
  * 不會讓人以為「改了沒反應」而重複亂調。
  */
@@ -54,7 +53,7 @@ function invalidateSettings() {
 
 /**
  * 取得實際採用的參數（預設值 ⊕ 資料庫覆寫）。
- * 讀取失敗時回傳純預設值——參數讀不到不該讓整個結算失敗，
+ * 讀取失敗時回傳純預設值——參數讀不到不該讓勾選或菜單整個失敗，
  * 但會在日誌留痕，否則會變成無聲地用了錯的係數。
  */
 async function getSettings({ force = false } = {}) {
@@ -73,14 +72,6 @@ async function getSettings({ force = false } = {}) {
 
 /** 數值欄位的合法範圍。超出範圍多半是手滑打錯，寧可擋下也不要默默發錯幣。 */
 const LIMITS = {
-  'energy.kProtein': [0, 100],
-  'energy.kFiber': [0, 100],
-  'sdg.co2PerKgWaste': [0, 100],
-  'sdg.treeAnnualCo2Kg': [0.1, 1000],
-  'sdg.sCoinPerTree': [0, 100000],
-  'sdg.schoolBaselineWindow': [1, 365],
-  'sdg.fallbackSchoolWastePerCapitaG': [0, 5000],
-  'sdg.minSchoolSamples': [0, 100],
   'gratitude.mealFinishedG': [0, 10000],
   'intake.normalKcal': [0, 5000],
   // 調整量不設上限為 normalKcal 的一半，是因為面板可能先改這個再改那個；
@@ -89,12 +80,11 @@ const LIMITS = {
   'intake.fallbackUnderweightBmi': [5, 60],
   'intake.fallbackOverweightBmi': [5, 60],
 };
-const NUTRIENT_RANGE = [0, 1000];      // g/kg，固體食物上限 1000
 
 /**
  * 驗證面板送來的參數。
- * 只接受已知路徑與數字，未知欄位直接忽略——面板是開發者用的，
- * 但仍不該讓任意鍵值寫進結算公式的輸入。
+ * 只接受已知路徑與數字，未知欄位直接忽略——面板是管理員用的，
+ * 但仍不該讓任意鍵值寫進發幣與建議值的輸入。
  */
 function validateTunables(input) {
   const errors = [];
@@ -114,7 +104,7 @@ function validateTunables(input) {
     return v;
   };
 
-  for (const group of ['energy', 'sdg', 'gratitude', 'intake']) {
+  for (const group of ['gratitude', 'intake']) {
     if (!isPlainObject(input[group])) continue;
     for (const [key, raw] of Object.entries(input[group])) {
       const path = `${group}.${key}`;
@@ -123,39 +113,6 @@ function validateTunables(input) {
       if (v !== null) {
         out[group] = out[group] || {};
         out[group][key] = v;
-      }
-    }
-  }
-
-  const nut = input.nutrition;
-  if (isPlainObject(nut)) {
-    const pick = (srcObj, dstKey) => {
-      if (!isPlainObject(srcObj)) return;
-      for (const [cat, vals] of Object.entries(srcObj)) {
-        if (!isPlainObject(vals)) continue;
-        for (const field of ['proteinPerKg', 'fiberPerKg']) {
-          if (vals[field] === undefined) continue;
-          const v = num(`nutrition.${dstKey}.${cat}.${field}`, vals[field], NUTRIENT_RANGE);
-          if (v === null) continue;
-          out.nutrition = out.nutrition || {};
-          if (dstKey === 'byCategory') {
-            out.nutrition.byCategory = out.nutrition.byCategory || {};
-            out.nutrition.byCategory[cat] = out.nutrition.byCategory[cat] || {};
-            out.nutrition.byCategory[cat][field] = v;
-          }
-        }
-      }
-    };
-    pick(nut.byCategory, 'byCategory');
-
-    if (isPlainObject(nut.fallback)) {
-      for (const field of ['proteinPerKg', 'fiberPerKg']) {
-        if (nut.fallback[field] === undefined) continue;
-        const v = num(`nutrition.fallback.${field}`, nut.fallback[field], NUTRIENT_RANGE);
-        if (v === null) continue;
-        out.nutrition = out.nutrition || {};
-        out.nutrition.fallback = out.nutrition.fallback || {};
-        out.nutrition.fallback[field] = v;
       }
     }
   }

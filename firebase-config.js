@@ -6,6 +6,5 @@ const API_BASE_URL = window.location.hostname === 'localhost' || window.location
 // 全局變數
 let currentUser = null;
 let idToken = null;
-// ESG 幣：營養（E）＋減碳（S）＋感謝（G）三個來源合成的單一幣別
+// ESG 幣（唯一的幣別）
 let esgCoin = 0;
-let score = 0;

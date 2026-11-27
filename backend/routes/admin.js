@@ -7,7 +7,7 @@ const router = express.Router();
 const {
   getOverview, listClasses, createClass, updateClass,
   setLunchLeader, setTeacher, listUsers, createUser, updateUser,
-  getCoinRules, updateCoinRules, previewCoinRules,
+  getCoinRules, updateCoinRules,
   syncStudents, syncMenus,
   getShop,
   updateShop,
@@ -35,7 +35,6 @@ router.post('/classes/:classId/teacher', authenticate, adminOnly, setTeacher);
 // 發幣公式的可調常數（營養係數、碳排常數、每棵樹吸碳量…）
 router.get('/coin-rules', authenticate, adminOnly, getCoinRules);
 router.put('/coin-rules', authenticate, adminOnly, updateCoinRules);
-router.post('/coin-rules/preview', authenticate, adminOnly, previewCoinRules);
 
 // 從 Google 試算表同步學生名冊（含 BMI 計算）
 router.post('/sync/students', authenticate, adminOnly, syncStudents);

@@ -49,7 +49,7 @@ const getTodayMenu = async (req, res) => {
 
 /**
  * 建議熱量是給「要吃這一餐的人」看的。
- *  · 學生與午餐長 → 用自己的體位（req.userDoc 已經是本人的資料，不必再讀一次）
+ *  · 學生（含午餐長）→ 用自己的體位（req.userDoc 已經是本人的資料，不必再讀一次）
  *  · 家長         → 用綁定學生的體位（家長看的是孩子該吃多少）
  *  · 教師/管理員/技術員 → 不給個人建議，只回基準值供參考
  */
@@ -63,8 +63,7 @@ async function adviceFor(req) {
   };
   const none = (source) => ({ ...base, bmi: null, category: null, kcal: null, source });
 
-  const SELF_ROLES = [ROLES.STUDENT, ROLES.LUNCH_LEADER];
-  const isSelf = SELF_ROLES.includes(user.role);
+  const isSelf = user.role === ROLES.STUDENT;
   if (!isSelf && user.role !== ROLES.PARENT) return none('not_applicable');
 
   let target = req.userDoc;

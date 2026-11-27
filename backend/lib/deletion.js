@@ -51,7 +51,7 @@ async function classDependencies(classId) {
     countWhere(COL.devices, 'classId', classId),
   ]);
   return [
-    { label: '名下的使用者（學生／午餐長／導師）', count: users, hint: '請先改到其他班或刪除' },
+    { label: '名下的使用者（學生／導師）', count: users, hint: '請先改到其他班或刪除' },
     { label: '量測場次', count: sessions, hint: '歷史紀錄，刪班會讓統計失去依據' },
     { label: '各菜剩餘量紀錄', count: leftovers, hint: '班際支援與剩餘量曲線的資料來源' },
     { label: '用餐檢查紀錄', count: checks, hint: '教師勾選的歷史' },
@@ -61,9 +61,10 @@ async function classDependencies(classId) {
 
 /** 使用者的依賴。幣的總帳是稽核資料，有紀錄就不該讓它無聲消失。 */
 async function userDependencies(userId) {
-  const [coinTx, checks, tasks, exchanges, signIns, boundParents] = await Promise.all([
+  const [coinTx, checks, plates, tasks, exchanges, signIns, boundParents] = await Promise.all([
     countWhere(COL.coinTx, 'ownerId', userId),
     countWhere(COL.mealChecks, 'studentId', userId),
+    countWhere(COL.plateScans, 'userId', userId),
     countWhere(COL.taskRecords, 'userId', userId),
     countWhere(COL.exchangeRecords, 'userId', userId),
     countWhere(COL.parentSignIns, 'studentId', userId),
@@ -72,6 +73,7 @@ async function userDependencies(userId) {
   return [
     { label: '幣的總帳分錄', count: coinTx, hint: '稽核資料，建議改用「停用」保留歷史' },
     { label: '用餐檢查紀錄', count: checks, hint: '老師勾選過的紀錄' },
+    { label: '餐盤辨識紀錄', count: plates, hint: '' },
     { label: '任務／問卷紀錄', count: tasks, hint: '' },
     { label: '兌換紀錄', count: exchanges, hint: '' },
     { label: '家長簽到紀錄', count: signIns, hint: '' },

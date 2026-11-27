@@ -281,7 +281,6 @@ async function handleLogout() {
     currentUser = null;
     idToken = null;
     esgCoin = 0;
-    score = 0;
     localStorage.removeItem('token');
     localStorage.removeItem('user');
     showAuthForm();
@@ -297,14 +296,17 @@ async function loadUserData() {
 
     if (data.success) {
       esgCoin = data.userData.esgCoin || 0;
-      score = data.userData.score || 0;
 
-      // 同步前端 currentUser
+      // 同步前端 currentUser。isLunchLeader 由後端依班級名冊判斷：
+      // 午餐長不是角色，是附加在學生帳號上的身分。
       currentUser = {
         uid: data.userData.userId,
         email: data.userData.email,
         displayName: data.userData.displayName,
         role: data.userData.role,
+        classId: data.userData.classId || null,
+        className: data.userData.className || null,
+        isLunchLeader: Boolean(data.userData.isLunchLeader),
         studentBinding: data.userData.studentBinding || null
       };
       localStorage.setItem('user', JSON.stringify(currentUser));
@@ -350,14 +352,12 @@ function showLoggedInState() {
 function updateLoggedInStats() {
   const ue = document.getElementById('userEsgCoin');
   if (ue) ue.textContent = esgCoin;
-  document.getElementById('userScore').textContent = score;
 }
 
 // 更新 UI
 function updateUI() {
   const ec = document.getElementById('esgcoin');
   if (ec) ec.textContent = esgCoin;
-  document.getElementById('score').textContent = score;
   updateLoggedInStats();
 }
 
@@ -572,57 +572,48 @@ async function apiRequest(endpoint, method = 'GET', body = null) {
 // 個人英雄榜
 // ============================================================
 //
-// 一列就看得到 ESG 幣與種樹數。分成三張榜輪流切換的話，
-// 學生很難建立「我吃得好 → 營養夠 → 少浪費 → 種了樹」這條因果，
-// 而那正是這個榜要傳達的事。
-
-/** 樹的數字很小（每人每餐約 0.008 棵），固定顯示到小數第 3 位才看得出變化。 */
-function formatTrees(v) {
-    const n = Number(v || 0);
-    if (n === 0) return '0';
-    return n >= 1 ? n.toFixed(2) : n.toFixed(3);
-}
+// 排的是這段期間「獲得」的 ESG 幣（花掉不會掉名次），
+// 同一列附上各來源，看得出幣是從哪裡來的。
 
 async function loadHeroBoard() {
     const tbody = document.getElementById('heroBoardList');
     if (!tbody) return;
     const period = (document.getElementById('heroPeriod') || {}).value || 'week';
     const within = (document.getElementById('heroWithin') || {}).value || 'school';
-    const sort = (document.getElementById('heroSort') || {}).value || 'trees';
     const mineBox = document.getElementById('heroMine');
 
     try {
-        const data = await apiRequest(
-            `/leaderboard/heroes?period=${period}&within=${within}&sort=${sort}`, 'GET');
+        const data = await apiRequest(`/leaderboard?period=${period}&within=${within}`, 'GET');
         if (!data.success) {
             tbody.innerHTML = '<tr><td colspan="4">載入失敗</td></tr>';
             return;
         }
         if (!data.rows.length) {
-            tbody.innerHTML = '<tr><td colspan="5">這段期間還沒有人獲得幣</td></tr>';
+            tbody.innerHTML = '<tr><td colspan="4">這段期間還沒有人獲得幣</td></tr>';
             if (mineBox) mineBox.innerHTML = '';
             return;
         }
 
         const medal = (r) => (r === 1 ? '🥇' : r === 2 ? '🥈' : r === 3 ? '🥉' : r);
+        const sources = (s) => [['營養', s.E], ['減碳', s.S], ['感謝', s.G]]
+            .filter(([, n]) => n > 0).map(([k, n]) => `${k} ${n}`).join('、') || '—';
         tbody.innerHTML = data.rows.map((r) => `
             <tr class="${r.me ? 'my-rank-row' : ''}">
                 <td>${medal(r.rank)}</td>
-                <td>${r.displayName}${r.className ? `<small>　${r.className}</small>` : ''}</td>
+                <td>${escapeText(r.displayName)}${r.className ? `<small>　${escapeText(r.className)}</small>` : ''}</td>
                 <td>${r.ESG}</td>
-                <td>${formatTrees(r.trees)}</td>
+                <td><small>${sources(r.bySource || {})}</small></td>
             </tr>
         `).join('');
 
         if (mineBox) {
             mineBox.innerHTML = data.me
                 ? `<p>你目前第 <strong>${data.me.rank}</strong> 名／共 ${data.total} 人　·　`
-                  + `這段期間獲得 ESG ${data.me.ESG}　·　`
-                  + `🌳 累計種下 <strong>${formatTrees(data.me.treesLifetime)}</strong> 棵樹</p>`
+                  + `這段期間獲得 ESG ${data.me.ESG}</p>`
                 : '<p class="field-hint">你這段期間還沒有獲得幣，先把自己那份吃完吧。</p>';
         }
     } catch (error) {
-        tbody.innerHTML = '<tr><td colspan="5">載入失敗</td></tr>';
+        tbody.innerHTML = '<tr><td colspan="4">載入失敗</td></tr>';
     }
 }
 
@@ -987,7 +978,15 @@ async function loadWeighQueue() {
             return;
         }
         renderWeighQueue(data);
-        startScalePolling();
+        // 量完最後一道時「完成今日紀錄」按鈕要跟著出現，不必等重新整理
+        if (recordSession) {
+            recordSession.progress = data.progress;
+            recordSession.status = data.status;
+            renderRecordSummary();
+        }
+        // 已結算就不需要即時讀數了
+        if (data.status === 'done') stopScalePolling();
+        else startScalePolling();
     } catch (error) {
         box.innerHTML = `<p class="field-hint">稱重清單載入失敗：${escapeText(error.message || '')}</p>`;
     }
@@ -1045,16 +1044,56 @@ function renderWeighQueue(data) {
         </div>`;
     }).join('');
 
+    const doneNote = data.status === 'done'
+        ? '　✅ 今天已完成紀錄'
+        : (prog.allDone ? '　✅ 都量完了，可以按下方「完成今日紀錄」' : '');
     box.innerHTML = `
         ${blockHtml}
         <p class="weigh-progress">
-            進度 <strong>${prog.done || 0}</strong> / ${prog.total || 0}
-            ${prog.allDone ? '　✅ 六道都量完了，可以結算' : ''}
+            進度 <strong>${prog.done || 0}</strong> / ${prog.total || 0}${doneNote}
         </p>
         <div class="weigh-list">${rows}</div>
         <p class="field-hint">
             「重量一次」會覆蓋原本那筆。秤故障時可以請管理員改用手動輸入。
         </p>`;
+}
+
+// ── 讀數輪詢什麼時候該打 API ───────────────────────────────────
+//
+// 每次輪詢後端要讀 4–5 份文件（驗證、場次、秤、最新讀數），
+// 原本只要今天開始紀錄，頁面開著就整天每 2 秒打一次——結算後、切到背景都不停，
+// 一個頁面每小時約 8,000 次讀取。現在只在「有人正在看稱重區」時才打：
+//   · 分頁在前景
+//   · 稱重區在畫面上（沒被角色檢視藏起來，也沒捲到別處）
+//   · 15 分鐘內有人操作過（點、按鍵、捲動）
+// 計時器照跑但不打 API，條件一恢復，下一拍（≤ 2 秒）就自動更新。
+// 已結算則完全停止。
+const SCALE_IDLE_MS = 15 * 60 * 1000;
+let lastInteractionAt = Date.now();
+let weighPanelOnScreen = true;
+let weighPanelObserver = null;
+['pointerdown', 'keydown', 'touchstart', 'wheel'].forEach((type) => {
+    document.addEventListener(type, () => { lastInteractionAt = Date.now(); }, { passive: true });
+});
+window.addEventListener('scroll', () => { lastInteractionAt = Date.now(); }, { passive: true });
+
+function watchWeighPanel() {
+    const panel = document.getElementById('recordPanel');
+    if (weighPanelObserver || !panel || typeof IntersectionObserver === 'undefined') return;
+    weighPanelObserver = new IntersectionObserver((entries) => {
+        weighPanelOnScreen = entries.some((e) => e.isIntersecting);
+    });
+    weighPanelObserver.observe(panel);
+}
+
+/** 現在該暫停輪詢的原因；null 代表該打。 */
+function scalePollPausedReason() {
+    if (document.hidden) return 'background';
+    const panel = document.getElementById('recordPanel');
+    if (!panel || panel.closest('.hidden')) return 'hidden';
+    if (!weighPanelOnScreen) return 'offscreen';
+    if (Date.now() - lastInteractionAt > SCALE_IDLE_MS) return 'idle';
+    return null;
 }
 
 /** 秤的即時讀數。放上桶子後這裡要看得到數字在變，才知道秤是活的。 */
@@ -1063,9 +1102,25 @@ async function pollScale() {
     const val = document.getElementById('scaleLiveValue');
     const st = document.getElementById('scaleLiveState');
     if (!box || !val) return;
+    const paused = scalePollPausedReason();
+    if (paused) {
+        if (paused === 'idle' && st) {
+            st.textContent = '15 分鐘沒有操作，已暫停更新讀數；點一下畫面就恢復';
+            st.className = 'scale-live-state warn';
+        }
+        return;
+    }
     try {
         const data = await apiRequest('/record/weigh-queue', 'GET');
         if (!data.success) return;
+        if (data.status === 'done') {
+            stopScalePolling();
+            if (st) {
+                st.textContent = '今天已結算，不再更新讀數';
+                st.className = 'scale-live-state ok';
+            }
+            return;
+        }
         const s = data.scale || {};
         box.classList.remove('hidden');
         val.textContent = s.netG != null ? Math.round(s.netG) : '—';
@@ -1082,6 +1137,7 @@ async function pollScale() {
 
 function startScalePolling() {
     if (weighPollTimer) return;
+    watchWeighPanel();
     pollScale();
     // 2 秒一次：放上桶子到讀數穩定大約就這個量級，再快只是多打 API
     weighPollTimer = setInterval(pollScale, 2000);
@@ -1400,7 +1456,7 @@ function renderMenuReport(data) {
             <tbody>${dishRows}</tbody></table>
             </div>
             <p class="field-hint">
-                份量與營養值是分類預設，會直接影響供應量與發幣——請到菜色管理複核。
+                份量是分類預設，會直接影響供應量與剩食比例——請到菜色管理複核。
             </p>
         </details>` : ''}
 
@@ -1434,21 +1490,13 @@ function renderMenuReport(data) {
 }
 
 // ============================================================
-// 開發者面板：發幣公式參數
+// 管理員面板：可調參數（感謝額度、建議攝取）
 // ============================================================
 
 let coinRulesState = { values: null, defaults: null };
 
-/** 參數說明：光看 kProtein 這種鍵名沒人知道要填什麼，一律附中文與單位。 */
+/** 參數說明：光看鍵名沒人知道要填什麼，一律附中文與單位。 */
 const RULE_LABELS = {
-    'energy.kProtein': ['每公克蛋白質 → ESG（營養來源）', '幣/g'],
-    'energy.kFiber': ['每公克膳食纖維 → ESG（營養來源）', '幣/g'],
-    'sdg.co2PerKgWaste': ['每公斤廚餘的碳排', 'kgCO2e/kg'],
-    'sdg.treeAnnualCo2Kg': ['每棵樹每年吸收的 CO2', 'kg/年'],
-    'sdg.sCoinPerTree': ['每棵樹 → ESG（減碳來源，放大常數）', '幣/棵'],
-    'sdg.schoolBaselineWindow': ['全校歷史平均取最近幾場', '場'],
-    'sdg.fallbackSchoolWastePerCapitaG': ['歷史不足時的起步基準', 'g/人/餐'],
-    'sdg.minSchoolSamples': ['低於幾場就用起步基準', '場'],
     'gratitude.mealFinishedG': ['老師確認完食 → ESG（感謝來源）', '幣/人/餐'],
     'intake.normalKcal': ['體位正常的建議熱量（一餐）', 'kcal'],
     'intake.adjustKcal': ['過重往下／過輕往上調整', 'kcal'],
@@ -1476,73 +1524,21 @@ function renderCoinRules() {
 
     const scalar = Object.keys(RULE_LABELS).map((path) => {
         const [g, k] = path.split('.');
-        // 新增的群組在舊的 system_config 文件裡不存在，取不到就退回預設值，
-        // 否則面板會整塊炸掉（深度合併是在後端做的，但 defaults 仍可能先到）
+        // 取不到就退回預設值，否則面板會整塊炸掉
         const cur = (v[g] || {})[k];
         const def = (d[g] || {})[k];
         return ruleInput(path, cur === undefined ? def : cur, def);
     }).join('');
 
-    const cats = Object.keys(d.nutrition.byCategory);
-    const nutrition = cats.map((cat) => {
-        const cur = v.nutrition.byCategory[cat] || {};
-        const def = d.nutrition.byCategory[cat] || {};
-        return `
-            <tr>
-                <td>${cat}</td>
-                <td><input type="number" step="any" data-nutrition="${cat}.proteinPerKg"
-                           value="${cur.proteinPerKg}"><small>預設 ${def.proteinPerKg}</small></td>
-                <td><input type="number" step="any" data-nutrition="${cat}.fiberPerKg"
-                           value="${cur.fiberPerKg}"><small>預設 ${def.fiberPerKg}</small></td>
-            </tr>`;
-    }).join('');
-
-    box.innerHTML = `
-        <div class="rule-group">${scalar}</div>
-        <h4>每公斤食物的營養含量（菜品可個別覆寫，沒填才用這裡的分類預設）</h4>
-        <div class="table-scroll">
-        <table class="rule-table">
-            <thead><tr><th>分類</th><th>蛋白質 g/kg</th><th>膳食纖維 g/kg</th></tr></thead>
-            <tbody>${nutrition}</tbody>
-        </table>
-        </div>`;
-}
-
-function renderRulesPreview(preview) {
-    const box = document.getElementById('coinRulesPreview');
-    if (!box || !preview) return;
-    box.innerHTML = `
-        <p class="field-hint">以 ${preview.servings} 人份示範菜單試算：${(preview.menu || []).join('、')}</p>
-        <div class="table-scroll">
-        <table class="rule-table">
-            <thead><tr><th>情境</th><th>人均攝取</th><th>ESG（營養）</th><th>ESG（減碳）</th><th>全班種樹</th></tr></thead>
-            <tbody>${(preview.scenarios || []).map((s) => `
-                <tr>
-                    <td>${s.label}</td>
-                    <td>${s.perCapita.eatenG} g<small>　蛋白 ${s.perCapita.proteinG}／纖維 ${s.perCapita.fiberG}</small></td>
-                    <td>${s.E}</td>
-                    <td>${s.S}</td>
-                    <td>${formatTrees(s.treesClass)} 棵</td>
-                </tr>`).join('')}
-            </tbody>
-        </table>
-        </div>`;
+    box.innerHTML = `<div class="rule-group">${scalar}</div>`;
 }
 
 /** 從表單讀回使用者填的值，組成後端要的巢狀結構。 */
 function collectCoinRules() {
-    const values = {
-        energy: {}, sdg: {}, gratitude: {}, intake: {},
-        nutrition: { byCategory: {} },
-    };
+    const values = { gratitude: {}, intake: {} };
     document.querySelectorAll('#coinRulesForm input[data-rule]').forEach((el) => {
         const [g, k] = el.dataset.rule.split('.');
         values[g][k] = Number(el.value);
-    });
-    document.querySelectorAll('#coinRulesForm input[data-nutrition]').forEach((el) => {
-        const [cat, field] = el.dataset.nutrition.split('.');
-        values.nutrition.byCategory[cat] = values.nutrition.byCategory[cat] || {};
-        values.nutrition.byCategory[cat][field] = Number(el.value);
     });
     return values;
 }
@@ -1558,31 +1554,14 @@ async function loadCoinRules() {
         }
         coinRulesState = { values: data.values, defaults: data.defaults };
         renderCoinRules();
-        renderRulesPreview(data.preview);
     } catch (error) {
         box.innerHTML = '<p>載入失敗</p>';
     }
 }
 
-async function previewCoinRules() {
-    const result = document.getElementById('coinRulesResult');
-    try {
-        const data = await apiRequest('/admin/coin-rules/preview', 'POST',
-            { values: collectCoinRules() });
-        if (!data.success) {
-            if (result) result.textContent = data.message || '試算失敗';
-            return;
-        }
-        renderRulesPreview(data.preview);
-        if (result) result.textContent = '這是試算結果，尚未儲存。';
-    } catch (error) {
-        if (result) result.textContent = '試算失敗：' + (error.message || '請稍後再試');
-    }
-}
-
 async function saveCoinRules() {
     const result = document.getElementById('coinRulesResult');
-    if (!confirm('確定儲存？這會影響之後每一次結算的發幣量（已結算的紀錄不會重算）。')) return;
+    if (!confirm('確定儲存？之後老師勾選吃完時就用新的額度（已發出的幣不會重算）。')) return;
     try {
         const data = await apiRequest('/admin/coin-rules', 'PUT',
             { values: collectCoinRules() });
@@ -1592,7 +1571,6 @@ async function saveCoinRules() {
         }
         coinRulesState = { values: data.values, defaults: data.defaults };
         renderCoinRules();
-        renderRulesPreview(data.preview);
         if (result) result.textContent = data.message;
     } catch (error) {
         if (result) result.textContent = '儲存失敗：' + (error.message || '請稍後再試');
@@ -1610,46 +1588,9 @@ async function resetCoinRules() {
         }
         coinRulesState = { values: data.values, defaults: data.defaults };
         renderCoinRules();
-        renderRulesPreview(data.preview);
         if (result) result.textContent = '已還原為出廠預設值。';
     } catch (error) {
         if (result) result.textContent = '還原失敗：' + (error.message || '請稍後再試');
-    }
-}
-
-// 載入班級排行榜
-async function loadClassRanking() {
-    try {
-        const data = await apiRequest('/leaderboard', 'GET');
-        const tbody = document.getElementById('classRankingList');
-        if (!tbody) return;
-
-        if (!data.success) {
-            tbody.innerHTML = `<tr><td colspan="3">載入失敗</td></tr>`;
-            return;
-        }
-
-        const rows = data.leaderboard.map(student => `
-            <tr>
-                <td>${student.rank}</td>
-                <td>${student.displayName}</td>
-                <td>${student.score}</td>
-            </tr>
-        `).join('');
-
-        tbody.innerHTML = rows;
-
-        if (data.myRank) {
-            tbody.innerHTML += `
-                <tr class="my-rank-row">
-                    <td>⭐</td>
-                    <td>你</td>
-                    <td>${data.myRank.rank} 名（${data.myRank.score}）</td>
-                </tr>
-            `;
-        }
-    } catch (error) {
-        console.error('載入班級排行榜失敗:', error);
     }
 }
 
@@ -1667,13 +1608,6 @@ async function startApp(){
         return;
     }
 
-    // 更新排行榜顯示使用者名字
-    const displayName = currentUser.displayName || currentUser.email || '你';
-    const rankUserCell = document.querySelector("#ranking tr:nth-child(4) td:nth-child(2)");
-    if (rankUserCell) {
-        rankUserCell.textContent = displayName;
-    }
-
     // 隱藏登入區
     document.querySelector(".video").style.display = "none";
 
@@ -1685,9 +1619,6 @@ async function startApp(){
 
     // 載入商城商品
     await loadShopItems();
-
-    // 載入班級排行榜
-    await loadClassRanking();
 
     // 載入全站大獎公告
     await loadLotteryAnnouncement();
@@ -1710,21 +1641,18 @@ async function loadShopItems() {
             return;
         }
 
-        // G 幣商品原本被整批隱藏，因為當時沒有任何地方發 G 幣；
-        // 現在教師確認完食會發 G，就該讓它們出現。
         container.innerHTML = data.items.map(item => {
-            const coinName = item.costType === 'ESG' ? 'ESG 幣' : `${item.costType}（舊計價，待轉換）`;
             const stockText = item.stock === null || item.stock === undefined
                 ? '剩餘：無限'
                 : `剩餘：${item.stock}`;
 
             return `
                 <div class="gift">
-                    <h3>${item.name}</h3>
-                    <p>${item.description || ''}</p>
-                    <p>需要：${item.cost} ${coinName}</p>
+                    <h3>${escapeText(item.name)}</h3>
+                    <p>${escapeText(item.description || '')}</p>
+                    <p>需要：${item.cost} ESG 幣</p>
                     <p class="stock">${stockText}</p>
-                    <button data-action="buyItem" data-item-id="${item.itemId}" data-cost-type="${item.costType}" data-name="${item.name}">兌換</button>
+                    <button data-action="buyItem" data-item-id="${escapeAttr(item.itemId)}" data-name="${escapeAttr(item.name)}">兌換</button>
                 </div>
             `;
         }).join('');
@@ -1740,7 +1668,6 @@ async function loadShopItems() {
 async function buyItem(el){
     try {
         const itemId = el.dataset.itemId;
-        const costType = el.dataset.costType;
         const name = el.dataset.name;
 
         const data = await apiRequest('/exchange/redeem', 'POST', { itemId });
@@ -2033,65 +1960,67 @@ function createConfetti(){
 
 const ROLE_LABEL = {
     student: '學生',
-    lunch_leader: '午餐長',
     parent: '家長',
     teacher: '老師',
     technician: '技術員',
     admin: '管理員'
 };
 
-/** 依角色顯示／隱藏底部導覽與各專區，避免出現點了沒權限的按鈕。 */
+/**
+ * 這個人身上的「身分標籤」，決定看得到哪些區塊。
+ *
+ * 午餐長不是帳號角色，而是附加在學生帳號上的身分（後端 profile 的 isLunchLeader），
+ * 所以學生兼午餐長同時有 student 與 lunch_leader 兩個標籤：
+ * 學生的區塊全部保留，再多一個午餐長專區。
+ */
+function viewTags(user) {
+    if (!user) return [];
+    const tags = [user.role || 'student'];
+    if (user.isLunchLeader) tags.push('lunch_leader');
+    return tags;
+}
+
+/** 依身分顯示／隱藏底部導覽與各專區，避免出現點了沒權限的按鈕。 */
 function applyRoleView() {
     const role = (currentUser && currentUser.role) || 'student';
+    const tags = viewTags(currentUser);
+    const sees = (allowed) => allowed.some((t) => tags.includes(t));
 
     document.querySelectorAll('#bottomNav button[data-roles]').forEach((btn) => {
-        const allowed = btn.dataset.roles.split(',');
-        btn.classList.toggle('hidden', !allowed.includes(role));
+        btn.classList.toggle('hidden', !sees(btn.dataset.roles.split(',')));
     });
 
-    // 各專區：只有對應角色看得到
-    // 每個區塊由誰看得到。未登入時 currentUser 為 null，全部都會被關掉。
+    // 每個區塊由誰看得到。未登入時沒有任何標籤，全部都會被關掉。
     const panels = [
-        ['home', ['student', 'lunch_leader', 'teacher', 'admin']],
-        ['ranking', ['student', 'lunch_leader', 'teacher', 'admin']],
-        ['trend', ['student', 'lunch_leader', 'teacher', 'admin']],
+        ['home', ['student', 'teacher', 'admin']],
+        ['plateCard', ['student', 'admin']],
+        ['ranking', ['student', 'teacher', 'admin']],
+        ['trend', ['student', 'teacher', 'admin']],
         ['shop', ['student', 'admin']],
-        ['survey', ['student', 'lunch_leader', 'admin']],
+        ['survey', ['student', 'admin']],
         ['leader', ['lunch_leader', 'admin']],
         ['teacher', ['teacher', 'admin']],
         ['adminZone', ['admin']],
         ['parentZone', ['parent']],
         ['techZone', ['technician', 'admin']],
-        ['supportTaskCard', ['student', 'lunch_leader', 'teacher', 'admin']]
+        ['supportTaskCard', ['student', 'teacher', 'admin']]
     ];
     const signedIn = Boolean(currentUser);
     panels.forEach(([id, allowed]) => {
         const el = document.getElementById(id);
-        if (el) el.classList.toggle('hidden', !signedIn || !allowed.includes(role));
+        if (el) el.classList.toggle('hidden', !signedIn || !sees(allowed));
     });
 
     // 底部導覽只在登入後出現（原本綁在 scroll 事件上，平時整條藏在畫面外）
     const nav = document.getElementById('bottomNav');
     if (nav) nav.classList.toggle('visible', signedIn);
 
-    // 兌換與抽獎只有學生能用（午餐長只累積不消耗）。
-    // 注意：問卷區塊在 HTML 上巢狀於 #shop 內，所以不能整段隱藏 #shop，
-    // 只收起「兌換清單」與「抽獎入口」這兩個真正會消耗幣的入口。
-    const canSpend = ['student', 'admin'].includes(role);
-    const shopList = document.getElementById('shopList');
-    const lotteryBtn = document.querySelector('.lottery-btn');
-    if (shopList) shopList.classList.toggle('hidden', !canSpend);
-    if (lotteryBtn) lotteryBtn.classList.toggle('hidden', !canSpend);
-
-    const shopHeader = document.querySelector('.shop-header h2');
-    if (shopHeader) {
-        shopHeader.textContent = canSpend ? '🎁 獎勵兌換商城' : '🎁 獎勵兌換商城（午餐長不開放）';
+    const roleTag = document.getElementById('userRoleTag');
+    if (roleTag) {
+        roleTag.textContent = (ROLE_LABEL[role] || role) + (tags.includes('lunch_leader') ? '・午餐長' : '');
     }
 
-    const roleTag = document.getElementById('userRoleTag');
-    if (roleTag) roleTag.textContent = ROLE_LABEL[role] || role;
-
-    applyRoleOrder(role);
+    applyRoleOrder(tags.includes('lunch_leader') ? 'lunch_leader' : role);
     if (!signedIn) stopSupportPolling();     // 登出後不該繼續打 API
 }
 
@@ -2101,7 +2030,7 @@ function applyRoleView() {
 //
 // 原本所有角色看到的順序都一樣（首頁→排行→趨勢→兌換→問卷→紀錄→…），
 // 但不同身分的高頻操作差很多：
-//   · 午餐長幾乎只做「紀錄」，卻要捲過四個區塊才看得到
+//   · 午餐長最急的是「紀錄」（午餐時間就要稱重），卻要捲過四個區塊才看得到
 //   · 家長只做「簽到」
 //   · 學生才是真的以首頁與兌換為主
 // 把最常用的排在最前面，少一次捲動就少一次摩擦。
@@ -2111,8 +2040,8 @@ function applyRoleView() {
 // 的閱讀順序一起修正，純視覺的 order 做不到這件事。
 
 const ROLE_PANEL_ORDER = {
-    // 午餐長：紀錄 →（紀錄完最常接著找別班補菜）支援 → 其餘
-    lunch_leader: ['leader', 'supportTaskCard', 'home', 'ranking', 'trend', 'survey'],
+    // 學生兼午餐長：紀錄 →（紀錄完最常接著找別班補菜）支援 → 其餘學生區塊
+    lunch_leader: ['leader', 'supportTaskCard', 'home', 'shop', 'ranking', 'trend', 'survey'],
     // 老師：逐生檢查是每天的固定動作
     teacher: ['teacher', 'home', 'supportTaskCard', 'ranking', 'trend'],
     // 學生：看自己的幣與午餐狀況，然後才是兌換
@@ -2150,9 +2079,10 @@ function applyRoleOrder(role) {
     applyNavOrder(order);
 }
 
-/** 依角色載入該看的資料。 */
+/** 依身分載入該看的資料。 */
 async function loadRoleData() {
     const role = (currentUser && currentUser.role) || 'student';
+    const isLeader = viewTags(currentUser).includes('lunch_leader');
 
     if (role === 'parent') {
         await loadChildStatus();
@@ -2173,12 +2103,15 @@ async function loadRoleData() {
     if (role === 'teacher' || role === 'admin') {
         await loadCheckRoster();
     }
-    if (role === 'lunch_leader' || role === 'admin') {
+    if (isLeader || role === 'admin') {
         await loadRecordToday();
         await loadWeighQueue();
     }
-    if (role === 'student' || role === 'lunch_leader') {
+    if (role === 'student') {
         await loadMyMealStatus();
+    }
+    if (role === 'student' || role === 'admin') {
+        await loadPlateToday();
     }
     await loadSupportDishes();
     if (role !== 'parent') {
@@ -2250,7 +2183,7 @@ async function loadCheckRoster() {
         list.innerHTML = data.rows.map((r) => `
             <div class="check-row ${r.finished ? 'done' : ''}">
                 <span class="check-seat">${r.seatNo || '--'}</span>
-                <span class="check-name">${r.displayName}${r.role === 'lunch_leader' ? '（午餐長）' : ''}</span>
+                <span class="check-name">${escapeText(r.displayName)}${r.isLunchLeader ? '（午餐長）' : ''}</span>
                 <button data-action="toggleCheck"
                         data-student-id="${r.studentId}"
                         data-finished="${r.finished ? 'false' : 'true'}"
@@ -2310,8 +2243,11 @@ async function finishAllChecks() {
 }
 
 // ============================================================
-// 午餐長：四桶剩食紀錄（拍照 → 辨識 → 確認 → 完成）
+// 午餐長：全班剩食紀錄（開始 → 依序稱重 → 完成）
 // ============================================================
+//
+// 這是單純的紀錄：結算只彙總全班剩了多少，不發幣。
+// 稱重清單與即時讀數見上方的「依序稱重」。
 
 let recordSession = null;
 
@@ -2320,33 +2256,24 @@ async function loadRecordToday() {
     const startBtn = document.getElementById('startRecordBtn');
     if (!statusBox) return;
 
-    // 辨識服務狀態：讓午餐長知道這次是真辨識還是預設估算
-    try {
-        const vs = await apiRequest('/record/vision-status', 'GET');
-        const el = document.getElementById('recordVisionStatus');
-        if (el) {
-            const ok = vs.enabled && vs.ok;
-            el.className = 'verify-result ' + (ok ? 'ok' : 'error');
-            el.textContent = ok
-                ? '✅ 影像辨識服務已連線' + (vs.calibrated ? '' : '（未載入磅秤校正，克數僅供粗估）')
-                : '⚠️ ' + (vs.note || '辨識服務未啟動，將以預設估算代替');
-        }
-    } catch (error) { /* 狀態顯示失敗不影響紀錄流程 */ }
-
     try {
         const data = await apiRequest('/record/today', 'GET');
+        if (!data.success) {
+            statusBox.innerHTML = `<p>${escapeText(data.message || '無法載入今日紀錄')}</p>`;
+            if (startBtn) startBtn.classList.add('hidden');
+            return;
+        }
         if (data.status === 'none') {
             recordSession = null;
-            statusBox.innerHTML = `<p>${data.message || '今日尚未開始紀錄'}</p>`;
+            statusBox.innerHTML = `<p>${escapeText(data.message || '今日尚未開始紀錄')}</p>`;
             if (startBtn) startBtn.classList.toggle('hidden', !data.menuReady);
-            document.getElementById('recordBuckets').innerHTML = '';
-            document.getElementById('recordSummary').innerHTML = '';
+            renderRecordSummary();
             return;
         }
         recordSession = data.session;
         if (startBtn) startBtn.classList.add('hidden');
-        statusBox.innerHTML = `<p>${recordSession.date}　供餐 ${recordSession.servings} 份　狀態：${recordSession.status === 'done' ? '已完成' : '進行中'}</p>`;
-        renderRecordBuckets();
+        statusBox.innerHTML = `<p>${escapeText(recordSession.date)}　供餐 ${recordSession.servings} 份　`
+            + `狀態：${recordSession.status === 'done' ? '已完成' : '進行中'}</p>`;
         renderRecordSummary();
     } catch (error) {
         statusBox.innerHTML = '<p>無法載入今日紀錄</p>';
@@ -2361,80 +2288,61 @@ async function startRecord() {
             return;
         }
         await loadRecordToday();
+        await loadWeighQueue();
     } catch (error) {
         alert('無法開始紀錄：' + (error.message || '請稍後再試'));
     }
 }
 
-/**
- * 紀錄面板裡單一道菜的跨班狀況。
- *
- * 午餐長記錄當下就需要知道「這道菜別班還有沒有」——等結算後再看支援卡片，
- * 菜多半已經被其他班拿走了。顯示在滑桿正下方，調完比例馬上看到後果。
- *
- * 資料還沒載到時回空字串而不是「載入中」：桶卡片每拖一次滑桿就重繪一次，
- * 閃動的佔位文字比沒有更干擾。
- */
-function renderDishCrossClass(dishId) {
-    if (!dishId) return '';
-    const d = supportByDish.get(dishId);
-    if (!d) return '';
-    return `<div class="dish-row-cross ${d.shortage ? 'shortage' : ''}">${renderCrossClass(d)}</div>`;
-}
-
-function renderRecordBuckets() {
-    const box = document.getElementById('recordBuckets');
-    if (!box || !recordSession) return;
-
-    box.innerHTML = recordSession.buckets.map((b) => `
-        <div class="bucket-card ${b.measured ? 'measured' : ''}">
-            <h3>${b.label} ${b.measured ? (b.emptied ? '（已清空）' : '✅') : ''}</h3>
-            ${b.measured && !b.emptied ? `<p class="field-hint">來源：${b.source === 'vision' ? '影像辨識' : b.source === 'manual' ? '人工輸入' : '預設估算'}　整桶信心 ${Math.round((b.bucketConfidence || 0) * 100)}%</p>` : ''}
-            ${(b.warnings || []).map((w) => `<p class="bucket-warning">· ${w}</p>`).join('')}
-            <div class="bucket-actions">
-                <button data-action="captureBucket" data-bucket-id="${b.bucketId}">📷 ${b.measured ? '重拍' : '拍照辨識'}</button>
-                <button data-action="markEmptied" data-bucket-id="${b.bucketId}" class="secondary-btn">此桶已清空</button>
-            </div>
-            ${b.measured && !b.emptied ? b.items.map((it) => `
-                <div class="dish-row ${it.needsReview ? 'needs-review' : ''}">
-                    <span class="dish-name">${it.dishName}${it.needsReview ? ' <small>需確認</small>' : ''}</span>
-                    <input type="range" min="0" max="100" value="${Math.round(it.remainingRatio * 100)}"
-                           data-bucket-id="${b.bucketId}" data-slot="${it.slot}" class="ratio-slider">
-                    <span class="dish-value">剩 ${Math.round(it.remainingRatio * 100)}%　${Math.round(it.leftoverG)}g</span>
-                </div>
-                ${renderDishCrossClass(it.dishId)}
-            `).join('') : ''}
-        </div>
-    `).join('');
-
-    const allMeasured = recordSession.buckets.every((b) => b.measured || b.emptied);
-    box.innerHTML += allMeasured
-        ? '<button data-action="finalizeRecord" class="auth-btn">完成今日紀錄並結算</button>'
-        : '<p class="field-hint">四桶都辨識完才能結算。</p>';
-}
-
+/** 量完就能結算；已結算的顯示當天全班剩多少。 */
 function renderRecordSummary() {
     const box = document.getElementById('recordSummary');
-    if (!box || !recordSession) return;
-    const s = recordSession.summary;
-    const r = recordSession.reduction;
-    if (!s) { box.innerHTML = ''; return; }
-    box.innerHTML = `
-        <div class="record-summary">
-            <p>今日彙總：廚餘 <strong>${Math.round(s.totalG)}</strong> g　耗損 <strong>${s.totalCost}</strong> 元　碳排 <strong>${s.totalCo2e}</strong> kgCO₂e</p>
-            ${r ? `<p>減碳 <strong>${r.reducedCo2e}</strong> kgCO₂e → 班級幣已分給全班每位同學</p>` : ''}
-        </div>
-    `;
+    if (!box) return;
+    const s = recordSession && recordSession.summary;
+    const p = (recordSession && recordSession.progress) || {};
+
+    if (!recordSession) { box.innerHTML = ''; return; }
+    if (recordSession.status === 'done' && s) {
+        box.innerHTML = `
+            <div class="record-summary">
+                <p>今日全班剩食 <strong>${Math.round(s.totalG)}</strong> g
+                   （人均 ${recordSession.wastePerCapitaG == null ? '—' : recordSession.wastePerCapitaG} g）
+                   耗損 <strong>${s.totalCost}</strong> 元　碳排 <strong>${s.totalCo2e}</strong> kgCO₂e</p>
+            </div>`;
+        return;
+    }
+    box.innerHTML = p.total > 0 && p.done === p.total
+        ? '<button data-action="finalizeRecord" class="auth-btn">完成今日紀錄</button>'
+        : '<p class="field-hint">每道菜都量完才能完成今日紀錄。</p>';
 }
 
-/** 壓縮後上傳，校園網路友善（長邊 1600px、JPEG 85%）。 */
-function downscaleImage(file) {
+async function finalizeRecord() {
+    if (!confirm('確定完成今日紀錄？')) return;
+    try {
+        const data = await apiRequest('/record/finalize', 'POST', {});
+        if (!data.success) {
+            alert(data.message || '完成紀錄失敗');
+            return;
+        }
+        const s = data.summary || {};
+        alert(`${data.message}\n\n全班剩食 ${Math.round(s.totalG || 0)} g（${data.servings} 份，人均 ${data.wastePerCapitaG} g）`);
+        stopScalePolling();
+        await loadRecordToday();
+        await loadWeighQueue();
+        await loadSupportDishes();
+    } catch (error) {
+        alert('完成紀錄失敗：' + (error.message || '請稍後再試'));
+    }
+}
+
+/** 壓縮後再上傳，校園網路友善。長邊預設 1024px、JPEG 85%。 */
+function downscaleImage(file, maxSide = 1024) {
     return new Promise((resolve, reject) => {
         const reader = new FileReader();
         reader.onload = () => {
             const img = new Image();
             img.onload = () => {
-                const scale = Math.min(1, 1600 / Math.max(img.width, img.height));
+                const scale = Math.min(1, maxSide / Math.max(img.width, img.height));
                 const canvas = document.createElement('canvas');
                 canvas.width = Math.round(img.width * scale);
                 canvas.height = Math.round(img.height * scale);
@@ -2449,8 +2357,64 @@ function downscaleImage(file) {
     });
 }
 
-function captureBucket(el) {
-    const bucketId = el.dataset.bucketId;
+// ============================================================
+// 學生：拍自己的餐盤（一張照片 → 剩多少 → 回饋）
+// ============================================================
+//
+// 辨識在後端跑（模型端點見 backend/lib/plateModel.js）。照片只用來辨識，不會存下來。
+// 拍餐盤目前只給回饋、不發 ESG 幣。
+
+let plateState = { served: false, ready: false };
+
+async function loadPlateToday() {
+    const box = document.getElementById('plateResult');
+    if (!box) return;
+    try {
+        const data = await apiRequest('/plate/today', 'GET');
+        if (!data.success) {
+            box.innerHTML = `<p class="field-hint">${escapeText(data.message || '載入失敗')}</p>`;
+            return;
+        }
+        plateState = { served: Boolean(data.served), ready: Boolean(data.model && data.model.ready) };
+        renderPlate(data.scan, data);
+    } catch (error) {
+        box.innerHTML = '<p class="field-hint">載入失敗</p>';
+    }
+}
+
+function renderPlate(scan, ctx) {
+    const box = document.getElementById('plateResult');
+    const btn = document.getElementById('plateBtn');
+    if (!box) return;
+
+    const blocked = !ctx.served
+        ? '今天沒有供餐，不需要拍餐盤。'
+        : (!ctx.model || !ctx.model.ready) ? `⚠️ ${(ctx.model && ctx.model.note) || '辨識模型尚未接上'}，暫時不能拍。` : '';
+
+    if (btn) {
+        btn.disabled = Boolean(blocked);
+        btn.textContent = scan ? '📷 重拍' : '📷 拍餐盤';
+    }
+
+    if (!scan) {
+        box.innerHTML = `<p class="field-hint">${escapeText(blocked || '吃完後拍一張，看看今天剩多少。')}</p>`;
+        return;
+    }
+
+    const f = scan.feedback || {};
+    box.innerHTML = `
+        <div class="plate-feedback ${escapeAttr(f.level || '')}">
+            <p class="plate-title">${escapeText(f.title || '')}</p>
+            <p>${escapeText(f.message || '')}</p>
+            <p class="field-hint">剩約 ${scan.leftoverPct}%（${escapeText(scan.label || '')}）
+                ${scan.attempts > 1 ? `　今天拍了 ${scan.attempts} 次` : ''}
+                ${scan.stub ? '　<strong>（開發用假結果，模型尚未接上）</strong>' : ''}</p>
+        </div>
+        ${blocked ? `<p class="field-hint">${escapeText(blocked)}</p>` : ''}`;
+}
+
+function capturePlate(el) {
+    if (!plateState.served || !plateState.ready) return;
     const input = document.createElement('input');
     input.type = 'file';
     input.accept = 'image/*';
@@ -2458,115 +2422,25 @@ function captureBucket(el) {
     input.addEventListener('change', async () => {
         const file = input.files && input.files[0];
         if (!file) return;
+        const original = el.textContent;
         el.disabled = true;
-        el.textContent = '辨識中...';
+        el.textContent = '辨識中…';
         try {
             const image = await downscaleImage(file);
-            const data = await apiRequest(`/record/bucket/${bucketId}/measure`, 'POST', { image });
+            const data = await apiRequest('/plate/scan', 'POST', { image });
             if (!data.success) {
                 alert(data.message || '辨識失敗');
                 return;
             }
-            if ((data.warnings || []).length) alert(data.warnings.join('\n'));
-            await loadRecordToday();
-            await refreshSupportAfterRecord();
+            renderPlate(data.scan, { served: true, model: data.model });
         } catch (error) {
             alert('辨識失敗：' + (error.message || '請稍後再試'));
         } finally {
             el.disabled = false;
+            if (el.textContent === '辨識中…') el.textContent = original;
         }
     });
     input.click();
-}
-
-async function markEmptied(el) {
-    const bucketId = el.dataset.bucketId;
-    try {
-        const data = await apiRequest(`/record/bucket/${bucketId}/measure`, 'POST', { emptied: true });
-        if (!data.success) {
-            alert(data.message || '操作失敗');
-            return;
-        }
-        await loadRecordToday();
-        await refreshSupportAfterRecord();
-    } catch (error) {
-        alert('操作失敗：' + (error.message || '請稍後再試'));
-    }
-}
-
-
-/**
- * 紀錄動作之後刷新跨班支援。
- *
- * 午餐長剛把某道菜改成「剩 5%」的當下，最可能的下一個念頭就是
- * 「別班還有嗎、去哪裡補」。原本要等到「完成今日紀錄」才會重查，
- * 中間所有量測與微調都不會更新這張卡片，等於看的是舊資料。
- *
- * 若這次刷新**新出現**了缺貨，就把卡片帶到眼前並高亮一次；
- * 已經知道缺貨的則只靜默更新，不反覆打斷操作。
- */
-async function refreshSupportAfterRecord() {
-    const before = supportState.hasShortage;
-    await loadSupportDishes({ silent: true });
-    if (!supportState.hasShortage || before) return;
-
-    const card = document.getElementById('supportTaskCard');
-    if (!card || card.classList.contains('hidden')) return;
-    card.scrollIntoView({ behavior: 'smooth', block: 'center' });
-    card.classList.add('just-updated');
-    setTimeout(() => card.classList.remove('just-updated'), 2400);
-}
-
-/** 滑桿微調殘餘比例（放手才送出，避免每動一格就打一次 API）。 */
-async function submitRatio(bucketId, slot, pct) {
-    try {
-        const data = await apiRequest(`/record/bucket/${bucketId}`, 'PATCH', {
-            ratios: { [slot]: pct / 100 }
-        });
-        if (data.success) {
-            recordSession = null;
-            await loadRecordToday();
-            await refreshSupportAfterRecord();
-        }
-    } catch (error) {
-        console.error('微調失敗:', error);
-    }
-}
-
-async function finalizeRecord() {
-    if (!confirm('確定完成今日紀錄？完成後會計算減碳量並發放班級幣。')) return;
-    try {
-        const data = await apiRequest('/record/finalize', 'POST', {});
-        if (!data.success) {
-            alert(data.message || '結算失敗');
-            return;
-        }
-        // 只丟兩個幣數看不出所以然，把「吃了多少」與「少浪費多少」攤開講
-        const n = (data.nutrition && data.nutrition.perCapita) || {};
-        const sdg = data.sdg || {};
-        const sb = data.schoolBaseline || {};
-        const baseNote = sb.source === 'history'
-            ? `近 ${sb.samples} 場平均`
-            : '起步基準（全校樣本還不夠）';
-        alert(
-            `${data.message}\n\n`
-            + `【吃了什麼】人均吃下 ${n.eatenG || 0} g\n`
-            + `  蛋白質 ${n.proteinG || 0} g、膳食纖維 ${n.fiberG || 0} g\n`
-            + `  → ESG +${data.classCoins.E}（營養來源）\n\n`
-            + `【少浪費多少】本班人均廚餘 ${data.wastePerCapitaG || 0} g\n`
-            + `  全校基準 ${sb.perCapitaG || 0} g（${baseNote}）\n`
-            + `  少浪費 ${sdg.savedPerCapitaG || 0} g/人，減碳 ${sdg.co2ClassKg || 0} kgCO₂e\n`
-            + `  → 相當於 ${formatTrees(sdg.treesClass)} 棵樹，ESG +${data.classCoins.S}（減碳來源）\n\n`
-            + `合計每人 ESG +${(data.classCoins.E || 0) + (data.classCoins.S || 0)}\n`
-            + `已分給 ${data.sharedTo} 位同學`
-        );
-        await loadRecordToday();
-        await loadUserData();
-        await loadSupportDishes();
-        await loadHeroBoard();
-    } catch (error) {
-        alert('結算失敗：' + (error.message || '請稍後再試'));
-    }
 }
 
 
@@ -2585,15 +2459,6 @@ async function finalizeRecord() {
 const SUPPORT_POLL_MS = 30000;        // 午餐時段 30 秒一次，足夠即時又不擾民
 let supportPollTimer = null;
 let supportState = { hasShortage: false, awaitingHelp: 0, generatedAt: 0, loading: false };
-
-/**
- * dishId → 該道菜的跨班狀況。
- *
- * 紀錄面板與支援卡片是**同一份資料的兩種呈現**，所以存成共用狀態而不是
- * 各自再打一次 API：午餐長在紀錄時每動一次滑桿都會重新渲染桶卡片，
- * 若那時才去抓資料，會變成每拖一下就一次請求。
- */
-let supportByDish = new Map();
 
 function startSupportPolling() {
     if (supportPollTimer || document.hidden) return;
@@ -2683,13 +2548,10 @@ async function loadSupportDishes(opts) {
             return;
         }
 
-        // 每道菜都記起來，紀錄面板會用同一份資料
-        supportByDish = new Map(data.dishes.filter((d) => d.dishId).map((d) => [d.dishId, d]));
-
         box.innerHTML = data.dishes.map((d) => `
             <div class="dish-status ${d.shortage ? 'shortage' : ''}">
                 <div class="dish-status-head">
-                    <span>${d.dishName}</span>
+                    <span>${escapeText(d.dishName)}</span>
                     <span>剩 ${d.remainingPct}%（${d.leftoverG}g）</span>
                 </div>
                 <div class="dish-bar"><div class="dish-bar-fill" data-bar-width="${Math.min(100, d.remainingPct)}"></div></div>
@@ -2699,8 +2561,6 @@ async function loadSupportDishes(opts) {
         applyBarSizes(box);
         renderSupportMeta();
         syncSupportPolling();
-        // 紀錄面板的每一道菜也要跟著更新
-        renderRecordBuckets();
     } catch (error) {
         box.innerHTML = '<p>載入失敗</p>';
     } finally {
@@ -2808,7 +2668,7 @@ function syncAdminUserFields() {
     const classFields = document.getElementById('adminUserClassFields');
     const seatGroup = document.getElementById('adminUserSeatGroup');
     if (classFields) classFields.classList.toggle('hidden', role === 'admin');
-    if (seatGroup) seatGroup.classList.toggle('hidden', !['student', 'lunch_leader'].includes(role));
+    if (seatGroup) seatGroup.classList.toggle('hidden', role !== 'student');
 }
 
 async function loadAdminOverview() {
@@ -2905,11 +2765,13 @@ async function loadAdminClasses() {
                 <div class="admin-row-main">
                     <strong>${c.grade} 年 ${c.name} 班</strong>
                     <code class="row-id" title="綁定裝置、同步名冊時要用的 classId">${escapeText(c.classId)}</code>
-                    <span class="field-hint">人數 ${c.headcount}　已註冊 ${c.registered}　班級 ESG ${c.classCoins.ESG}</span>
-                    <span class="field-hint">導師：${c.teacher ? c.teacher.displayName : '未指定'}　午餐長：${c.lunchLeader ? c.lunchLeader.displayName : '未指定'}</span>
+                    <span class="field-hint">人數 ${c.headcount}　已註冊 ${c.registered}</span>
+                    <span class="field-hint">導師：${c.teacher ? escapeText(c.teacher.displayName) : '未指定'}　午餐長：${c.lunchLeader
+                        ? escapeText(c.lunchLeader.displayName) + (c.lunchLeader.account ? `（${escapeText(c.lunchLeader.account)}）` : '')
+                        : '未指定'}</span>
                 </div>
                 <div class="admin-row-actions">
-                    <input type="text" placeholder="帳號" data-role="leader-account" data-class-id="${c.classId}" class="inline-input">
+                    <input type="text" placeholder="本班學生帳號" data-role="leader-account" data-class-id="${c.classId}" class="inline-input">
                     <button data-action="setLunchLeader" data-class-id="${c.classId}" class="check-btn">設為午餐長</button>
                     <button data-action="deleteClassRow" data-class-id="${escapeAttr(c.classId)}"
                             data-label="${escapeAttr(c.grade + ' 年 ' + c.name + ' 班')}"
@@ -2926,7 +2788,7 @@ async function setLunchLeader(el) {
     const classId = el.dataset.classId;
     const input = document.querySelector(`input[data-role="leader-account"][data-class-id="${classId}"]`);
     const account = input ? input.value.trim() : '';
-    if (!account) { alert('請先填入要指派的學生帳號'); return; }
+    if (!account) { alert('請先填入要指派的學生帳號（必須是這個班的學生）'); return; }
     try {
         const data = await apiRequest(`/admin/classes/${classId}/lunch-leader`, 'POST', { account });
         alert((data.success ? '✅ ' : '⚠️ ') + (data.message || ''));
@@ -3254,11 +3116,11 @@ const ACTION_HANDLERS = {
     loadCheckRoster,
     toggleCheck: (el) => toggleCheck(el),
     finishAllChecks,
-    // 午餐長：四桶紀錄
+    // 午餐長：全班剩食紀錄
     startRecord,
-    captureBucket: (el) => captureBucket(el),
-    markEmptied: (el) => markEmptied(el),
     finalizeRecord,
+    // 學生：拍餐盤
+    capturePlate: (el) => capturePlate(el),
     // 跨班菜品（包一層：data-action 會把按鈕元素當第一個參數傳進來，
     //           會被誤當成 opts，導致 silent 判斷讀到 HTMLElement）
     loadSupportDishes: () => loadSupportDishes(),
@@ -3288,9 +3150,8 @@ const ACTION_HANDLERS = {
     saveTare: (el) => saveTare(el),
     syncMenus: () => syncMenus(),
     syncMenusDryRun: () => syncMenusDryRun(),
-    // 管理員：發幣公式參數
+    // 管理員：可調參數
     loadCoinRules: () => loadCoinRules(),
-    previewCoinRules: () => previewCoinRules(),
     saveCoinRules: () => saveCoinRules(),
     resetCoinRules: () => resetCoinRules(),
     // 管理員：手動維護班級與帳號
@@ -3353,11 +3214,6 @@ document.addEventListener('change', (event) => {
     // 管理員新增帳號：角色改變時切換需要的欄位
     if (event.target && event.target.id === 'adminUserRole') {
         syncAdminUserFields();
-    }
-    // 午餐長微調殘餘比例：放手（change）才送出，不用每動一格就打 API
-    if (event.target && event.target.classList.contains('ratio-slider')) {
-        const el = event.target;
-        submitRatio(el.dataset.bucketId, el.dataset.slot, Number(el.value));
     }
 });
 

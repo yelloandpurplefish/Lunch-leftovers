@@ -1,10 +1,9 @@
+/** 個人 ESG 幣排行榜。 */
 const express = require('express');
 const router = express.Router();
-const { getLeaderboard, getHeroBoard } = require('../controllers/leaderboardController');
-const { verifyFirebaseToken } = require('../middleware/auth');
+const { getLeaderboard } = require('../controllers/leaderboardController');
+const { authenticate } = require('../middleware/auth');
 
-// 個人英雄榜：E 幣 / S 幣 / 種樹數一次看完
-router.get('/heroes', verifyFirebaseToken, getHeroBoard);
-router.get('/', verifyFirebaseToken, getLeaderboard);
+router.get('/', authenticate, getLeaderboard);
 
 module.exports = router;
