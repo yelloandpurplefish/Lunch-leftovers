@@ -2,9 +2,9 @@
 
 ## 📋 專案概述
 
-食安守護者 - 校園食安教育遊戲化動態網站，使用 HTML5 + JavaScript + Node.js + Express + Firebase Firestore + Firebase Authentication 建構。
+食安守護者 - 校園食安教育遊戲化動態網站，使用 HTML5 + JavaScript + Node.js + Express + Firebase Firestore 建構。
 
-這是一個**完整的動態網站**，前端使用 Firebase SDK 進行身份驗證，通過後端 API 操作 Firestore 以保持安全性和權限控制。
+這是一個**完整的動態網站**：瀏覽器只呼叫後端 API，由後端驗證身分與權限後才讀寫 Firestore。
 
 ## 🚀 快速開始
 
@@ -85,9 +85,9 @@ food-guardian/
 ## ✨ 主要功能
 
 ### 🔐 使用者認證
-- Email/密碼註冊和登入
-- Firebase Authentication（前端）
-- Firebase Admin SDK（後端驗證）
+- 帳號（或 Email）＋密碼註冊和登入，後端簽發 JWT
+- 重新整理頁面直接回到 App；登入過期或帳號被停用時自動回登入頁
+- 右上角顯示登入者、身分、資料更新時間、⟳ 手動更新與登出
 
 ### 💰 ESG 幣
 - 只有一種幣：**ESG 幣**，只有學生持有（家長、老師沒有幣系統）
@@ -115,73 +115,57 @@ food-guardian/
 - 後端 API 進行庫存和餘額檢查
 
 ### 🎰 抽獎系統
-- 消耗 10 E幣進行抽獎
-- 大獎(5%)、普通(30%)、小獎(65%)
-- 後端執行隨機邏輯
+- 每次消耗 40 ESG 幣
+- 大獎 2%、稀有 18%、小獎 80%（後端抽，扣幣與抽獎紀錄在同一個 transaction）
 
 ### 📊 剩食分析
-- 分析各項菜色剩食量
-- 找出最多/最少剩食
-- 提供改進建議
+- 各班各菜的剩餘量曲線、跨班支援（哪班還有剩）
 
 ## 🔧 技術棧
 
 ### 前端
-- **HTML5** - 結構
-- **CSS3** - 樣式
-- **JavaScript (ES6+)** - 邏輯
-- **Firebase SDK v9.22.0** - 僅用於身份驗證
+- **HTML5 / CSS3 / JavaScript**（`index.html`、`app.js`、`admin.js`，沒有建置步驟）
+- 不使用 Firebase SDK：瀏覽器只跟後端說話，登入後拿到後端簽的 JWT
 
 ### 後端
 - **Node.js + Express** - API 服務器
-- **Firebase Admin SDK** - Firestore 操作
-- **CORS** - 跨域支持
-- **Helmet** - 安全中介軟體
-- **Rate Limiting** - 速率限制
+- **firebase-admin** - 用服務帳戶讀寫 Firestore（不受安全規則限制，權限全在後端判斷）
+- **Helmet、CORS、速率限制**
 
 ### 資料庫
-- **Firebase Firestore** - 雲端資料庫
-- **Firebase Authentication** - 使用者認證
+- **Firebase Firestore**（帳號密碼自己管：bcrypt 雜湊存在 `users`，不使用 Firebase Authentication）
 
 ## 📊 Firestore 資料表
 
-應用程式使用以下 Firestore 集合：
+集合名稱的唯一來源是 `backend/config/schema.js` 的 `COL`。主要的：
 
-- `users` - 使用者資料 (userId, email, displayName, eCoin, sCoin, score, etc.)
-- `task_records` - 任務記錄 (光盤行動、剩食獎勵、問卷)
-- `exchange_records` - 兌換記錄
-- `lottery_records` - 抽獎記錄
-- `leftover_analysis` - 剩食分析
+- `users` - 帳號、角色、班級、`esgCoin`（唯一的幣別）
+- `account_index` - 帳號／Email → userId（登入查詢與唯一性）
+- `classes` - 班級、導師、午餐長（`lunchLeaderUserId`）
+- `plate_scans` - 學生每天一筆的餐盤結果（含這筆發了多少幣）
+- `meal_sessions`、`dish_leftovers` - 全班稱重紀錄
+- `coin_transactions` - ESG 幣總帳（只增不改）
+- `daily_menu`、`dishes`、`devices`、`device_readings`、`parent_sign_ins`、`task_records`、
+  `reward_items`、`exchange_records`、`lottery_records`、`lottery_announcements`、`system_config`
 
 ## 🔌 API 端點
 
-### 認證相關
-- `POST /api/auth/register` - 註冊新使用者
-- `POST /api/auth/login` - 使用者登入
-- `POST /api/auth/logout` - 使用者登出
+依功能分在 `backend/routes/`（auth、user、plate、record、parent、exchange、lottery、menu、
+leaderboard、support、stats、task、admin、tech、device）。秤的端點見 `DEVICE_API.md`。
 
-### 使用者相關
-- `GET /api/user/profile` - 獲取使用者資料
-- `PUT /api/user/profile` - 更新使用者資料
-
-### 任務相關
-- `POST /api/task/complete-light-disc` - 完成光盤行動
-- `POST /api/task/claim-leftover-reward` - 領取剩食獎勵
-- `POST /api/task/submit-survey` - 提交問卷
-
-### 兌換相關
-- `POST /api/exchange/redeem` - 兌換物品
-- `GET /api/exchange/items` - 獲取可兌換物品列表
-- `GET /api/exchange/history` - 獲取兌換歷史
+常用的幾個：
+- `POST /api/auth/login` - 登入，回傳 JWT（只含 uid；角色每個請求都從 `users` 重讀）
+- `GET /api/user/profile` - 自己的資料（唯讀；前端每 60 秒自動更新時會呼叫）
+- `GET /api/plate/today`、`POST /api/plate/scan` - 今日午餐：看結果、拍餐盤
+- `GET /api/record/weigh-queue`、`POST /api/record/weigh` - 全班稱重
+- `/api/admin/*` - 管理員專區（班級、帳號、餐盤更正、ESG 調整、資料檢查）
 
 ## 🛡️ 安全性
 
-- Firebase Authentication 使用者認證
-- 後端 API 保護所有資料操作
-- Firebase ID Token 驗證
-- Helmet 中介軟體保護 HTTP 標頭
-- 速率限制防止濫用
-- CORS 設定限制跨來源請求
+- 帳號密碼登入（bcrypt），後端簽 JWT；停用或改角色在下一個請求就生效
+- 所有資料操作都經後端，瀏覽器沒有資料庫憑證
+- Helmet 安全標頭、CORS 限制來源
+- 速率限制：登入後依使用者、未登入依 IP；登入失敗依「帳號＋IP」計次
 
 ## 🧪 測試
 
@@ -190,13 +174,13 @@ food-guardian/
 2. 設置後端環境變數
 3. 啟動後端服務器
 4. 訪問 `http://localhost:3000`
-5. 測試註冊、登入、任務完成等功能
+5. 測試註冊、登入、拍餐盤等功能
 
 ### 功能測試清單
 - [ ] 註冊新使用者
-- [ ] 使用者登入/登出
-- [ ] 完成光盤行動任務
-- [ ] 領取剩食獎勵
+- [ ] 使用者登入/登出（登出後畫面只剩登入區）
+- [ ] 學生拍餐盤、看到回饋與 ESG 幣
+- [ ] 午餐長完成全班稱重紀錄
 - [ ] 提交問卷
 - [ ] 兌換物品
 - [ ] 進行抽獎
@@ -230,10 +214,9 @@ food-guardian/
 - 檢查 CORS 設置
 - 查看瀏覽器控制台錯誤
 
-### Firebase 認證失敗
-- 檢查 Firebase Authentication 是否已啟用
-- 確認 Firebase 配置正確
-- 檢查 Service Account Key
+### 後端連不上 Firestore
+- 檢查 Service Account Key 與專案 ID
+- 本機開發可用模擬器（設 `FIRESTORE_EMULATOR_HOST`）
 - 查看後端日志
 
 ### 部署問題

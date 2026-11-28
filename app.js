@@ -12,6 +12,30 @@ function showErrorBanner(message) {
   document.body.prepend(banner);
 }
 
+// ============================================================
+// 登入狀態與刷新
+// ============================================================
+//
+// 進入 App 只有一條路 enterApp()：重新整理頁面、登入、註冊都走這裡。
+// 以前登入後會停在「歡迎回來，按開始使用」，重新整理也要再按一次才有資料——拿掉了。
+//
+// 刷新分兩層：
+//   refreshLive()  每 60 秒更新會變的小塊（餘額、今日午餐、本班結果、孩子狀況、午餐長紀錄、
+//                  管理員總覽）。只在分頁在前景、15 分鐘內有操作、而且沒在輸入時才跑，
+//                  不會把使用者正在填的東西蓋掉。
+//   refreshAll()   右上角 🔄、分頁切回來超過 5 分鐘、跨過午夜時，整頁重新載入。
+// 登出與登入過期一律走 logout()：停掉所有計時器，清掉畫面上屬於上一個人的資料。
+
+const LIVE_REFRESH_MS = 60 * 1000;
+const STALE_AFTER_MS = 5 * 60 * 1000;
+let liveRefreshTimer = null;
+let refreshing = false;
+let lastFullRefreshAt = 0;
+let lastRefreshAt = 0;
+let currentDay = null;
+
+const todayKey = () => new Date().toLocaleDateString('sv');
+
 // 從 localStorage 還原登入狀態
 async function restoreSession() {
   const token = localStorage.getItem('token');
@@ -19,19 +43,193 @@ async function restoreSession() {
     showAuthForm();
     return;
   }
-
   idToken = token;
+  await enterApp();
+}
+
+/** 登入、註冊、重新整理後進入 App：讀自己的資料 → 依身分開區塊 → 載入資料 → 開始定時更新。 */
+async function enterApp() {
   try {
     await loadUserData();
-    showLoggedInState();
   } catch (error) {
-    console.error('載入使用者資料失敗:', error);
+    // 連不上伺服器不代表登入失效：token 留著，重新整理就能再試
+    showAuthForm('連不到伺服器，請確認網路後重新整理頁面');
+    return;
+  }
+  if (!currentUser) return;          // 登入已過期：apiRequest 已經處理（logout）
+  showLoggedInState();
+  await refreshAll({ quiet: true });
+  startLiveRefresh();
+}
+
+// 舊名稱：測試與舊的按鈕還會呼叫
+async function startApp() {
+  return enterApp();
+}
+
+/** 右上角 🔄 與「分頁切回來很久」用：整頁重新載入。 */
+async function refreshAll({ quiet = false } = {}) {
+  if (!currentUser || refreshing) return;
+  refreshing = true;
+  setRefreshing(true);
+  try {
+    await loadUserData();
+    if (!currentUser) return;
+    applyRoleView();
+    const tasks = [loadTodayMenu(), loadRoleData()];
+    if (currentUser.role !== 'technician' && currentUser.role !== 'parent') tasks.push(loadLotteryAnnouncement());
+    await Promise.all(tasks);
+    lastFullRefreshAt = Date.now();
+    currentDay = todayKey();
+    markRefreshed();
+    if (!quiet) toast('已更新到最新資料');
+  } catch (error) {
+    toast('更新失敗：' + (error.message || '請稍後再試'), false);
+  } finally {
+    refreshing = false;
+    setRefreshing(false);
+  }
+}
+
+/** 每 60 秒：只更新會變、而且不會打斷操作的部分。 */
+async function refreshLive() {
+  if (!currentUser || refreshing) return;
+  refreshing = true;
+  try {
+    const before = viewTags(currentUser).join();
+    await loadUserData();
+    if (!currentUser) return;
+    // 身分變了（例如剛被指定為午餐長）就整個重排，不必等使用者重新整理
+    if (viewTags(currentUser).join() !== before) {
+      applyRoleView();
+      await loadRoleData();
+    } else {
+      const role = currentUser.role;
+      const tasks = [];
+      if (role === 'student') tasks.push(loadPlateToday());
+      if (viewTags(currentUser).includes('lunch_leader')) tasks.push(loadRecordToday());
+      if (role === 'teacher') tasks.push(loadClassPlates());
+      if (role === 'parent') tasks.push(loadChildStatus());
+      if (role === 'admin' && typeof refreshAdminLive === 'function') tasks.push(refreshAdminLive());
+      await Promise.allSettled(tasks);
+    }
+    markRefreshed();
+  } finally {
+    refreshing = false;
+  }
+}
+
+/** 正在輸入或開著帳號面板時不自動更新，免得把填到一半的東西蓋掉。 */
+function userIsEditing() {
+  const a = document.activeElement;
+  if (a && /^(INPUT|TEXTAREA|SELECT)$/.test(a.tagName) && a.type !== 'button') return true;
+  return typeof adminState !== 'undefined' && Boolean(adminState.drawerUserId);
+}
+
+function startLiveRefresh() {
+  stopLiveRefresh();
+  currentDay = todayKey();
+  liveRefreshTimer = setInterval(() => {
+    if (!currentUser || document.hidden) return;
+    // 跨過午夜：「今天」變了，整頁重來（菜單、今日午餐、稱重都是以日期為準）
+    if (todayKey() !== currentDay) {
+      const dateInput = document.getElementById('teacherPlateDate');
+      if (dateInput && dateInput.value === currentDay) dateInput.value = todayKey();
+      refreshAll({ quiet: true });
+      return;
+    }
+    if (Date.now() - lastInteractionAt > SCALE_IDLE_MS || userIsEditing()) return;
+    refreshLive();
+  }, LIVE_REFRESH_MS);
+}
+
+function stopLiveRefresh() {
+  if (liveRefreshTimer) clearInterval(liveRefreshTimer);
+  liveRefreshTimer = null;
+}
+
+// 分頁切回來：離開很久就整頁更新，短暫離開只更新會變的部分
+document.addEventListener('visibilitychange', () => {
+  if (document.hidden || !currentUser || userIsEditing()) return;
+  if (Date.now() - lastFullRefreshAt > STALE_AFTER_MS) refreshAll({ quiet: true });
+  else if (Date.now() - lastRefreshAt > 20 * 1000) refreshLive();
+});
+
+function setRefreshing(on) {
+  const btn = document.getElementById('refreshBtn');
+  if (btn) {
+    btn.classList.toggle('spinning', on);
+    btn.disabled = on;
+  }
+}
+
+function markRefreshed() {
+  lastRefreshAt = Date.now();
+  const el = document.getElementById('lastRefreshed');
+  if (el) el.textContent = '更新於 ' + new Date().toLocaleTimeString('zh-TW', { hour: '2-digit', minute: '2-digit' });
+}
+
+/** 登出或登入過期：停掉所有計時器、清掉屬於這個人的畫面，回到登入。 */
+function logout(message) {
+  stopLiveRefresh();
+  stopScalePolling();
+  stopSupportPolling();
+  if (typeof resetAdminState === 'function') resetAdminState();
+  currentUser = null;
+  idToken = null;
+  esgCoin = 0;
+  recordSession = null;
+  try {
     localStorage.removeItem('token');
     localStorage.removeItem('user');
-    idToken = null;
-    currentUser = null;
-    showAuthForm();
-  }
+  } catch (error) { /* 無痕模式寫不進去也沒關係 */ }
+  clearUserContent();
+  applyRoleView();        // 沒有使用者 → 所有區塊與底部導覽都收起來
+  showAuthForm(message);
+}
+
+/**
+ * 換人登入時，上一個人的資料不能留在畫面上（就算是藏著的）——
+ * 共用的教室電腦上，下一個人打開開發者工具就看得到。
+ */
+function clearUserContent() {
+    const ids = ['plateResult', 'plateRecent', 'plateTiers', 'classPlateList', 'classPlateSummary',
+        'childStatus', 'weighQueue', 'recordStatus', 'recordSummary', 'supportDishList', 'supportMeta',
+        'heroBoardList', 'heroMine', 'trendChart', 'trendStats', 'shopList', 'menuToday', 'intakePanel',
+        'surveyDisplay', 'parentSignInResult', 'techDeviceList', 'techHealth', 'lastRefreshed'];
+    ids.forEach((id) => {
+        const el = document.getElementById(id);
+        if (el) el.innerHTML = '';
+    });
+    ['esgcoin'].forEach((id) => { const el = document.getElementById(id); if (el) el.textContent = '0'; });
+    ['loginPassword', 'parentComment', 'surveyReason'].forEach((id) => {
+        const el = document.getElementById(id);
+        if (el) { el.value = ''; el.readOnly = false; }
+    });
+    const banner = document.getElementById('globalAnnouncement');
+    if (banner) banner.classList.add('hidden');
+    const signIn = document.getElementById('parentSignInBtn');
+    if (signIn) { signIn.disabled = false; signIn.textContent = '今日簽到（孩子 +1 ESG）'; }
+}
+
+/** 右下角的短暫提示，取代會擋住畫面的 alert。ok 沒給時由訊息內容判斷。 */
+function toast(message, ok) {
+    const text = String(message == null ? '' : message);
+    // 「請填寫…」「至少 5 個字」這類提醒也算要注意的，用提醒色
+    const isOk = ok === undefined ? !/失敗|錯誤|不足|無法|不能|^請|至少|⚠️|❌|⏰/.test(text) : ok;
+    let box = document.getElementById('appToast');
+    if (!box) {
+        box = document.createElement('div');
+        box.id = 'appToast';
+        box.className = 'toast';
+        box.setAttribute('role', 'status');
+        box.setAttribute('aria-live', 'polite');
+        document.body.appendChild(box);
+    }
+    box.textContent = text;
+    box.className = 'toast show ' + (isOk ? 'ok' : 'error');
+    clearTimeout(toast.timer);
+    toast.timer = setTimeout(() => { box.className = 'toast'; }, isOk ? 2800 : 5200);
 }
 
 // 切換登入/註冊標籤
@@ -156,8 +354,7 @@ async function handleLogin() {
       localStorage.setItem('token', idToken);
       localStorage.setItem('user', JSON.stringify(currentUser));
       errorElement.textContent = '';
-      await loadUserData();
-      showLoggedInState();
+      await enterApp();
     } else {
       errorElement.textContent = data.message || '登入失敗';
     }
@@ -261,8 +458,7 @@ async function handleRegister() {
       localStorage.setItem('token', idToken);
       localStorage.setItem('user', JSON.stringify(currentUser));
       errorElement.textContent = '';
-      await loadUserData();
-      showLoggedInState();
+      await enterApp();
     } else {
       errorElement.textContent = data.message || '註冊失敗';
     }
@@ -276,17 +472,8 @@ async function handleRegister() {
 }
 
 // 處理登出
-async function handleLogout() {
-  try {
-    currentUser = null;
-    idToken = null;
-    esgCoin = 0;
-    localStorage.removeItem('token');
-    localStorage.removeItem('user');
-    showAuthForm();
-  } catch (error) {
-    console.error('登出失敗:', error);
-  }
+function handleLogout() {
+  logout();
 }
 
 // 載入使用者資料
@@ -312,7 +499,8 @@ async function loadUserData() {
       localStorage.setItem('user', JSON.stringify(currentUser));
 
       updateUI();
-    } else {
+    } else if (idToken) {
+      // 登入過期時 apiRequest 已經登出（idToken 變成 null），那是預期的，不必記錯誤
       console.error('載入使用者資料失敗:', data.message);
     }
   } catch (error) {
@@ -321,44 +509,33 @@ async function loadUserData() {
   }
 }
 
-// 顯示登入表單
-function showAuthForm() {
-  document.getElementById('authContainer').classList.remove('hidden');
-  document.getElementById('loggedInContainer').classList.add('hidden');
-
-  // 未登入不顯示任何內容：把所有內容區塊與底部導覽收起來，並把登入區叫回來
-  const video = document.querySelector('.video');
-  if (video) video.style.display = '';
-  document.querySelectorAll('section.page, .teacher-panel').forEach((el) => el.classList.add('hidden'));
-  const nav = document.getElementById('bottomNav');
-  if (nav) nav.classList.remove('visible');
+// 顯示登入表單（未登入時畫面上只有登入區）
+function showAuthForm(message) {
+  const auth = document.getElementById('authSection');
+  if (auth) auth.classList.remove('hidden');
+  const chip = document.getElementById('userChip');
+  if (chip) chip.classList.add('hidden');
+  const err = document.getElementById('loginError');
+  if (err) err.textContent = message || '';
   window.scrollTo({ top: 0, behavior: 'auto' });
 }
 
-// 顯示已登入狀態
+// 顯示已登入狀態：登入區收起，右上角顯示使用者與登出
 function showLoggedInState() {
-  document.getElementById('authContainer').classList.add('hidden');
-  document.getElementById('loggedInContainer').classList.remove('hidden');
-
-  const displayName = currentUser.displayName || currentUser.email || '使用者';
-  document.getElementById('userDisplayName').textContent = displayName;
-  updateLoggedInStats();
-  syncRolePanels();
-
+  const auth = document.getElementById('authSection');
+  if (auth) auth.classList.add('hidden');
+  const chip = document.getElementById('userChip');
+  if (chip) chip.classList.remove('hidden');
+  updateUI();
   applyRoleView();
 }
 
-// 更新已登入狀態的統計數據
-function updateLoggedInStats() {
-  const ue = document.getElementById('userEsgCoin');
-  if (ue) ue.textContent = esgCoin;
-}
-
-// 更新 UI
+// 更新 UI（餘額與右上角的名字）
 function updateUI() {
   const ec = document.getElementById('esgcoin');
   if (ec) ec.textContent = esgCoin;
-  updateLoggedInStats();
+  const name = document.getElementById('userDisplayName');
+  if (name && currentUser) name.textContent = currentUser.displayName || currentUser.email || '使用者';
 }
 
 // ── 今日菜單（兩欄）────────────────────────────────────────────
@@ -504,13 +681,6 @@ function renderIntake(intake) {
         <p class="field-hint">這是**一餐**的建議量，不是一整天。</p>`;
 }
 
-// 舊版在 #home 裡放了一張家長簽到卡片，但 #home 對家長是隱藏的，那張卡片
-// 永遠顯示不出來，已移除。家長的簽到入口統一在 #parentZone，
-// 可見性由 applyRoleView() 一處決定，這裡不再需要另外同步。
-function syncRolePanels() {
-    applyRoleView();
-}
-
 // 獲取錯誤訊息
 function getErrorMessage(errorCode) {
   const errorMessages = {
@@ -558,6 +728,11 @@ async function apiRequest(endpoint, method = 'GET', body = null) {
     success: false, 
     message: '無法解析伺服器回應' 
   }));
+
+  // 登入過期或帳號被停用：不讓每個區塊各自顯示「Token 無效」，直接回到登入畫面
+  if (idToken && (response.status === 401 || (response.status === 403 && data.message === '此帳號已被停用'))) {
+    logout(response.status === 401 ? '登入已過期，請重新登入' : data.message);
+  }
 
   return data;
 }
@@ -1166,15 +1341,15 @@ async function weighDish(el) {
     try {
         const data = await apiRequest('/record/weigh', 'POST', { slot });
         if (!data.success) {
-            alert(data.message || '稱重失敗');
+            toast(data.message || '稱重失敗');
         } else {
             let msg = data.message;
             if ((data.warnings || []).length) msg += '\n\n⚠️ ' + data.warnings.join('\n');
-            alert(msg);
+            toast(msg);
         }
         await loadWeighQueue();
     } catch (error) {
-        alert('稱重失敗：' + (error.message || '請稍後再試'));
+        toast('稱重失敗：' + (error.message || '請稍後再試'));
     } finally {
         el.disabled = false;
         el.textContent = original;
@@ -1187,10 +1362,10 @@ async function weighEmptied(el) {
     if (!confirm('確定這道菜全部吃完、完全沒有剩？會記為 0 g。')) return;
     try {
         const data = await apiRequest('/record/weigh', 'POST', { slot, emptied: true });
-        if (!data.success) alert(data.message || '記錄失敗');
+        if (!data.success) toast(data.message || '記錄失敗');
         await loadWeighQueue();
     } catch (error) {
-        alert('記錄失敗：' + (error.message || '請稍後再試'));
+        toast('記錄失敗：' + (error.message || '請稍後再試'));
     }
 }
 
@@ -1348,10 +1523,10 @@ async function deleteDeviceRow(el) {
     try {
         const data = await apiRequest(
             `/tech/devices/${encodeURIComponent(deviceId)}?purgeReadings=${purge}`, 'DELETE');
-        alert(data.success ? '✅ ' + data.message : '⚠️ ' + (data.message || '刪除失敗'));
+        toast(data.success ? '✅ ' + data.message : '⚠️ ' + (data.message || '刪除失敗'));
         if (data.success) await loadDevices();
     } catch (error) {
-        alert('刪除失敗：' + (error.message || '請稍後再試'));
+        toast('刪除失敗：' + (error.message || '請稍後再試'));
     } finally {
         el.disabled = false;
     }
@@ -1565,39 +1740,37 @@ async function resetCoinRules() {
     }
 }
 
+/**
+ * 底部導覽標出「現在看到的是哪一區」。
+ * 以畫面上方三分之一那條線落在哪個區塊為準；用 requestAnimationFrame 合併捲動事件。
+ */
+let navSpyQueued = false;
+function updateActiveNav() {
+    navSpyQueued = false;
+    const nav = document.getElementById('bottomNav');
+    if (!nav || !currentUser) return;
+    const line = window.innerHeight * 0.33;
+    let active = null;
+    nav.querySelectorAll('button[data-arg]').forEach((btn) => {
+        if (btn.classList.contains('hidden')) return;
+        const el = document.getElementById(btn.dataset.arg);
+        if (!el || el.closest('.hidden')) return;
+        const r = el.getBoundingClientRect();
+        if (r.top <= line && r.bottom > line) active = btn;
+    });
+    nav.querySelectorAll('button[data-arg]').forEach((btn) => btn.classList.toggle('active', btn === active));
+}
+window.addEventListener('scroll', () => {
+    if (navSpyQueued) return;
+    navSpyQueued = true;
+    requestAnimationFrame(updateActiveNav);
+}, { passive: true });
+
 function scrollToSection(sectionId) {
     const section = document.getElementById(sectionId);
     if (section) {
         section.scrollIntoView({ behavior: 'smooth' });
     }
-}
-
-// 開始使用
-async function startApp(){
-    if (!currentUser) {
-        alert('請先登入');
-        return;
-    }
-
-    // 隱藏登入區
-    document.querySelector(".video").style.display = "none";
-
-    // 依角色開啟該看的區塊（applyRoleView 會處理 hidden 與底部導覽）
-    applyRoleView();
-
-    // 載入最新資料
-    await loadUserData();
-
-    // 載入商城商品
-    await loadShopItems();
-
-    // 載入全站大獎公告
-    await loadLotteryAnnouncement();
-
-    // 依角色載入該看的資料（教師檢查清單 / 午餐長紀錄 / 家長孩子狀況…）
-    applyRoleView();
-    await loadTodayMenu();
-    await loadRoleData();
 }
 
 async function loadShopItems() {
@@ -1649,15 +1822,15 @@ async function buyItem(el){
             }
             updateUI();
             await loadShopItems();
-            alert("🎉 成功兌換：" + name);
+            toast("🎉 成功兌換：" + name);
         } else {
-            alert(data.message || '兌換失敗');
+            toast(data.message || '兌換失敗');
             // 可能是剛剛被管理員關了商城：重抓一次就會顯示關閉提示並禁用按鈕
             if (data.shopClosed) await loadShopItems();
         }
     } catch (error) {
         console.error('兌換失敗:', error);
-        alert('兌換失敗：' + (error.message || '請稍後再試'));
+        toast('兌換失敗：' + (error.message || '請稍後再試'));
         await loadShopItems();
     }
 }
@@ -1683,7 +1856,7 @@ async function submitSurvey(){
 
         // 同樣只是省一趟往返，後端仍會再驗一次
         if (reason.length < 5) {
-            alert('請填寫不喜歡的原因（至少 5 個字）');
+            toast('請填寫不喜歡的原因（至少 5 個字）');
             if (reasonBox) reasonBox.focus();
             return;
         }
@@ -1698,7 +1871,7 @@ async function submitSurvey(){
                 const c = document.getElementById('surveyReasonCount');
                 if (c) c.textContent = '0';
             }
-            alert(
+            toast(
                 "✅ 問卷已送出！\n\n" +
                 "最喜歡：" + favorite + "\n" +
                 "最不喜歡：" + hate + "\n" +
@@ -1707,17 +1880,17 @@ async function submitSurvey(){
             );
         } else {
             if (data.hoursRemaining) {
-                alert(
+                toast(
                     "⏰ 尚未達到送出時間！\n\n" +
                     "距離下次送出還需 " + data.hoursRemaining + " 小時"
                 );
             } else {
-                alert(data.message || '問卷送出失敗');
+                toast(data.message || '問卷送出失敗');
             }
         }
     } catch (error) {
         console.error('提交問卷失敗:', error);
-        alert('問卷送出失敗，請稍後再試');
+        toast('問卷送出失敗，請稍後再試');
     }
 }
 // 家長簽到
@@ -1805,7 +1978,7 @@ function closeLottery(){
 
 async function spinLottery(){
     if(esgCoin < 40){
-        alert("❌ ESG 幣不足！需要 40 ESG 幣進行抽獎");
+        toast("❌ ESG 幣不足！需要 40 ESG 幣進行抽獎");
         return;
     }
 
@@ -1819,7 +1992,7 @@ async function spinLottery(){
 
         if (!data.success) {
             await loadUserData();
-            alert(data.message || '❌ 抽獎失敗');
+            toast(data.message || '❌ 抽獎失敗');
             resultDiv.innerHTML = '';
             return;
         }
@@ -1881,7 +2054,7 @@ async function spinLottery(){
 
     } catch (error) {
         console.error('抽獎失敗:', error);
-        alert('❌ 抽獎失敗，請稍後再試');
+        toast('❌ 抽獎失敗，請稍後再試');
         resultDiv.innerHTML = '';
     }
 }
@@ -1995,6 +2168,7 @@ function applyRoleView() {
 
     applyRoleOrder(tags.includes('lunch_leader') ? 'lunch_leader' : role);
     if (!signedIn) stopSupportPolling();     // 登出後不該繼續打 API
+    updateActiveNav();
 }
 
 // ============================================================
@@ -2056,34 +2230,16 @@ async function loadRoleData() {
     const role = (currentUser && currentUser.role) || 'student';
     const isLeader = viewTags(currentUser).includes('lunch_leader');
 
-    if (role === 'parent') {
-        await loadChildStatus();
-        return;
-    }
-    if (role === 'technician') {
-        await loadDevices();
-        return;   // 技術員只管硬體，不載入學生相關資料
-    }
-    if (role === 'admin') {
-        // 各分頁的資料在切到那一頁時才載入（見 admin.js）
-        await loadAdminHome();
-        await loadDevices();
-    }
-    if (role === 'teacher') {
-        await loadClassPlates();
-    }
-    if (isLeader) {
-        await loadRecordToday();
-        await loadWeighQueue();
-    }
-    if (role === 'student') {
-        await loadPlateToday();
-    }
-    await loadSupportDishes();
-    if (role !== 'parent') {
-        await loadHeroBoard();
-        await loadTrend();
-    }
+    // 各區塊互不相依，一起載入：原本一個等一個，登入後要好幾秒才全部出來
+    if (role === 'parent') return loadChildStatus();
+    if (role === 'technician') return loadDevices();   // 技術員只管硬體，不載入學生相關資料
+
+    const tasks = [loadSupportDishes(), loadHeroBoard(), loadTrend()];
+    if (role === 'admin') tasks.push(refreshAdminActive(), loadDevices());
+    if (role === 'teacher') tasks.push(loadClassPlates());
+    if (isLeader) tasks.push(loadRecordToday().then(() => loadWeighQueue()));
+    if (role === 'student') tasks.push(loadPlateToday(), loadShopItems());
+    await Promise.all(tasks);
 }
 
 // ============================================================
@@ -2184,13 +2340,13 @@ async function startRecord() {
     try {
         const data = await apiRequest('/record/start', 'POST', {});
         if (!data.success) {
-            alert(data.message || '無法開始紀錄');
+            toast(data.message || '無法開始紀錄');
             return;
         }
         await loadRecordToday();
         await loadWeighQueue();
     } catch (error) {
-        alert('無法開始紀錄：' + (error.message || '請稍後再試'));
+        toast('無法開始紀錄：' + (error.message || '請稍後再試'));
     }
 }
 
@@ -2221,17 +2377,17 @@ async function finalizeRecord() {
     try {
         const data = await apiRequest('/record/finalize', 'POST', {});
         if (!data.success) {
-            alert(data.message || '完成紀錄失敗');
+            toast(data.message || '完成紀錄失敗');
             return;
         }
         const s = data.summary || {};
-        alert(`${data.message}\n\n全班剩食 ${Math.round(s.totalG || 0)} g（${data.servings} 份，人均 ${data.wastePerCapitaG} g）`);
+        toast(`${data.message}\n\n全班剩食 ${Math.round(s.totalG || 0)} g（${data.servings} 份，人均 ${data.wastePerCapitaG} g）`);
         stopScalePolling();
         await loadRecordToday();
         await loadWeighQueue();
         await loadSupportDishes();
     } catch (error) {
-        alert('完成紀錄失敗：' + (error.message || '請稍後再試'));
+        toast('完成紀錄失敗：' + (error.message || '請稍後再試'));
     }
 }
 
@@ -2356,7 +2512,7 @@ function capturePlate(el) {
             const image = await downscaleImage(file);
             const data = await apiRequest('/plate/scan', 'POST', { image });
             if (!data.success) {
-                alert(data.message || '辨識失敗');
+                toast(data.message || '辨識失敗');
                 await loadPlateToday();
                 return;
             }
@@ -2364,7 +2520,7 @@ function capturePlate(el) {
             await loadUserData();
             await loadPlateToday();
         } catch (error) {
-            alert('辨識失敗：' + (error.message || '請稍後再試'));
+            toast('辨識失敗：' + (error.message || '請稍後再試'));
             await loadPlateToday();
         }
     });
@@ -2778,10 +2934,10 @@ async function bindDevice(el) {
             classId: classId.trim(),
             bucketId
         });
-        alert((data.success ? '✅ ' : '⚠️ ') + (data.message || ''));
+        toast((data.success ? '✅ ' : '⚠️ ') + (data.message || ''));
         if (data.success) await loadDevices();
     } catch (error) {
-        alert('綁定失敗：' + (error.message || '請稍後再試'));
+        toast('綁定失敗：' + (error.message || '請稍後再試'));
     }
 }
 
@@ -2789,7 +2945,7 @@ async function setTareManual(el) {
     const deviceId = el.dataset.deviceId;
     const input = devInput('dev-tare', deviceId);
     const tareG = Number(input && input.value);
-    if (!Number.isFinite(tareG) || tareG < 0) { alert('請先填入盆重（公克）'); return; }
+    if (!Number.isFinite(tareG) || tareG < 0) { toast('請先填入盆重（公克）'); return; }
     await submitTare(deviceId, { mode: 'manual', tareG });
 }
 
@@ -2801,10 +2957,10 @@ async function setTareLatest(el) {
 async function submitTare(deviceId, payload) {
     try {
         const data = await apiRequest(`/tech/devices/${deviceId}/tare`, 'POST', payload);
-        alert((data.success ? '✅ ' : '⚠️ ') + (data.message || ''));
+        toast((data.success ? '✅ ' : '⚠️ ') + (data.message || ''));
         if (data.success) await loadDevices();
     } catch (error) {
-        alert('設定扣重失敗：' + (error.message || '請稍後再試'));
+        toast('設定扣重失敗：' + (error.message || '請稍後再試'));
     }
 }
 
@@ -2842,6 +2998,7 @@ const ACTION_HANDLERS = {
     handleRegister,
     handleLogout,
     startApp,
+    refreshNow: () => refreshAll(),
     verifyStudentBinding,
     parentSignIn,
     buyItem,

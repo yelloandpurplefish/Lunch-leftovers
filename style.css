@@ -3526,3 +3526,118 @@ td{ border-bottom:1px solid var(--line); }
     .data-table.stack-sm td.num{ text-align:left; }
     .data-table.stack-sm td:first-child{ font-weight:bold; }
 }
+
+/* ── 頂端列：系統名稱＋登入者＋更新＋登出 ─────────────────────────
+   以前登入後畫面中間有一張「歡迎回來 / 開始使用 / 登出」的卡片，
+   捲下去就找不到登出。改成固定在頂端的一列，任何時候都看得到自己是誰、資料多新。 */
+header.app-bar{
+    position:sticky;
+    top:0;
+    z-index:900;
+    display:flex;
+    align-items:center;
+    justify-content:space-between;
+    gap:12px;
+    padding:10px max(var(--gutter), calc((100% - var(--card-max-wide)) / 2));
+    text-align:left;
+}
+.app-bar .brand{ min-width:0; }
+.app-bar h1{ font-size:22px; margin:0; line-height:1.25; }
+.app-bar .brand p{ margin:2px 0 0; font-size:13px; opacity:.85; }
+
+.user-chip{
+    display:flex;
+    align-items:center;
+    gap:8px;
+    flex-shrink:0;
+}
+.user-meta{
+    display:flex;
+    flex-direction:column;
+    align-items:flex-end;
+    line-height:1.25;
+    min-width:0;
+}
+.user-name{
+    font-weight:bold;
+    font-size:15px;
+    max-width:180px;
+    overflow:hidden;
+    text-overflow:ellipsis;
+    white-space:nowrap;
+}
+.user-sub{ display:flex; gap:6px; align-items:center; font-size:12px; }
+.app-bar .role-tag{
+    margin:0;
+    font-size:12px;
+    padding:1px 8px;
+    background:rgba(255,255,255,.18);
+    color:#fff;
+}
+.refreshed-at{ opacity:.8; white-space:nowrap; }
+
+.app-bar .icon-btn{
+    width:36px;
+    height:36px;
+    padding:0;
+    border-radius:50%;
+    background:rgba(255,255,255,.14);
+    color:#fff;
+    font-size:20px;
+    line-height:36px;
+}
+.app-bar .icon-btn:hover{ background:rgba(255,255,255,.26); transform:none; }
+.app-bar .icon-btn.spinning{ animation:spin .9s linear infinite; }
+@keyframes spin{ to{ transform:rotate(360deg); } }
+
+.app-bar .logout-btn{
+    padding:7px 14px;
+    font-size:14px;
+    border-radius:999px;
+    background:#fff;
+    color:var(--brand);
+}
+.app-bar .logout-btn:hover{ background:#ffebee; color:var(--danger); transform:none; }
+
+/* 未登入：只有登入區，靠上一點，不要被擠到畫面正中間 */
+#authSection{ min-height:auto; padding:28px var(--gutter); }
+
+/* 頂端列與底部導覽都固定在畫面上：任何「捲到某個元素」（導覽跳區塊、Tab 鍵移動焦點、
+   表單驗證跳到欄位）都要避開它們，不然目標會停在被蓋住的位置 */
+html{
+    scroll-padding-top:84px;
+    scroll-padding-bottom:calc(var(--nav-h) + 24px + env(safe-area-inset-bottom));
+}
+
+/* ESG 幣：一欄就好（名稱、數字、說明由上往下） */
+.balance-strip{
+    flex-direction:column;
+    align-items:flex-start;
+    justify-content:flex-start;
+    gap:2px;
+}
+.balance-strip .balance-value{ font-size:36px; margin:2px 0 4px; }
+
+/* 底部導覽：標出目前看到的區塊 */
+.bottom-nav button.active{
+    color:var(--brand);
+    background:var(--brand-soft);
+    font-weight:bold;
+}
+
+/* 提示可以換行（稱重的警告、完成紀錄的彙總） */
+.toast{ white-space:pre-line; text-align:left; }
+
+@media (max-width:600px){
+    header.app-bar{ padding:8px 12px; gap:8px; }
+    .app-bar h1{ font-size:16px; }
+    .app-bar .brand p{ display:none; }
+    .user-name{ max-width:96px; font-size:14px; }
+    .refreshed-at{ display:none; }
+    .app-bar .logout-btn{ padding:6px 10px; font-size:13px; }
+    .app-bar .icon-btn{ width:32px; height:32px; line-height:32px; font-size:18px; }
+    html{ scroll-padding-top:64px; }
+}
+
+/* 手機上標題只留「零廚餘」，不要擠成兩行 */
+@media (max-width:600px){ .brand-long{ display:none; } }

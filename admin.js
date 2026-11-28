@@ -29,20 +29,9 @@ const adminState = {
 const todayStr = () => new Date().toLocaleDateString('sv');
 const $id = (id) => document.getElementById(id);
 
-/** 右下角的短暫提示。操作結果用這個，不用一直跳 alert。 */
+/** 右下角的短暫提示（與 app.js 共用同一個 toast）。 */
 function notify(message, ok = true) {
-    let box = $id('adminToast');
-    if (!box) {
-        box = document.createElement('div');
-        box.id = 'adminToast';
-        box.className = 'toast';
-        box.setAttribute('role', 'status');
-        document.body.appendChild(box);
-    }
-    box.textContent = (ok ? '✅ ' : '⚠️ ') + message;
-    box.className = 'toast show ' + (ok ? 'ok' : 'error');
-    clearTimeout(notify.timer);
-    notify.timer = setTimeout(() => { box.className = 'toast'; }, ok ? 2600 : 5000);
+    toast(message, ok);
 }
 
 /** 呼叫 API，失敗就提示並回 null。成功時提示後端的訊息（若有）。 */
@@ -71,10 +60,50 @@ function plateLevelOptions() {
     return [['', '— 更正 —'], ...PLATE_LEVELS, ['__clear', '清除（可重拍）']].map(([v, l]) => opt(v, l)).join('');
 }
 
-// ── 分頁 ─────────────────────────────────────────────────────────
+// ── 分頁與刷新 ───────────────────────────────────────────────────
 
+/** 右上角 🔄（app.js refreshAll）：重新載入目前這一頁，帳號面板開著也一起更新。 */
+async function refreshAdminActive() {
+    const tab = adminState.tab;
+    const tasks = [];
+    if (tab === 'overview') tasks.push(loadAdminOverviewPane());
+    if (tab === 'classes') tasks.push(loadClassPicker().then(() => (adminState.classId ? loadClassDetail() : null)));
+    if (tab === 'users') tasks.push(ensureClassList(true).then(() => loadUserPage()));
+    if (tab === 'settings') tasks.push(loadCoinRules(), loadShopState(), loadBucketTare());
+    if (tab === 'health') tasks.push(ensureClassList(true));
+    if (adminState.drawerUserId) tasks.push(loadUserDrawer());
+    await Promise.all(tasks);
+}
+
+/**
+ * 每 60 秒的自動更新（app.js refreshLive）：只更新總覽。
+ * 班級頁的稱重表、帳號面板都可能有填到一半的欄位，自動重畫會把它們清掉，所以不動。
+ */
+async function refreshAdminLive() {
+    if (adminState.tab === 'overview') await loadAdminOverviewPane();
+}
+
+// 同步名冊後要更新的部分
 async function loadAdminHome() {
-    await loadAdminOverviewPane();
+    adminState.classes = [];
+    await refreshAdminActive();
+}
+
+/** 登出時把管理員專區還原：關掉面板、清掉資料、回到總覽。 */
+function resetAdminState() {
+    if (adminState.drawerUserId) closeUserDrawer();
+    Object.assign(adminState, {
+        tab: 'overview', classes: [], classId: null, date: null, detail: null, teachers: null,
+        users: { q: '', role: '', pages: [null], page: 0 }, drawerUserId: null, drawerData: null,
+    });
+    document.querySelectorAll('.admin-tab').forEach((b) => b.classList.toggle('active', b.dataset.tab === 'overview'));
+    document.querySelectorAll('.admin-pane').forEach((p) => p.classList.toggle('hidden', p.id !== 'adminPane-overview'));
+    ['adminOverview', 'classPickerList', 'userResults', 'consistencyResult', 'balanceResult', 'userDrawerBody']
+        .forEach((id) => { const el = $id(id); if (el) el.innerHTML = ''; });
+    const detail = $id('classDetail');
+    if (detail) detail.innerHTML = '<p class="empty-state">從班級清單選一個班</p>';
+    const search = $id('userSearch');
+    if (search) search.value = '';
 }
 
 async function adminTab(el) {
@@ -250,17 +279,24 @@ async function createClass() {
 
 // ── 班級：一個班的全部 ──────────────────────────────────────────
 
+// 快速切換班級或日期時，先發的請求可能比較晚回來；畫面若停在舊班級，
+// 按鈕卻是對 adminState.classId（新班級）操作，會改錯班。只採用最後一次請求的結果。
+let classDetailSeq = 0;
+
 async function loadClassDetail() {
     const box = $id('classDetail');
     if (!box || !adminState.classId) return;
     if (!adminState.date) adminState.date = todayStr();
+    const seq = ++classDetailSeq;
     const data = await adminCall('GET',
         `/admin/classes/${encodeURIComponent(adminState.classId)}?date=${adminState.date}`, null, { quiet: true });
+    if (seq !== classDetailSeq) return;
     if (!data) { box.innerHTML = '<p class="field-hint">載入失敗</p>'; return; }
     adminState.detail = data;
     if (!adminState.teachers) {
         const t = await adminCall('GET', '/admin/users?role=teacher&limit=50', null, { quiet: true });
         adminState.teachers = t ? t.users : [];
+        if (seq !== classDetailSeq) return;
     }
     renderClassDetail(data);
     await loadClassWeighing();
@@ -570,10 +606,15 @@ async function userPage(el) {
     await loadUserPage();
 }
 
+// 換角色篩選會立刻搜一次、接著按「搜尋」又一次；先發的若比較晚回來，
+// 會把新結果蓋成舊的。只採用最後一次請求的結果。
+let userPageSeq = 0;
+
 async function loadUserPage() {
     const box = $id('userResults');
     const st = adminState.users;
     if (!box) return;
+    const seq = ++userPageSeq;
     if (!st.q && !st.role) {
         box.innerHTML = '<p class="field-hint">輸入關鍵字搜尋，或選一個角色瀏覽。</p>';
         return;
@@ -583,6 +624,7 @@ async function loadUserPage() {
     if (st.role) params.set('role', st.role);
     if (!st.q && st.pages[st.page]) params.set('after', st.pages[st.page]);
     const data = await adminCall('GET', '/admin/users?' + params.toString(), null, { quiet: true });
+    if (seq !== userPageSeq || st !== adminState.users) return;
     if (!data) return;
     if (data.next) st.pages[st.page + 1] = data.next;
 
@@ -672,10 +714,16 @@ document.addEventListener('keydown', (e) => {
     if (e.key === 'Escape' && adminState.drawerUserId) closeUserDrawer();
 });
 
+// 面板上的操作都對 adminState.drawerUserId 送出；快速換人時舊的回應不能畫上去，
+// 否則看著 A 的資料、調的卻是 B 的幣。
+let drawerSeq = 0;
+
 async function loadUserDrawer() {
     const id = adminState.drawerUserId;
     if (!id) return;
+    const seq = ++drawerSeq;
     const data = await adminCall('GET', `/admin/users/${encodeURIComponent(id)}`, null, { quiet: true });
+    if (seq !== drawerSeq || id !== adminState.drawerUserId) return;
     if (!data) { closeUserDrawer(); return; }
     renderUserDrawer(data);
 }

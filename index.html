@@ -24,12 +24,24 @@
 
 <div id="app">
 
-    <header>
-        <h1>🌱 學校午餐零廚餘管理系統</h1>
-        <p>珍惜食物｜守護地球</p>
+    <!-- 頂端列：左邊是系統名稱，右邊是登入者、更新時間、手動更新與登出（只在登入後出現） -->
+    <header class="app-bar">
+        <div class="brand">
+            <h1>🌱 <span class="brand-long">學校午餐</span>零廚餘<span class="brand-long">管理系統</span></h1>
+            <p>珍惜食物｜守護地球</p>
+        </div>
+        <div class="user-chip hidden" id="userChip">
+            <div class="user-meta">
+                <span class="user-name" id="userDisplayName"></span>
+                <span class="user-sub"><span id="userRoleTag" class="role-tag"></span><span id="lastRefreshed" class="refreshed-at"></span></span>
+            </div>
+            <button class="icon-btn" data-action="refreshNow" id="refreshBtn" title="重新載入資料" aria-label="重新載入資料">⟳</button>
+            <button class="logout-btn" data-action="handleLogout">登出</button>
+        </div>
     </header>
 
-    <section class="video">
+    <!-- 登入／註冊（只在未登入時出現） -->
+    <section class="video" id="authSection">
 
         <!-- 登入/註冊表單 -->
         <div class="auth-container" id="authContainer">
@@ -141,22 +153,6 @@
             </div>
         </div>
 
-        <!-- 已登入狀態顯示 -->
-        <div class="logged-in-container hidden" id="loggedInContainer">
-            <div class="user-info">
-                <h3>👤 歡迎回來，<span id="userDisplayName"></span>！<span id="userRoleTag" class="role-tag"></span></h3>
-                <p class="hero-tagline">一起減碳 零廚餘愛地球</p>
-                <div class="user-stats">
-                    <div class="stat-item">
-                        <span class="stat-label">ESG幣</span>
-                        <span class="stat-value" id="userEsgCoin">0</span>
-                    </div>
-                </div>
-            </div>
-            <button data-action="startApp" class="start-btn">開始使用</button>
-            <button data-action="handleLogout" class="logout-btn">登出</button>
-        </div>
-
     </section>
 
 <nav class="bottom-nav" id="bottomNav">
@@ -187,10 +183,8 @@
 
     <!-- ESG 幣餘額：和其他卡片同寬的一條（只有學生有幣） -->
     <div class="balance-strip hidden" id="balanceStrip">
-        <div class="balance-main">
-            <span class="balance-label">我的 ESG 幣</span>
-            <span class="balance-value" id="esgcoin">0</span>
-        </div>
+        <span class="balance-label">我的 ESG 幣</span>
+        <span class="balance-value" id="esgcoin">0</span>
         <span class="field-hint">拍餐盤的結果與家長簽到都會發 ESG 幣，可以拿去兌換或抽獎。</span>
     </div>
 

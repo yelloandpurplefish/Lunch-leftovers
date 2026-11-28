@@ -1,5 +1,4 @@
-const { db, admin } = require('../config/firebase');
-const { COL, COIN_HOLDER_ROLES } = require('../config/schema');
+const { COIN_HOLDER_ROLES } = require('../config/schema');
 const { isLunchLeader } = require('../middleware/auth');
 
 /**
@@ -9,13 +8,13 @@ const { isLunchLeader } = require('../middleware/auth');
  * 前端據此決定要不要顯示「午餐長專區」。
  *
  * 使用者資料由 authenticate 讀過一次（req.userDoc），這裡不再重讀。
+ *
+ * 唯讀：前端每 60 秒自動更新都會打這支，不能順手寫 lastLoginAt
+ * （否則每位使用者每分鐘一次寫入，「最後登入」也會變成「最後在線」）。
+ * lastLoginAt 只在 POST /api/auth/login 時寫。
  */
 const getProfile = async (req, res) => {
   try {
-    await db.collection(COL.users).doc(req.user.uid).update({
-      lastLoginAt: admin.firestore.FieldValue.serverTimestamp(),
-    });
-
     const u = req.userDoc;
     const holdsCoins = COIN_HOLDER_ROLES.includes(u.role);
     return res.status(200).json({
